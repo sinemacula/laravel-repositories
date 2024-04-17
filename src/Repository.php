@@ -2,6 +2,7 @@
 
 namespace SineMacula\Repositories;
 
+use Closure;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
@@ -33,6 +34,9 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     /** @var bool Indicate whether criteria should be skipped */
     protected bool $skipCriteria = false;
 
+    /** @var array The scopes to be applied to the current query */
+    protected array $scopes = [];
+
     /**
      * Constructor.
      *
@@ -44,8 +48,8 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
         protected readonly Application $app
 
     ) {
-        $this->resetPersistentCriteria();
-        $this->resetTransientCriteria();
+        $this->resetCriteria();
+        $this->resetScopes();
         $this->makeModel();
         $this->boot();
     }
@@ -54,10 +58,10 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
      * Trigger a static method call on the repository.
      *
      * @param  string  $method
-     * @param  array  $arguments
+     * @param  array   $arguments
      * @return mixed
      */
-    public static function __callStatic(string $method, array $arguments)
+    public static function __callStatic(string $method, array $arguments): mixed
     {
         return call_user_func_array([new static, $method], ...$arguments);
     }
@@ -66,15 +70,17 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
      * Forward method calls to the model
      *
      * @param  string  $method
-     * @param  array  $arguments
+     * @param  array   $arguments
      * @return mixed
      */
-    public function __call(string $method, array $arguments)
+    public function __call(string $method, array $arguments): mixed
     {
         $this->applyCriteria();
-        $this->applyScope();
+        $this->applyScopes();
 
-        return call_user_func_array([$this->model, $method], ...$arguments);
+        $result = call_user_func_array([$this->model, $method], ...$arguments);
+
+        return $this->resetAndReturn($result);
     }
 
     /**
@@ -294,6 +300,31 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     }
 
     /**
+     * Add a new scope.
+     *
+     * @param  \Closure  $scope
+     * @return static
+     */
+    public function addScope(Closure $scope): static
+    {
+        $this->scopes[] = $scope;
+
+        return $this;
+    }
+
+    /**
+     * Reset the scopes.
+     *
+     * @return static
+     */
+    public function resetScopes(): static
+    {
+        $this->scopes = [];
+
+        return $this;
+    }
+
+    /**
      * Apply the criteria to the current query.
      *
      * @return static
@@ -320,6 +351,22 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
         if (!$this->disableCriteria && $this->persistentCriteria->isNotEmpty()) {
             foreach ($this->persistentCriteria as $criterion) {
                 $this->model = $criterion->apply($this->model);
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * Apply all accumulated scopes to the model.
+     *
+     * @return static
+     */
+    protected function applyScopes(): static
+    {
+        foreach ($this->scopes as $scope) {
+            if (is_callable($scope)) {
+                $this->model = $scope($this->model);
             }
         }
 
@@ -362,8 +409,18 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
         return $this;
     }
 
-    // all
-    // paginate
-    // count
-    // first
+    /**
+     * Reset the various transient values and return the result.
+     *
+     * @param  mixed  $result
+     * @return mixed
+     */
+    private function resetAndReturn(mixed $result): mixed
+    {
+        $this->resetTransientCriteria();
+        $this->resetScopes();
+        $this->resetModel();
+
+        return $result;
+    }
 }
