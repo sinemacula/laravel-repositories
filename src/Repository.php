@@ -58,7 +58,7 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
      * Trigger a static method call on the repository.
      *
      * @param  string  $method
-     * @param  array   $arguments
+     * @param  array  $arguments
      * @return mixed
      */
     public static function __callStatic(string $method, array $arguments): mixed
@@ -70,7 +70,7 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
      * Forward method calls to the model
      *
      * @param  string  $method
-     * @param  array   $arguments
+     * @param  array  $arguments
      * @return mixed
      */
     public function __call(string $method, array $arguments): mixed
