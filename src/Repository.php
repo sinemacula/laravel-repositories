@@ -58,7 +58,7 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
      * Trigger a static method call on the repository.
      *
      * @param  string  $method
-     * @param  array  $arguments
+     * @param  array   $arguments
      * @return mixed
      */
     public static function __callStatic(string $method, array $arguments): mixed
@@ -70,7 +70,7 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
      * Forward method calls to the model
      *
      * @param  string  $method
-     * @param  array  $arguments
+     * @param  array   $arguments
      * @return mixed
      */
     public function __call(string $method, array $arguments): mixed
@@ -82,16 +82,6 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
 
         return $this->resetAndReturn($result);
     }
-
-    /**
-     * Boot the repository instance.
-     *
-     * This is a useful method for setting immediate properties when extending
-     * the base repository class.
-     *
-     * @return void
-     */
-    public function boot(): void {}
 
     /**
      * Return the model class
@@ -323,6 +313,16 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
 
         return $this;
     }
+
+    /**
+     * Boot the repository instance.
+     *
+     * This is a useful method for setting immediate properties when extending
+     * the base repository class.
+     *
+     * @return void
+     */
+    protected function boot(): void {}
 
     /**
      * Apply the criteria to the current query.

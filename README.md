@@ -36,7 +36,7 @@ composer require sinemacula/laravel-repositories
 After installation, publish the package configuration to customize it according to your needs:
 
 ```bash
-php artisan vendor:publish --provider="SineMacula\RepositoryServiceProvider"
+php artisan vendor:publish --provider="SineMacula\Repositories\RepositoryServiceProvider"
 ```
 
 This command publishes the package configuration file to your application's config directory.
