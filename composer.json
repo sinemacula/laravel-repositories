@@ -1,0 +1,40 @@
+{
+    "name": "sinemacula/laravel-repositories",
+    "type": "library",
+    "description": "Provides the repository data pattern to Laravel applications",
+    "keywords": [
+        "sine macula",
+        "laravel",
+        "repositories"
+    ],
+    "license": "Apache-2.0",
+    "authors": [
+        {
+            "name": "Ben Carey",
+            "email": "bdmc@sinemacula.co.uk"
+        }
+    ],
+    "require": {
+        "php": "^8.3",
+        "illuminate/database": "^11.3",
+        "illuminate/support": "^11.3"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^11.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "SineMacula\\Repositories\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Tests\\": "tests/"
+        }
+    },
+    "config": {
+        "sort-packages": true
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
