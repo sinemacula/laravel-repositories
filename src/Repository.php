@@ -84,16 +84,6 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     }
 
     /**
-     * Boot the repository instance.
-     *
-     * This is a useful method for setting immediate properties when extending
-     * the base repository class.
-     *
-     * @return void
-     */
-    public function boot(): void {}
-
-    /**
      * Return the model class
      *
      * @return class-string
@@ -323,6 +313,16 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
 
         return $this;
     }
+
+    /**
+     * Boot the repository instance.
+     *
+     * This is a useful method for setting immediate properties when extending
+     * the base repository class.
+     *
+     * @return void
+     */
+    protected function boot(): void {}
 
     /**
      * Apply the criteria to the current query.
