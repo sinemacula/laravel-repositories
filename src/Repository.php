@@ -84,11 +84,16 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     }
 
     /**
-     * Return the model class
+     * Reset the scopes.
      *
-     * @return class-string
+     * @return static
      */
-    abstract public function model(): string;
+    public function resetScopes(): static
+    {
+        $this->scopes = [];
+
+        return $this;
+    }
 
     /**
      * Create a new model instance.
@@ -109,14 +114,11 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     }
 
     /**
-     * Get the model instance.
+     * Return the model class
      *
-     * @return \Illuminate\Database\Eloquent\Model
+     * @return class-string
      */
-    public function getModel(): Model
-    {
-        return $this->model;
-    }
+    abstract public function model(): string;
 
     /**
      * Reset the model instance.
@@ -126,6 +128,16 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     public function resetModel(): void
     {
         $this->makeModel();
+    }
+
+    /**
+     * Get the model instance.
+     *
+     * @return \Illuminate\Database\Eloquent\Model
+     */
+    public function getModel(): Model
+    {
+        return $this->model;
     }
 
     /**
@@ -303,18 +315,6 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     }
 
     /**
-     * Reset the scopes.
-     *
-     * @return static
-     */
-    public function resetScopes(): static
-    {
-        $this->scopes = [];
-
-        return $this;
-    }
-
-    /**
      * Boot the repository instance.
      *
      * This is a useful method for setting immediate properties when extending
@@ -374,6 +374,33 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     }
 
     /**
+     * Reset the various transient values and return the result.
+     *
+     * @param  mixed  $result
+     * @return mixed
+     */
+    protected function resetAndReturn(mixed $result): mixed
+    {
+        $this->resetTransientCriteria();
+        $this->resetScopes();
+        $this->resetModel();
+
+        return $result;
+    }
+
+    /**
+     * Clears all transient criteria.
+     *
+     * @return static
+     */
+    private function resetTransientCriteria(): static
+    {
+        $this->transientCriteria = collect();
+
+        return $this;
+    }
+
+    /**
      * Sanitize the given array of criteria to ensure they are valid criteria
      * instances.
      *
@@ -395,32 +422,5 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
         $this->persistentCriteria = collect();
 
         return $this;
-    }
-
-    /**
-     * Clears all transient criteria.
-     *
-     * @return static
-     */
-    private function resetTransientCriteria(): static
-    {
-        $this->transientCriteria = collect();
-
-        return $this;
-    }
-
-    /**
-     * Reset the various transient values and return the result.
-     *
-     * @param  mixed  $result
-     * @return mixed
-     */
-    private function resetAndReturn(mixed $result): mixed
-    {
-        $this->resetTransientCriteria();
-        $this->resetScopes();
-        $this->resetModel();
-
-        return $result;
     }
 }
