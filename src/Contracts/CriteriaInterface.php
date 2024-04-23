@@ -16,8 +16,8 @@ interface CriteriaInterface
     /**
      * Apply the criteria to the given model.
      *
-     * @param  \Illuminate\Database\Eloquent\Model  $model
+     * @param  \Illuminate\Database\Eloquent\Model|\Illuminate\Contracts\Database\Eloquent\Builder  $model
      * @return \Illuminate\Contracts\Database\Eloquent\Builder
      */
-    public function apply(Model $model): Builder;
+    public function apply(Model|Builder $model): Builder;
 }
