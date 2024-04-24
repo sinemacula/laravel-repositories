@@ -3,6 +3,7 @@
 namespace SineMacula\Repositories;
 
 use Closure;
+use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
@@ -19,8 +20,8 @@ use SineMacula\Repositories\Exceptions\RepositoryException;
  */
 abstract class Repository implements RepositoryInterface, RepositoryCriteriaInterface
 {
-    /** @var \Illuminate\Database\Eloquent\Model The model instance */
-    protected Model $model;
+    /** @var \Illuminate\Database\Eloquent\Model|\Illuminate\Contracts\Database\Eloquent\Builder The model instance */
+    protected Model|Builder $model;
 
     /** @var \Illuminate\Support\Collection The persistent criteria */
     protected Collection $persistentCriteria;
