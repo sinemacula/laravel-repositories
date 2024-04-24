@@ -1,9 +1,11 @@
 # Laravel Repositories
 
+[![Latest Stable Version](http://poser.pugx.org/sinemacula/laravel-repositories/v)](https://packagist.org/packages/sinemacula/laravel-repositories)
 [![Build Status](https://github.com/sinemacula/laravel-repositories/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/sinemacula/laravel-repositories/actions/workflows/tests.yml)
 [![StyleCI](https://github.styleci.io/repos/787662248/shield?style=flat&branch=master)](https://github.styleci.io/repos/787662248)
 [![Maintainability](https://api.codeclimate.com/v1/badges/d7efec236c6db6d92f2d/maintainability)](https://codeclimate.com/github/sinemacula/laravel-repositories/maintainability)
 [![Test Coverage](https://api.codeclimate.com/v1/badges/d7efec236c6db6d92f2d/test_coverage)](https://codeclimate.com/github/sinemacula/laravel-repositories/test_coverage)
+[![Total Downloads](http://poser.pugx.org/sinemacula/laravel-repositories/downloads)](https://packagist.org/packages/sinemacula/laravel-repositories)
 
 This Laravel package offers a streamlined repository pattern implementation with criteria-based query filtering,
 optimized for elegant and efficient manipulation of Eloquent models. It simplifies the robust capabilities of the
