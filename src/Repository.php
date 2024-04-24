@@ -56,6 +56,35 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     }
 
     /**
+     * Trigger a static method call on the repository.
+     *
+     * @param  string  $method
+     * @param  array  $arguments
+     * @return mixed
+     */
+    public static function __callStatic(string $method, array $arguments): mixed
+    {
+        return call_user_func_array([new static, $method], ...$arguments);
+    }
+
+    /**
+     * Forward method calls to the model
+     *
+     * @param  string  $method
+     * @param  array  $arguments
+     * @return mixed
+     */
+    public function __call(string $method, array $arguments): mixed
+    {
+        $this->applyCriteria();
+        $this->applyScopes();
+
+        $result = call_user_func_array([$this->model, $method], ...$arguments);
+
+        return $this->resetAndReturn($result);
+    }
+
+    /**
      * Reset the scopes.
      *
      * @return static
@@ -86,126 +115,11 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     }
 
     /**
-     * Boot the repository instance.
-     *
-     * This is a useful method for setting immediate properties when extending
-     * the base repository class.
-     *
-     * @return void
-     */
-    protected function boot(): void {}
-
-    /**
      * Return the model class
      *
      * @return class-string
      */
     abstract public function model(): string;
-
-    /**
-     * Trigger a static method call on the repository.
-     *
-     * @param  string  $method
-     * @param  array   $arguments
-     * @return mixed
-     */
-    public static function __callStatic(string $method, array $arguments): mixed
-    {
-        return call_user_func_array([new static, $method], ...$arguments);
-    }
-
-    /**
-     * Forward method calls to the model
-     *
-     * @param  string  $method
-     * @param  array   $arguments
-     * @return mixed
-     */
-    public function __call(string $method, array $arguments): mixed
-    {
-        $this->applyCriteria();
-        $this->applyScopes();
-
-        $result = call_user_func_array([$this->model, $method], ...$arguments);
-
-        return $this->resetAndReturn($result);
-    }
-
-    /**
-     * Apply the criteria to the current query.
-     *
-     * @return static
-     */
-    protected function applyCriteria(): static
-    {
-        if ($this->skipCriteria) {
-
-            $this->skipCriteria = false;
-            $this->resetTransientCriteria();
-
-            return $this;
-        }
-
-        if ($this->transientCriteria->isNotEmpty()) {
-
-            foreach ($this->transientCriteria as $criterion) {
-                $this->model = $criterion->apply($this->model);
-            }
-
-            $this->resetTransientCriteria();
-        }
-
-        if (!$this->disableCriteria && $this->persistentCriteria->isNotEmpty()) {
-            foreach ($this->persistentCriteria as $criterion) {
-                $this->model = $criterion->apply($this->model);
-            }
-        }
-
-        return $this;
-    }
-
-    /**
-     * Apply all accumulated scopes to the model.
-     *
-     * @return static
-     */
-    protected function applyScopes(): static
-    {
-        foreach ($this->scopes as $scope) {
-            if (is_callable($scope)) {
-                $this->model = $scope($this->model);
-            }
-        }
-
-        return $this;
-    }
-
-    /**
-     * Reset the various transient values and return the result.
-     *
-     * @param  mixed  $result
-     * @return mixed
-     */
-    protected function resetAndReturn(mixed $result): mixed
-    {
-        $this->resetTransientCriteria();
-        $this->resetScopes();
-        $this->resetModel();
-
-        return $result;
-    }
-
-    /**
-     * Clears all transient criteria.
-     *
-     * @return static
-     */
-    private function resetTransientCriteria(): static
-    {
-        $this->transientCriteria = collect();
-
-        return $this;
-    }
 
     /**
      * Reset the model instance.
@@ -389,18 +303,6 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     }
 
     /**
-     * Sanitize the given array of criteria to ensure they are valid criteria
-     * instances.
-     *
-     * @param  array  $criteria
-     * @return array
-     */
-    private function sanitizeCriteria(array $criteria): array
-    {
-        return array_filter($criteria, fn ($criterion) => $criterion instanceof CriteriaInterface);
-    }
-
-    /**
      * Add a new scope.
      *
      * @param  \Closure  $scope
@@ -411,6 +313,104 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
         $this->scopes[] = $scope;
 
         return $this;
+    }
+
+    /**
+     * Boot the repository instance.
+     *
+     * This is a useful method for setting immediate properties when extending
+     * the base repository class.
+     *
+     * @return void
+     */
+    protected function boot(): void {}
+
+    /**
+     * Apply the criteria to the current query.
+     *
+     * @return static
+     */
+    protected function applyCriteria(): static
+    {
+        if ($this->skipCriteria) {
+
+            $this->skipCriteria = false;
+            $this->resetTransientCriteria();
+
+            return $this;
+        }
+
+        if ($this->transientCriteria->isNotEmpty()) {
+
+            foreach ($this->transientCriteria as $criterion) {
+                $this->model = $criterion->apply($this->model);
+            }
+
+            $this->resetTransientCriteria();
+        }
+
+        if (!$this->disableCriteria && $this->persistentCriteria->isNotEmpty()) {
+            foreach ($this->persistentCriteria as $criterion) {
+                $this->model = $criterion->apply($this->model);
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * Apply all accumulated scopes to the model.
+     *
+     * @return static
+     */
+    protected function applyScopes(): static
+    {
+        foreach ($this->scopes as $scope) {
+            if (is_callable($scope)) {
+                $this->model = $scope($this->model);
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * Reset the various transient values and return the result.
+     *
+     * @param  mixed  $result
+     * @return mixed
+     */
+    protected function resetAndReturn(mixed $result): mixed
+    {
+        $this->resetTransientCriteria();
+        $this->resetScopes();
+        $this->resetModel();
+
+        return $result;
+    }
+
+    /**
+     * Clears all transient criteria.
+     *
+     * @return static
+     */
+    private function resetTransientCriteria(): static
+    {
+        $this->transientCriteria = collect();
+
+        return $this;
+    }
+
+    /**
+     * Sanitize the given array of criteria to ensure they are valid criteria
+     * instances.
+     *
+     * @param  array  $criteria
+     * @return array
+     */
+    private function sanitizeCriteria(array $criteria): array
+    {
+        return array_filter($criteria, fn ($criterion) => $criterion instanceof CriteriaInterface);
     }
 
     /**
