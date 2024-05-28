@@ -64,7 +64,7 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
      */
     public static function __callStatic(string $method, array $arguments): mixed
     {
-        return call_user_func_array([new static, $method], ...$arguments);
+        return call_user_func_array([new static, $method], $arguments);
     }
 
     /**
@@ -79,7 +79,7 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
         $this->applyCriteria();
         $this->applyScopes();
 
-        $result = call_user_func_array([$this->model, $method], ...$arguments);
+        $result = call_user_func_array([$this->model, $method], $arguments);
 
         return $this->resetAndReturn($result);
     }
