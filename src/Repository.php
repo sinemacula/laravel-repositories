@@ -367,7 +367,7 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     {
         foreach ($this->scopes as $scope) {
             if (is_callable($scope)) {
-                $this->model = $scope($this->model);
+                $scope($this->model);
             }
         }
 
