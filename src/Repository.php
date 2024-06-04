@@ -17,6 +17,8 @@ use SineMacula\Repositories\Exceptions\RepositoryException;
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2024 Sine Macula Limited.
+ *
+ * @mixin \Illuminate\Contracts\Database\Eloquent\Builder
  */
 abstract class Repository implements RepositoryInterface, RepositoryCriteriaInterface
 {
