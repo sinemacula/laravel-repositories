@@ -368,6 +368,11 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     protected function applyScopes(): static
     {
         foreach ($this->scopes as $scope) {
+
+            if (!$this->model instanceof Builder) {
+                $this->model = $this->model->newQuery();
+            }
+
             if (is_callable($scope)) {
                 $scope($this->model);
             }
