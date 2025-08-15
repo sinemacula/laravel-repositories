@@ -11,4 +11,5 @@ use Exception;
  * @copyright   2024 Sine Macula Limited.
  */
 class RepositoryException extends Exception
-{ }
+{
+}

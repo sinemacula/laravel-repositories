@@ -2,9 +2,8 @@
 
 [![Latest Stable Version](https://img.shields.io/packagist/v/sinemacula/laravel-repositories.svg)](https://packagist.org/packages/sinemacula/laravel-repositories)
 [![Build Status](https://github.com/sinemacula/laravel-repositories/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/sinemacula/laravel-repositories/actions/workflows/tests.yml)
-[![StyleCI](https://github.styleci.io/repos/787662248/shield?style=flat&branch=master)](https://github.styleci.io/repos/787662248)
-[![Maintainability](https://api.codeclimate.com/v1/badges/d7efec236c6db6d92f2d/maintainability)](https://codeclimate.com/github/sinemacula/laravel-repositories/maintainability)
-[![Test Coverage](https://api.codeclimate.com/v1/badges/d7efec236c6db6d92f2d/test_coverage)](https://codeclimate.com/github/sinemacula/laravel-repositories/test_coverage)
+[![Maintainability](https://qlty.sh/gh/sinemacula/projects/laravel-repositories/maintainability.svg)](https://qlty.sh/gh/sinemacula/projects/laravel-repositories)
+[![Code Coverage](https://qlty.sh/gh/sinemacula/projects/laravel-repositories/coverage.svg)](https://qlty.sh/gh/sinemacula/projects/laravel-repositories)
 [![Total Downloads](https://img.shields.io/packagist/dt/sinemacula/laravel-repositories.svg)](https://packagist.org/packages/sinemacula/laravel-repositories)
 
 This Laravel package offers a streamlined repository pattern implementation with criteria-based query filtering,
@@ -32,16 +31,6 @@ To install the Laravel API Repositories package, run the following command in yo
 ```bash
 composer require sinemacula/laravel-repositories
 ```
-
-## Configuration
-
-After installation, publish the package configuration to customize it according to your needs:
-
-```bash
-php artisan vendor:publish --provider="SineMacula\Repositories\RepositoryServiceProvider"
-```
-
-This command publishes the package configuration file to your application's config directory.
 
 ## Usage
 
