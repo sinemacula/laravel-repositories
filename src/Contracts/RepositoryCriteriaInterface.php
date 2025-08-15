@@ -19,10 +19,10 @@ interface RepositoryCriteriaInterface
      * next operation involving data retrieval or manipulation and then
      * automatically discarded.
      *
-     * @param  \SineMacula\Repositories\Contracts\CriteriaInterface|array  $criteria
+     * @param  array|\SineMacula\Repositories\Contracts\CriteriaInterface  $criteria
      * @return static
      */
-    public function withCriteria(CriteriaInterface|array $criteria): static;
+    public function withCriteria(array|CriteriaInterface $criteria): static;
 
     /**
      * Persistently applies specified criteria to all requests.
@@ -30,10 +30,10 @@ interface RepositoryCriteriaInterface
      * Add criteria that will be applied to all future operations until
      * explicitly removed or the repository is reset.
      *
-     * @param  \SineMacula\Repositories\Contracts\CriteriaInterface|array  $criteria
+     * @param  array|\SineMacula\Repositories\Contracts\CriteriaInterface  $criteria
      * @return static
      */
-    public function pushCriteria(CriteriaInterface|array $criteria): static;
+    public function pushCriteria(array|CriteriaInterface $criteria): static;
 
     /**
      * Removes specified criteria from the repository.
@@ -42,10 +42,10 @@ interface RepositoryCriteriaInterface
      * requests or just for the next request. It affects both persistent and
      * transient criteria settings.
      *
-     * @param  \SineMacula\Repositories\Contracts\CriteriaInterface|array|string  $criteria
+     * @param  array|\SineMacula\Repositories\Contracts\CriteriaInterface|string  $criteria
      * @return static
      */
-    public function removeCriteria(CriteriaInterface|array|string $criteria): static;
+    public function removeCriteria(array|CriteriaInterface|string $criteria): static;
 
     /**
      * Retrieves a collection of all active criteria that will be applied in the

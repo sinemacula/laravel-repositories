@@ -20,10 +20,10 @@ use SineMacula\Repositories\Exceptions\RepositoryException;
  *
  * @mixin \Illuminate\Contracts\Database\Eloquent\Builder
  */
-abstract class Repository implements RepositoryInterface, RepositoryCriteriaInterface
+abstract class Repository implements RepositoryCriteriaInterface, RepositoryInterface
 {
-    /** @var \Illuminate\Database\Eloquent\Model|\Illuminate\Contracts\Database\Eloquent\Builder The model instance */
-    protected Model|Builder $model;
+    /** @var \Illuminate\Contracts\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Model The model instance */
+    protected Builder|Model $model;
 
     /** @var \Illuminate\Support\Collection The persistent criteria */
     protected Collection $persistentCriteria;
@@ -70,7 +70,7 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     }
 
     /**
-     * Forward method calls to the model
+     * Forward method calls to the model.
      *
      * @param  string  $method
      * @param  array  $arguments
@@ -103,7 +103,7 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
      *
      * @return \Illuminate\Database\Eloquent\Model
      *
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException|\Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException|\SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function makeModel(): Model
     {
@@ -117,7 +117,7 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     }
 
     /**
-     * Return the model class
+     * Return the model class.
      *
      * @return class-string
      */
@@ -150,10 +150,10 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
      * next operation involving data retrieval or manipulation and then
      * automatically discarded.
      *
-     * @param  \SineMacula\Repositories\Contracts\CriteriaInterface|array  $criteria
+     * @param  array|\SineMacula\Repositories\Contracts\CriteriaInterface  $criteria
      * @return static
      */
-    public function withCriteria(CriteriaInterface|array $criteria): static
+    public function withCriteria(array|CriteriaInterface $criteria): static
     {
         $criteria = is_array($criteria) ? $criteria : [$criteria];
 
@@ -186,10 +186,10 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
      * Add criteria that will be applied to all future operations until
      * explicitly removed or the repository is reset.
      *
-     * @param  \SineMacula\Repositories\Contracts\CriteriaInterface|array  $criteria
+     * @param  array|\SineMacula\Repositories\Contracts\CriteriaInterface  $criteria
      * @return static
      */
-    public function pushCriteria(CriteriaInterface|array $criteria): static
+    public function pushCriteria(array|CriteriaInterface $criteria): static
     {
         $criteria = is_array($criteria) ? $criteria : [$criteria];
 
@@ -205,10 +205,10 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
      * requests or just for the next request. It affects both persistent and
      * transient criteria settings.
      *
-     * @param  \SineMacula\Repositories\Contracts\CriteriaInterface|array|string  $criteria
+     * @param  array|\SineMacula\Repositories\Contracts\CriteriaInterface|string  $criteria
      * @return static
      */
-    public function removeCriteria(CriteriaInterface|array|string $criteria): static
+    public function removeCriteria(array|CriteriaInterface|string $criteria): static
     {
         $criteria = is_array($criteria) ? $criteria : [$criteria];
 
@@ -217,7 +217,7 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
             foreach ($criteria as $criterion) {
                 if (
                     (is_object($criterion) && $persisted instanceof $criterion)
-                    || get_class($persisted) === $criterion
+                    || $persisted::class === $criterion
                 ) {
                     return true;
                 }
@@ -307,7 +307,7 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     /**
      * Add a new scope.
      *
-     * @param  \Closure  $scope
+     * @param  Closure  $scope
      * @return static
      */
     public function addScope(Closure $scope): static
