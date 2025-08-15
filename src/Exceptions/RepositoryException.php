@@ -10,4 +10,6 @@ use Exception;
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2024 Sine Macula Limited.
  */
-class RepositoryException extends Exception {}
+class RepositoryException extends Exception
+{
+}
