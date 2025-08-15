@@ -32,16 +32,6 @@ To install the Laravel API Repositories package, run the following command in yo
 composer require sinemacula/laravel-repositories
 ```
 
-## Configuration
-
-After installation, publish the package configuration to customize it according to your needs:
-
-```bash
-php artisan vendor:publish --provider="SineMacula\Repositories\RepositoryServiceProvider"
-```
-
-This command publishes the package configuration file to your application's config directory.
-
 ## Usage
 
 Coming soon...
