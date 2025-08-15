@@ -20,10 +20,10 @@ use SineMacula\Repositories\Exceptions\RepositoryException;
  *
  * @mixin \Illuminate\Contracts\Database\Eloquent\Builder
  */
-abstract class Repository implements RepositoryInterface, RepositoryCriteriaInterface
+abstract class Repository implements RepositoryCriteriaInterface, RepositoryInterface
 {
-    /** @var \Illuminate\Database\Eloquent\Model|\Illuminate\Contracts\Database\Eloquent\Builder The model instance */
-    protected Model|Builder $model;
+    /** @var \Illuminate\Contracts\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Model The model instance */
+    protected Builder|Model $model;
 
     /** @var \Illuminate\Support\Collection The persistent criteria */
     protected Collection $persistentCriteria;
@@ -43,13 +43,12 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     /**
      * Constructor.
      *
-     * @param  \Illuminate\Contracts\Foundation\Application  $app
+     * @param \Illuminate\Contracts\Foundation\Application $app
      */
     public function __construct(
 
         /** The Laravel application instance */
         protected readonly Application $app
-
     ) {
         $this->resetCriteria();
         $this->resetScopes();
@@ -60,20 +59,22 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     /**
      * Trigger a static method call on the repository.
      *
-     * @param  string  $method
-     * @param  array  $arguments
+     * @param string $method
+     * @param array  $arguments
+     *
      * @return mixed
      */
     public static function __callStatic(string $method, array $arguments): mixed
     {
-        return call_user_func_array([new static, $method], $arguments);
+        return call_user_func_array([new static(), $method], $arguments);
     }
 
     /**
-     * Forward method calls to the model
+     * Forward method calls to the model.
      *
-     * @param  string  $method
-     * @param  array  $arguments
+     * @param string $method
+     * @param array  $arguments
+     *
      * @return mixed
      */
     public function __call(string $method, array $arguments): mixed
@@ -101,9 +102,9 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     /**
      * Create a new model instance.
      *
-     * @return \Illuminate\Database\Eloquent\Model
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException|\SineMacula\Repositories\Exceptions\RepositoryException
      *
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException|\Illuminate\Contracts\Container\BindingResolutionException
+     * @return \Illuminate\Database\Eloquent\Model
      */
     public function makeModel(): Model
     {
@@ -117,7 +118,7 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     }
 
     /**
-     * Return the model class
+     * Return the model class.
      *
      * @return class-string
      */
@@ -150,10 +151,11 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
      * next operation involving data retrieval or manipulation and then
      * automatically discarded.
      *
-     * @param  \SineMacula\Repositories\Contracts\CriteriaInterface|array  $criteria
+     * @param array|\SineMacula\Repositories\Contracts\CriteriaInterface $criteria
+     *
      * @return static
      */
-    public function withCriteria(CriteriaInterface|array $criteria): static
+    public function withCriteria(array|CriteriaInterface $criteria): static
     {
         $criteria = is_array($criteria) ? $criteria : [$criteria];
 
@@ -186,10 +188,11 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
      * Add criteria that will be applied to all future operations until
      * explicitly removed or the repository is reset.
      *
-     * @param  \SineMacula\Repositories\Contracts\CriteriaInterface|array  $criteria
+     * @param array|\SineMacula\Repositories\Contracts\CriteriaInterface $criteria
+     *
      * @return static
      */
-    public function pushCriteria(CriteriaInterface|array $criteria): static
+    public function pushCriteria(array|CriteriaInterface $criteria): static
     {
         $criteria = is_array($criteria) ? $criteria : [$criteria];
 
@@ -205,19 +208,19 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
      * requests or just for the next request. It affects both persistent and
      * transient criteria settings.
      *
-     * @param  \SineMacula\Repositories\Contracts\CriteriaInterface|array|string  $criteria
+     * @param array|\SineMacula\Repositories\Contracts\CriteriaInterface|string $criteria
+     *
      * @return static
      */
-    public function removeCriteria(CriteriaInterface|array|string $criteria): static
+    public function removeCriteria(array|CriteriaInterface|string $criteria): static
     {
         $criteria = is_array($criteria) ? $criteria : [$criteria];
 
         $this->persistentCriteria = $this->persistentCriteria->reject(function ($persisted) use ($criteria) {
-
             foreach ($criteria as $criterion) {
                 if (
                     (is_object($criterion) && $persisted instanceof $criterion)
-                    || get_class($persisted) === $criterion
+                    || $persisted::class === $criterion
                 ) {
                     return true;
                 }
@@ -307,7 +310,8 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     /**
      * Add a new scope.
      *
-     * @param  \Closure  $scope
+     * @param Closure $scope
+     *
      * @return static
      */
     public function addScope(Closure $scope): static
@@ -325,7 +329,9 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
      *
      * @return void
      */
-    protected function boot(): void {}
+    protected function boot(): void
+    {
+    }
 
     /**
      * Apply the criteria to the current query.
@@ -335,7 +341,6 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     protected function applyCriteria(): static
     {
         if ($this->skipCriteria) {
-
             $this->skipCriteria = false;
             $this->resetTransientCriteria();
 
@@ -343,7 +348,6 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
         }
 
         if ($this->transientCriteria->isNotEmpty()) {
-
             foreach ($this->transientCriteria as $criterion) {
                 $this->model = $criterion->apply($this->model);
             }
@@ -368,7 +372,6 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     protected function applyScopes(): static
     {
         foreach ($this->scopes as $scope) {
-
             if (!$this->model instanceof Builder) {
                 $this->model = $this->model->newQuery();
             }
@@ -384,7 +387,8 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
     /**
      * Reset the various transient values and return the result.
      *
-     * @param  mixed  $result
+     * @param mixed $result
+     *
      * @return mixed
      */
     protected function resetAndReturn(mixed $result): mixed
@@ -412,7 +416,8 @@ abstract class Repository implements RepositoryInterface, RepositoryCriteriaInte
      * Sanitize the given array of criteria to ensure they are valid criteria
      * instances.
      *
-     * @param  array  $criteria
+     * @param array $criteria
+     *
      * @return array
      */
     private function sanitizeCriteria(array $criteria): array

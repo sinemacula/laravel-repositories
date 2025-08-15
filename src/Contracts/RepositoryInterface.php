@@ -10,5 +10,4 @@ namespace SineMacula\Repositories\Contracts;
  */
 interface RepositoryInterface
 {
-    //
 }
