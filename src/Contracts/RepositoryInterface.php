@@ -8,4 +8,6 @@ namespace SineMacula\Repositories\Contracts;
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2024 Sine Macula Limited.
  */
-interface RepositoryInterface {}
+interface RepositoryInterface
+{
+}

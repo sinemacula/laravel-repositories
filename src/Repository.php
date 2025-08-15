@@ -43,7 +43,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     /**
      * Constructor.
      *
-     * @param  \Illuminate\Contracts\Foundation\Application  $app
+     * @param \Illuminate\Contracts\Foundation\Application $app
      */
     public function __construct(
 
@@ -59,20 +59,22 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     /**
      * Trigger a static method call on the repository.
      *
-     * @param  string  $method
-     * @param  array  $arguments
+     * @param string $method
+     * @param array  $arguments
+     *
      * @return mixed
      */
     public static function __callStatic(string $method, array $arguments): mixed
     {
-        return call_user_func_array([new static, $method], $arguments);
+        return call_user_func_array([new static(), $method], $arguments);
     }
 
     /**
      * Forward method calls to the model.
      *
-     * @param  string  $method
-     * @param  array  $arguments
+     * @param string $method
+     * @param array  $arguments
+     *
      * @return mixed
      */
     public function __call(string $method, array $arguments): mixed
@@ -100,9 +102,9 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     /**
      * Create a new model instance.
      *
-     * @return \Illuminate\Database\Eloquent\Model
-     *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException|\SineMacula\Repositories\Exceptions\RepositoryException
+     *
+     * @return \Illuminate\Database\Eloquent\Model
      */
     public function makeModel(): Model
     {
@@ -149,7 +151,8 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * next operation involving data retrieval or manipulation and then
      * automatically discarded.
      *
-     * @param  array|\SineMacula\Repositories\Contracts\CriteriaInterface  $criteria
+     * @param array|\SineMacula\Repositories\Contracts\CriteriaInterface $criteria
+     *
      * @return static
      */
     public function withCriteria(array|CriteriaInterface $criteria): static
@@ -185,7 +188,8 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * Add criteria that will be applied to all future operations until
      * explicitly removed or the repository is reset.
      *
-     * @param  array|\SineMacula\Repositories\Contracts\CriteriaInterface  $criteria
+     * @param array|\SineMacula\Repositories\Contracts\CriteriaInterface $criteria
+     *
      * @return static
      */
     public function pushCriteria(array|CriteriaInterface $criteria): static
@@ -204,7 +208,8 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * requests or just for the next request. It affects both persistent and
      * transient criteria settings.
      *
-     * @param  array|\SineMacula\Repositories\Contracts\CriteriaInterface|string  $criteria
+     * @param array|\SineMacula\Repositories\Contracts\CriteriaInterface|string $criteria
+     *
      * @return static
      */
     public function removeCriteria(array|CriteriaInterface|string $criteria): static
@@ -305,7 +310,8 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     /**
      * Add a new scope.
      *
-     * @param  Closure  $scope
+     * @param Closure $scope
+     *
      * @return static
      */
     public function addScope(Closure $scope): static
@@ -323,7 +329,9 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      *
      * @return void
      */
-    protected function boot(): void {}
+    protected function boot(): void
+    {
+    }
 
     /**
      * Apply the criteria to the current query.
@@ -379,7 +387,8 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     /**
      * Reset the various transient values and return the result.
      *
-     * @param  mixed  $result
+     * @param mixed $result
+     *
      * @return mixed
      */
     protected function resetAndReturn(mixed $result): mixed
@@ -407,7 +416,8 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * Sanitize the given array of criteria to ensure they are valid criteria
      * instances.
      *
-     * @param  array  $criteria
+     * @param array $criteria
+     *
      * @return array
      */
     private function sanitizeCriteria(array $criteria): array
