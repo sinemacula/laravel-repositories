@@ -82,8 +82,11 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
         $this->applyCriteria();
         $this->applyScopes();
 
+        // Always ensure we have a fresh query builder by calling makeModel()->newQuery()
+        // This handles the case where Model::clearBootedModels() was called and ensures
+        // all global scopes (like SoftDeletes) are properly registered.
         if (!$this->model instanceof Builder) {
-            $this->model = $this->model->newQuery();
+            $this->model = $this->makeModel()->newQuery();
         }
 
         $result = call_user_func_array([$this->model, $method], $arguments);
@@ -441,3 +444,4 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
         return $this;
     }
 }
+
