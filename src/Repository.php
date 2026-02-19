@@ -81,8 +81,8 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     {
         $this->applyCriteria();
         $this->applyScopes();
-		
-		if (!$this->model instanceof Builder) {
+
+        if (!$this->model instanceof Builder) {
             $this->model = $this->model->newQuery();
         }
 
