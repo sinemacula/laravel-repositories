@@ -13,7 +13,12 @@ use SineMacula\Repositories\Contracts\RepositoryInterface;
 use SineMacula\Repositories\Exceptions\RepositoryException;
 
 /**
- * The base repository.
+ * Core Eloquent repository abstraction that coordinates model resolution,
+ * query composition, and repository state lifecycle.
+ *
+ * This class resolves the target model from Laravel's container, applies
+ * persistent/transient criteria and scopes to query builders, and forwards
+ * model-style calls while resetting transient state between operations.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.

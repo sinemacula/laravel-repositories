@@ -8,7 +8,8 @@ use Illuminate\Support\Collection;
 use SineMacula\Repositories\Contracts\CriteriaInterface;
 
 /**
- * Criteria lifecycle and application behavior for repositories.
+ * Shared criteria-state lifecycle for repositories, including persistent and
+ * transient criteria application with runtime control toggles.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
