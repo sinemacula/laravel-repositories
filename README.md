@@ -6,23 +6,22 @@
 [![Code Coverage](https://qlty.sh/gh/sinemacula/projects/laravel-repositories/coverage.svg)](https://qlty.sh/gh/sinemacula/projects/laravel-repositories)
 [![Total Downloads](https://img.shields.io/packagist/dt/sinemacula/laravel-repositories.svg)](https://packagist.org/packages/sinemacula/laravel-repositories)
 
-This Laravel package offers a streamlined repository pattern implementation with criteria-based query filtering,
-optimized for elegant and efficient manipulation of Eloquent models. It simplifies the robust capabilities of the
-original l5-repositories, focusing on the features most essential and frequently used, given that the l5-repositories
-project is no longer maintained.
+This Laravel package provides a streamlined repository pattern layer for Eloquent models with criteria-driven query
+composition. It keeps the parts of l5-repository that are most useful in modern Laravel applications while removing
+unnecessary abstraction and maintenance overhead.
 
-A big thanks to the creators of [andersao/l5-repository](https://github.com/andersao/l5-repository) for their pioneering
-work, which heavily inspired this project. Our package aims to continue in that spirit, tailored for today's Laravel
-applications.
+A big thanks to the creators of [andersao/l5-repository](https://github.com/andersao/l5-repository) for the original
+foundation this package builds on.
 
 ## Features
 
-- **Clean Model Architecture**: Implements the data repository pattern to abstract data logic away from the models,
-  ensuring that your models stay clean and focused solely on their intended functionalities.
-- **Flexible Data Retrieval**: Utilizes a robust system of criteria and scopes that allow for precise and flexible
-  retrieval of data, enabling developers to easily implement complex query logic without cluttering the model layer.
-- **Criteria-Based Filtering**: Offers the ability to dynamically add, remove, or modify query criteria on-the-fly,
-  providing powerful and reusable components for custom query construction.
+- **Repository Base Class**: A container-resolved repository abstraction with explicit model validation and lifecycle
+  reset behavior.
+- **Criteria Lifecycle Controls**: Persistent and one-shot criteria pipelines with runtime enable, disable, skip, and
+  reset controls.
+- **Scoped Query Mutation**: Per-query scope registration for concise query customization without polluting models.
+- **Model-Like Ergonomics**: Explicit query entrypoints (`query()` / `newQuery()`) plus magic forwarding for
+  model-style usage such as `Repository::find($id)`.
 
 ## Installation
 
@@ -34,17 +33,35 @@ composer require sinemacula/laravel-repositories
 
 ## Usage
 
-Coming soon...
+```php
+// Explicit query entrypoint
+$users = $userRepository->query()->where('active', true)->get();
+
+// Magic forwarding remains available for model-like usage
+$user = UserRepository::find($id);
+```
+
+### Container Lifecycle
+
+Repositories carry transient criteria and scope state while a query pipeline is being built. Register repositories as
+transient or scoped bindings (`bind` or `scoped`) rather than `singleton` to avoid state leakage across requests.
+
+## Testing
+
+```bash
+composer test
+composer test-coverage
+composer check
+```
 
 ## Contributing
 
-Contributions are welcome and will be fully credited. We accept contributions via pull requests on GitHub.
+Contributions are welcome via GitHub pull requests.
 
 ## Security
 
-If you discover any security related issues, please email instead of using the issue tracker.
+If you discover a security issue, please contact Sine Macula directly rather than opening a public issue.
 
 ## License
 
-The Laravel Repositories repository is open-sourced software licensed under
-the [Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0).
+Licensed under the [Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0).

@@ -2,33 +2,46 @@
 
 namespace SineMacula\Repositories;
 
-use Closure;
+use Illuminate\Container\Container;
 use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
-use SineMacula\Repositories\Contracts\CriteriaInterface;
+use SineMacula\Repositories\Concerns\ManagesCriteria;
 use SineMacula\Repositories\Contracts\RepositoryCriteriaInterface;
 use SineMacula\Repositories\Contracts\RepositoryInterface;
 use SineMacula\Repositories\Exceptions\RepositoryException;
 
 /**
- * The base repository.
+ * Core Eloquent repository abstraction that coordinates model resolution, query
+ * composition, and repository state lifecycle.
+ *
+ * This class resolves the target model from Laravel's container, applies
+ * persistent/transient criteria and scopes to query builders, and forwards
+ * model-style calls while resetting transient state between operations.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
- * @copyright   2024 Sine Macula Limited.
+ * @copyright   2026 Sine Macula Limited.
+ *
+ * @template TModel of \Illuminate\Database\Eloquent\Model
+ *
+ * @implements \SineMacula\Repositories\Contracts\RepositoryInterface<TModel>
+ * @implements \SineMacula\Repositories\Contracts\RepositoryCriteriaInterface<TModel>
  *
  * @mixin \Illuminate\Contracts\Database\Eloquent\Builder
  */
 abstract class Repository implements RepositoryCriteriaInterface, RepositoryInterface
 {
-    /** @var \Illuminate\Contracts\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Model The model instance */
-    protected Builder|Model $model;
+    /** @use \SineMacula\Repositories\Concerns\ManagesCriteria<TModel> */
+    use ManagesCriteria;
 
-    /** @var \Illuminate\Support\Collection The persistent criteria */
+    /** @var \Illuminate\Contracts\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Model|null The model instance */
+    protected Builder|Model|null $model = null;
+
+    /** @var \Illuminate\Support\Collection<int, \SineMacula\Repositories\Contracts\CriteriaInterface<TModel>> The persistent criteria */
     protected Collection $persistentCriteria;
 
-    /** @var \Illuminate\Support\Collection The transient criteria */
+    /** @var \Illuminate\Support\Collection<int, \SineMacula\Repositories\Contracts\CriteriaInterface<TModel>> The transient criteria */
     protected Collection $transientCriteria;
 
     /** @var bool Indicate whether criteria are enabled/disabled */
@@ -37,19 +50,25 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     /** @var bool Indicate whether criteria should be skipped */
     protected bool $skipCriteria = false;
 
-    /** @var array The scopes to be applied to the current query */
+    /** @var bool Indicate whether criteria should be force enabled for the next query */
+    protected bool $forceUseCriteria = false;
+
+    /** @var array<int, \Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void> The scopes to be applied to the current query */
     protected array $scopes = [];
 
     /**
      * Constructor.
      *
-     * @param \Illuminate\Contracts\Foundation\Application $app
+     * @param  \Illuminate\Contracts\Foundation\Application  $app
      */
     public function __construct(
 
         /** The Laravel application instance */
-        protected readonly Application $app
+        protected readonly Application $app,
+
     ) {
+        $this->persistentCriteria = new Collection;
+        $this->transientCriteria  = new Collection;
         $this->resetCriteria();
         $this->resetScopes();
         $this->makeModel();
@@ -59,37 +78,40 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     /**
      * Trigger a static method call on the repository.
      *
-     * @param string $method
-     * @param array  $arguments
-     *
+     * @param  string  $method
+     * @param  array<int, mixed>  $arguments
      * @return mixed
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public static function __callStatic(string $method, array $arguments): mixed
     {
-        return call_user_func_array([new static(), $method], $arguments);
+        $container = Container::getInstance();
+
+        if ($container instanceof Application) {
+
+            $instance = $container->make(static::class);
+
+            $callable = \Closure::fromCallable([$instance, $method]);
+
+            return $callable(...$arguments);
+        }
+
+        throw new RepositoryException(sprintf('Static repository calls require an initialized Laravel container for `%s`.', static::class));
     }
 
     /**
      * Forward method calls to the model.
      *
-     * @param string $method
-     * @param array  $arguments
-     *
+     * @param  string  $method
+     * @param  array<int, mixed>  $arguments
      * @return mixed
      */
     public function __call(string $method, array $arguments): mixed
     {
-        $this->applyCriteria();
-        $this->applyScopes();
-
-        // Always ensure we have a fresh query builder by calling makeModel()->newQuery()
-        // This handles the case where Model::clearBootedModels() was called and ensures
-        // all global scopes (like SoftDeletes) are properly registered.
-        if (!$this->model instanceof Builder) {
-            $this->model = $this->makeModel()->newQuery();
-        }
-
-        $result = call_user_func_array([$this->model, $method], $arguments);
+        $query    = $this->prepareQueryBuilder();
+        $callable = \Closure::fromCallable([$query, $method]);
+        $result   = $callable(...$arguments);
 
         return $this->resetAndReturn($result);
     }
@@ -99,6 +121,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      *
      * @return static
      */
+    #[\Override]
     public function resetScopes(): static
     {
         $this->scopes = [];
@@ -109,15 +132,16 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     /**
      * Create a new model instance.
      *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException|\SineMacula\Repositories\Exceptions\RepositoryException
-     *
      * @return \Illuminate\Database\Eloquent\Model
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException|\SineMacula\Repositories\Exceptions\RepositoryException
      */
+    #[\Override]
     public function makeModel(): Model
     {
         $model = $this->app->make($this->model());
 
-        if (!$model instanceof Model) {
+        if (!$this->isModelInstance($model)) {
             throw new RepositoryException("Class {$this->model()} must be an instance of Illuminate\\Database\\Eloquent\\Model");
         }
 
@@ -127,15 +151,44 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     /**
      * Return the model class.
      *
-     * @return class-string
+     * @return class-string<TModel>
      */
     abstract public function model(): string;
+
+    /**
+     * Alias for query().
+     *
+     * @return \Illuminate\Contracts\Database\Eloquent\Builder
+     */
+    #[\Override]
+    public function newQuery(): Builder
+    {
+        return $this->query();
+    }
+
+    /**
+     * Create a new query with active repository criteria and scopes applied.
+     *
+     * @return \Illuminate\Contracts\Database\Eloquent\Builder
+     */
+    #[\Override]
+    public function query(): Builder
+    {
+        $query = $this->prepareQueryBuilder();
+
+        $this->resetTransientCriteria();
+        $this->resetScopes();
+        $this->resetModel();
+
+        return $query;
+    }
 
     /**
      * Reset the model instance.
      *
      * @return void
      */
+    #[\Override]
     public function resetModel(): void
     {
         $this->makeModel();
@@ -146,182 +199,24 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      *
      * @return \Illuminate\Database\Eloquent\Model
      */
+    #[\Override]
     public function getModel(): Model
     {
+        if (!$this->model instanceof Model) {
+            return $this->makeModel();
+        }
+
         return $this->model;
-    }
-
-    /**
-     * Temporarily applies specified criteria to the next request only.
-     *
-     * This method allows you to specify criteria that are applied once to the
-     * next operation involving data retrieval or manipulation and then
-     * automatically discarded.
-     *
-     * @param array|\SineMacula\Repositories\Contracts\CriteriaInterface $criteria
-     *
-     * @return static
-     */
-    public function withCriteria(array|CriteriaInterface $criteria): static
-    {
-        $criteria = is_array($criteria) ? $criteria : [$criteria];
-
-        $this->transientCriteria = collect($this->sanitizeCriteria($criteria));
-
-        $this->useCriteria();
-
-        return $this;
-    }
-
-    /**
-     * Temporarily enables the application of criteria in queries.
-     *
-     * Use this method to temporarily override a `disableCriteria()` setting,
-     * allowing criteria to be applied just for the next query. This does not
-     * affect the permanent enabled/disabled state.
-     *
-     * @return static
-     */
-    public function useCriteria(): static
-    {
-        $this->skipCriteria = false;
-
-        return $this;
-    }
-
-    /**
-     * Persistently applies specified criteria to all requests.
-     *
-     * Add criteria that will be applied to all future operations until
-     * explicitly removed or the repository is reset.
-     *
-     * @param array|\SineMacula\Repositories\Contracts\CriteriaInterface $criteria
-     *
-     * @return static
-     */
-    public function pushCriteria(array|CriteriaInterface $criteria): static
-    {
-        $criteria = is_array($criteria) ? $criteria : [$criteria];
-
-        $this->persistentCriteria = $this->persistentCriteria->merge($this->sanitizeCriteria($criteria));
-
-        return $this;
-    }
-
-    /**
-     * Removes specified criteria from the repository.
-     *
-     * This method removes previously added criteria, either added for all
-     * requests or just for the next request. It affects both persistent and
-     * transient criteria settings.
-     *
-     * @param array|\SineMacula\Repositories\Contracts\CriteriaInterface|string $criteria
-     *
-     * @return static
-     */
-    public function removeCriteria(array|CriteriaInterface|string $criteria): static
-    {
-        $criteria = is_array($criteria) ? $criteria : [$criteria];
-
-        $this->persistentCriteria = $this->persistentCriteria->reject(function ($persisted) use ($criteria) {
-            foreach ($criteria as $criterion) {
-                if (
-                    (is_object($criterion) && $persisted instanceof $criterion)
-                    || $persisted::class === $criterion
-                ) {
-                    return true;
-                }
-            }
-
-            return false;
-        });
-
-        return $this;
-    }
-
-    /**
-     * Retrieves a collection of all active criteria that will be applied in the
-     * next query.
-     *
-     * @return \Illuminate\Support\Collection
-     */
-    public function getCriteria(): Collection
-    {
-        return $this->persistentCriteria->merge($this->transientCriteria);
-    }
-
-    /**
-     * Permanently enables the application of criteria in queries.
-     *
-     * This method ensures that criteria are applied to all queries going
-     * forward, until explicitly disabled. Note that `skipCriteria()` will
-     * override this on the next query.
-     *
-     * @return static
-     */
-    public function enableCriteria(): static
-    {
-        $this->disableCriteria = false;
-
-        return $this;
-    }
-
-    /**
-     * Permanently disables the application of criteria in queries.
-     *
-     * This method turns off the use of criteria in all future queries until
-     * criteria are explicitly re-enabled. Note that `useCriteria()` will
-     * override this on the next query.
-     *
-     * @return static
-     */
-    public function disableCriteria(): static
-    {
-        $this->disableCriteria = true;
-
-        return $this;
-    }
-
-    /**
-     * Temporarily disables the application of criteria in queries.
-     *
-     * Use this method to temporarily bypass all criteria for the next query,
-     * even if `enableCriteria()` has been called. This does not
-     * affect the permanent enabled/disabled state.
-     *
-     * @return static
-     */
-    public function skipCriteria(): static
-    {
-        $this->skipCriteria = true;
-
-        return $this;
-    }
-
-    /**
-     * Clears all criteria from the repository.
-     *
-     * This method resets the repository to its original state with no criteria
-     * applied.
-     *
-     * @return static
-     */
-    public function resetCriteria(): static
-    {
-        $this->resetPersistentCriteria()
-            ->resetTransientCriteria();
-
-        return $this;
     }
 
     /**
      * Add a new scope.
      *
-     * @param Closure $scope
-     *
+     * @param  \Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void  $scope
      * @return static
      */
-    public function addScope(Closure $scope): static
+    #[\Override]
+    public function addScope(\Closure $scope): static
     {
         $this->scopes[] = $scope;
 
@@ -336,39 +231,23 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      *
      * @return void
      */
-    protected function boot(): void
-    {
-    }
+    protected function boot(): void {}
 
     /**
-     * Apply the criteria to the current query.
+     * Prepare a query builder with criteria and scopes applied.
      *
-     * @return static
+     * @return \Illuminate\Contracts\Database\Eloquent\Builder
      */
-    protected function applyCriteria(): static
+    protected function prepareQueryBuilder(): Builder
     {
-        if ($this->skipCriteria) {
-            $this->skipCriteria = false;
-            $this->resetTransientCriteria();
+        $this->applyCriteria();
+        $this->applyScopes();
 
-            return $this;
+        if (!$this->model instanceof Builder) {
+            $this->model = $this->makeModel()->newQuery();
         }
 
-        if ($this->transientCriteria->isNotEmpty()) {
-            foreach ($this->transientCriteria as $criterion) {
-                $this->model = $criterion->apply($this->model);
-            }
-
-            $this->resetTransientCriteria();
-        }
-
-        if (!$this->disableCriteria && $this->persistentCriteria->isNotEmpty()) {
-            foreach ($this->persistentCriteria as $criterion) {
-                $this->model = $criterion->apply($this->model);
-            }
-        }
-
-        return $this;
+        return $this->model;
     }
 
     /**
@@ -378,14 +257,17 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      */
     protected function applyScopes(): static
     {
+        if (!$this->model instanceof Builder && !$this->model instanceof Model) {
+            $this->model = $this->makeModel();
+        }
+
         foreach ($this->scopes as $scope) {
+
             if (!$this->model instanceof Builder) {
-                $this->model = $this->model->newQuery();
+                $this->model = $this->makeModel()->newQuery();
             }
 
-            if (is_callable($scope)) {
-                $scope($this->model);
-            }
+            $scope($this->model);
         }
 
         return $this;
@@ -394,8 +276,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     /**
      * Reset the various transient values and return the result.
      *
-     * @param mixed $result
-     *
+     * @param  mixed  $result
      * @return mixed
      */
     protected function resetAndReturn(mixed $result): mixed
@@ -408,40 +289,13 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     }
 
     /**
-     * Clears all transient criteria.
+     * Determine whether the resolved value is a model instance.
      *
-     * @return static
+     * @param  mixed  $model
+     * @return bool
      */
-    private function resetTransientCriteria(): static
+    private function isModelInstance(mixed $model): bool
     {
-        $this->transientCriteria = collect();
-
-        return $this;
-    }
-
-    /**
-     * Sanitize the given array of criteria to ensure they are valid criteria
-     * instances.
-     *
-     * @param array $criteria
-     *
-     * @return array
-     */
-    private function sanitizeCriteria(array $criteria): array
-    {
-        return array_filter($criteria, fn ($criterion) => $criterion instanceof CriteriaInterface);
-    }
-
-    /**
-     * Clears all persistent criteria.
-     *
-     * @return static
-     */
-    private function resetPersistentCriteria(): static
-    {
-        $this->persistentCriteria = collect();
-
-        return $this;
+        return $model instanceof Model;
     }
 }
-
