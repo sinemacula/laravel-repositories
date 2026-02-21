@@ -32,7 +32,7 @@ trait ManagesCriteria
      * @param  array<int, TCriterion>|TCriterion  $criteria
      * @return static
      */
-    #[Override]
+    #[\Override]
     public function withCriteria(array|CriteriaInterface $criteria): static
     {
         $criteria = is_array($criteria) ? $criteria : [$criteria];
@@ -53,7 +53,7 @@ trait ManagesCriteria
      *
      * @return static
      */
-    #[Override]
+    #[\Override]
     public function useCriteria(): static
     {
         $this->skipCriteria     = false;
@@ -71,7 +71,7 @@ trait ManagesCriteria
      * @param  array<int, TCriterion>|TCriterion  $criteria
      * @return static
      */
-    #[Override]
+    #[\Override]
     public function pushCriteria(array|CriteriaInterface $criteria): static
     {
         $criteria = is_array($criteria) ? $criteria : [$criteria];
@@ -91,7 +91,7 @@ trait ManagesCriteria
      * @param  array<int, string|TCriterion>|string|TCriterion  $criteria
      * @return static
      */
-    #[Override]
+    #[\Override]
     public function removeCriteria(array|CriteriaInterface|string $criteria): static
     {
         $criteria = is_array($criteria) ? $criteria : [$criteria];
@@ -111,7 +111,7 @@ trait ManagesCriteria
      *
      * @return \Illuminate\Support\Collection<int, TCriterion>
      */
-    #[Override]
+    #[\Override]
     public function getCriteria(): Collection
     {
         return $this->persistentCriteria->merge($this->transientCriteria);
@@ -126,7 +126,7 @@ trait ManagesCriteria
      *
      * @return static
      */
-    #[Override]
+    #[\Override]
     public function enableCriteria(): static
     {
         $this->disableCriteria = false;
@@ -143,7 +143,7 @@ trait ManagesCriteria
      *
      * @return static
      */
-    #[Override]
+    #[\Override]
     public function disableCriteria(): static
     {
         $this->disableCriteria = true;
@@ -160,7 +160,7 @@ trait ManagesCriteria
      *
      * @return static
      */
-    #[Override]
+    #[\Override]
     public function skipCriteria(): static
     {
         $this->skipCriteria = true;
@@ -176,7 +176,7 @@ trait ManagesCriteria
      *
      * @return static
      */
-    #[Override]
+    #[\Override]
     public function resetCriteria(): static
     {
         $this->resetPersistentCriteria()
@@ -226,18 +226,6 @@ trait ManagesCriteria
     }
 
     /**
-     * Clears all transient criteria.
-     *
-     * @return static
-     */
-    private function resetTransientCriteria(): static
-    {
-        $this->transientCriteria = collect();
-
-        return $this;
-    }
-
-    /**
      * Sanitize the given array of criteria to ensure they are valid criteria
      * instances.
      *
@@ -272,6 +260,18 @@ trait ManagesCriteria
         }
 
         return false;
+    }
+
+    /**
+     * Clears all transient criteria.
+     *
+     * @return static
+     */
+    private function resetTransientCriteria(): static
+    {
+        $this->transientCriteria = collect();
+
+        return $this;
     }
 
     /**
