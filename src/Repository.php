@@ -13,8 +13,8 @@ use SineMacula\Repositories\Contracts\RepositoryInterface;
 use SineMacula\Repositories\Exceptions\RepositoryException;
 
 /**
- * Core Eloquent repository abstraction that coordinates model resolution,
- * query composition, and repository state lifecycle.
+ * Core Eloquent repository abstraction that coordinates model resolution, query
+ * composition, and repository state lifecycle.
  *
  * This class resolves the target model from Laravel's container, applies
  * persistent/transient criteria and scopes to query builders, and forwards
@@ -156,6 +156,34 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     abstract public function model(): string;
 
     /**
+     * Alias for query().
+     *
+     * @return \Illuminate\Contracts\Database\Eloquent\Builder
+     */
+    #[\Override]
+    public function newQuery(): Builder
+    {
+        return $this->query();
+    }
+
+    /**
+     * Create a new query with active repository criteria and scopes applied.
+     *
+     * @return \Illuminate\Contracts\Database\Eloquent\Builder
+     */
+    #[\Override]
+    public function query(): Builder
+    {
+        $query = $this->prepareQueryBuilder();
+
+        $this->resetTransientCriteria();
+        $this->resetScopes();
+        $this->resetModel();
+
+        return $query;
+    }
+
+    /**
      * Reset the model instance.
      *
      * @return void
@@ -196,34 +224,6 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     }
 
     /**
-     * Create a new query with active repository criteria and scopes applied.
-     *
-     * @return \Illuminate\Contracts\Database\Eloquent\Builder
-     */
-    #[\Override]
-    public function query(): Builder
-    {
-        $query = $this->prepareQueryBuilder();
-
-        $this->resetTransientCriteria();
-        $this->resetScopes();
-        $this->resetModel();
-
-        return $query;
-    }
-
-    /**
-     * Alias for query().
-     *
-     * @return \Illuminate\Contracts\Database\Eloquent\Builder
-     */
-    #[\Override]
-    public function newQuery(): Builder
-    {
-        return $this->query();
-    }
-
-    /**
      * Boot the repository instance.
      *
      * This is a useful method for setting immediate properties when extending
@@ -232,6 +232,23 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * @return void
      */
     protected function boot(): void {}
+
+    /**
+     * Prepare a query builder with criteria and scopes applied.
+     *
+     * @return \Illuminate\Contracts\Database\Eloquent\Builder
+     */
+    protected function prepareQueryBuilder(): Builder
+    {
+        $this->applyCriteria();
+        $this->applyScopes();
+
+        if (!$this->model instanceof Builder) {
+            $this->model = $this->makeModel()->newQuery();
+        }
+
+        return $this->model;
+    }
 
     /**
      * Apply all accumulated scopes to the model.
@@ -254,23 +271,6 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
         }
 
         return $this;
-    }
-
-    /**
-     * Prepare a query builder with criteria and scopes applied.
-     *
-     * @return \Illuminate\Contracts\Database\Eloquent\Builder
-     */
-    protected function prepareQueryBuilder(): Builder
-    {
-        $this->applyCriteria();
-        $this->applyScopes();
-
-        if (!$this->model instanceof Builder) {
-            $this->model = $this->makeModel()->newQuery();
-        }
-
-        return $this->model;
     }
 
     /**
