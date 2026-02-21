@@ -8,7 +8,7 @@ use Illuminate\Support\Collection;
  * Repository criteria interface.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
- * @copyright   2024 Sine Macula Limited.
+ * @copyright   2026 Sine Macula Limited.
  */
 interface RepositoryCriteriaInterface
 {
@@ -19,7 +19,7 @@ interface RepositoryCriteriaInterface
      * next operation involving data retrieval or manipulation and then
      * automatically discarded.
      *
-     * @param array|\SineMacula\Repositories\Contracts\CriteriaInterface $criteria
+     * @param  array|\SineMacula\Repositories\Contracts\CriteriaInterface  $criteria
      *
      * @return static
      */
@@ -31,7 +31,7 @@ interface RepositoryCriteriaInterface
      * Add criteria that will be applied to all future operations until
      * explicitly removed or the repository is reset.
      *
-     * @param array|\SineMacula\Repositories\Contracts\CriteriaInterface $criteria
+     * @param  array|\SineMacula\Repositories\Contracts\CriteriaInterface  $criteria
      *
      * @return static
      */
@@ -44,7 +44,7 @@ interface RepositoryCriteriaInterface
      * requests or just for the next request. It affects both persistent and
      * transient criteria settings.
      *
-     * @param array|\SineMacula\Repositories\Contracts\CriteriaInterface|string $criteria
+     * @param  array|\SineMacula\Repositories\Contracts\CriteriaInterface|string  $criteria
      *
      * @return static
      */

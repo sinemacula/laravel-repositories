@@ -9,7 +9,7 @@ use PHPUnit\Framework\TestCase;
  * Example unit test.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
- * @copyright   2024 Sine Macula Limited.
+ * @copyright   2026 Sine Macula Limited.
  *
  * @internal
  */
