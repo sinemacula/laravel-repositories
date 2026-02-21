@@ -34,17 +34,36 @@ composer require sinemacula/laravel-repositories
 
 ## Usage
 
-Coming soon...
+```php
+// Explicit query entrypoint
+$users = $userRepository->query()->where('active', true)->get();
+
+// Magic forwarding remains available for model-like usage
+$user = UserRepository::find($id);
+```
+
+### Container Lifecycle
+
+Repositories carry transient criteria and scope state during a query pipeline.
+Register repositories as transient/scoped bindings (`bind` or `scoped`) rather
+than `singleton` to avoid state leakage across requests.
+
+## Testing
+
+```bash
+composer test
+composer test-coverage
+composer check
+```
 
 ## Contributing
 
-Contributions are welcome and will be fully credited. We accept contributions via pull requests on GitHub.
+Contributions are welcome via GitHub pull requests.
 
 ## Security
 
-If you discover any security related issues, please email instead of using the issue tracker.
+If you discover a security issue, please contact Sine Macula directly rather than opening a public issue.
 
 ## License
 
-The Laravel Repositories repository is open-sourced software licensed under
-the [Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0).
+Licensed under the [Apache License, Version 2.0](https://www.apache.org/licenses/LICENSE-2.0).

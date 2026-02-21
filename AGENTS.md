@@ -2,50 +2,48 @@
 
 ## Project Overview
 
-Laravel Cached Crypt is Sine Macula's Laravel integration package for reducing repeated decryption overhead.
-It provides a Laravel-native encrypter replacement focused on hot-path decrypt performance while preserving Laravel's
-encryption contract.
+Laravel Repositories is Sine Macula's Laravel integration package for implementing the repository pattern over Eloquent
+models with criteria-driven query composition.
 
 Current implementation includes:
 
-- Service provider registration and package configuration publishing for cached-crypt settings
-- Provider registration parity with Laravel encryption setup, including serializable-closure security key registration
-- Crypt facade integration via encrypter swapping when the package is enabled
-- Drop-in defaults with memo-only optimization enabled out of the box
-- Decrypt override logic with memoization and optional persistent plaintext caching
-- TTL, epoch, and optional key-fingerprint namespacing for bounded and invalidatable persistence
-- Optional store selection, optional tags, and size guardrails for memo/persistent cache paths
-- Optional eligibility resolver hook and sampled metrics for observability and policy control
-- Fail-open handling for cache backend and resolver failures to preserve decrypt behavior
+- Abstract repository base class with Laravel container-backed model resolution
+- Criteria contracts for reusable query constraints applied to models/builders
+- Persistent and transient criteria pipelines with explicit lifecycle controls
+- Scope registration and application for per-query behavior customization
+- Model/query forwarding with reset semantics after repository operations
+- Explicit query entrypoints (`query()` / `newQuery()`) while preserving magic forwarding compatibility
+- Dedicated repository exception handling for invalid model configuration
+- Optional presenter contract for repository-layer presentation concerns
 - Comprehensive unit/integration coverage and repository quality tooling integration
 
 This repository is intended to remain:
 
 - Laravel-specific
-- Security-aware and operationally explicit
+- Eloquent repository-pattern focused
 - Minimal, maintainable, and explicit
 
 ## Namespace Structure
 
-- Root namespace: `SineMacula\CachedCrypt\`
-- Source: `src/` -> `SineMacula\CachedCrypt\`
+- Root namespace: `SineMacula\Repositories\`
+- Source: `src/` -> `SineMacula\Repositories\`
 - Tests: `tests/` -> `Tests\`
 
 ### Domain Scope
 
 The package currently centers around:
 
-- Service provider registration and container binding parity with Laravel encryption behavior
-- Encrypter resolution flow through Laravel's container and Crypt facade integration points
-- Cache-assisted decrypt behavior for repeated encrypted payload access paths
-- Memo-only default mode and optional plaintext persistence mode
-- Operational persistence controls via TTL, epoch invalidation, and optional key fingerprinting
-- Size guardrails for both in-process memoization and persistent plaintext caching
-- Optional tagging, resolver-based eligibility filtering, and sampled instrumentation
-- Compatibility behavior for Laravel cipher, key parsing, and previous-key fallback support
+- Base repository abstractions for Eloquent model interaction
+- Criteria application flow for persistent and one-shot query filtering
+- Runtime controls for enabling, disabling, skipping, and resetting criteria
+- Scoped query mutation support via callable scope registration
+- Container-driven model instantiation and validation safeguards
+- Stateful repository query lifecycle requiring transient/scoped container bindings for safe request isolation
+- Contracts for repository behavior, criteria components, and presentable resources
+- Compatibility with Laravel database and support component expectations
 
-This package is an integration layer. It must not become a generic key-management system, infrastructure provisioning
-tool, or a Laravel fork.
+This package is an integration layer. It must not become a generic ORM replacement, cross-framework data abstraction
+library, or an application business workflow engine.
 
 ## Agent Role and Responsibility
 
@@ -90,7 +88,7 @@ The agent is **not** responsible for:
 - Apply DDD principles where appropriate (entities, value objects, services)
 - Follow Clean Code and SOLID principles
 - Depend on interfaces, not implementations
-- Preserve Laravel-facing contracts and encryption compatibility
+- Preserve Laravel-facing contracts and repository compatibility
 - Use `readonly` classes where immutability is appropriate
 
 ## Mandatory Skill Coverage
@@ -204,7 +202,7 @@ Manual approval is required for:
 ## Tests & Quality
 
 - Use `composer test` (parallel PHPUnit via Paratest) for deterministic local checks
-- Test encrypter substitution, decrypt caching behavior, and encryption contract stability
+- Test criteria application, repository query behavior, and contract stability
 - If code is not easily testable, propose refactoring before adding tests
 
 ### Test Writing
@@ -223,9 +221,9 @@ Manual approval is required for:
   - `refactor/`
 - Branch names SHOULD include the GitHub issue number when available Format:
   `<type>/issue-<number>-short-hyphenated-description` Example:
-  `feature/issue-123-add-ttl-based-decrypt-cache`
+  `feature/issue-123-add-persistent-criteria-controls`
 - If no issue exists, use a concise, hyphenated description Format: `<type>/short-hyphenated-description` Example:
-  `refactor/simplify-encrypter-cache-key-generation`
+  `refactor/simplify-repository-criteria-application`
 - Keep names lowercase, concise, and hyphenated
 
 ## Commit Message Guidelines

@@ -9,6 +9,10 @@ use Illuminate\Support\Collection;
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
+ *
+ * @template TModel of \Illuminate\Database\Eloquent\Model
+ *
+ * @phpstan-type TCriterion \SineMacula\Repositories\Contracts\CriteriaInterface<TModel>
  */
 interface RepositoryCriteriaInterface
 {
@@ -19,8 +23,7 @@ interface RepositoryCriteriaInterface
      * next operation involving data retrieval or manipulation and then
      * automatically discarded.
      *
-     * @param  array|\SineMacula\Repositories\Contracts\CriteriaInterface  $criteria
-     *
+     * @param  array<int, TCriterion>|TCriterion  $criteria
      * @return static
      */
     public function withCriteria(array|CriteriaInterface $criteria): static;
@@ -31,8 +34,7 @@ interface RepositoryCriteriaInterface
      * Add criteria that will be applied to all future operations until
      * explicitly removed or the repository is reset.
      *
-     * @param  array|\SineMacula\Repositories\Contracts\CriteriaInterface  $criteria
-     *
+     * @param  array<int, TCriterion>|TCriterion  $criteria
      * @return static
      */
     public function pushCriteria(array|CriteriaInterface $criteria): static;
@@ -44,8 +46,7 @@ interface RepositoryCriteriaInterface
      * requests or just for the next request. It affects both persistent and
      * transient criteria settings.
      *
-     * @param  array|\SineMacula\Repositories\Contracts\CriteriaInterface|string  $criteria
-     *
+     * @param  array<int, string|TCriterion>|string|TCriterion  $criteria
      * @return static
      */
     public function removeCriteria(array|CriteriaInterface|string $criteria): static;
@@ -54,7 +55,7 @@ interface RepositoryCriteriaInterface
      * Retrieves a collection of all active criteria that will be applied in the
      * next query.
      *
-     * @return \Illuminate\Support\Collection
+     * @return \Illuminate\Support\Collection<int, TCriterion>
      */
     public function getCriteria(): Collection;
 
