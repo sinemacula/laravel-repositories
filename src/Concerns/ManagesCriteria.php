@@ -5,7 +5,6 @@ namespace SineMacula\Repositories\Concerns;
 use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
-use Override;
 use SineMacula\Repositories\Contracts\CriteriaInterface;
 
 /**

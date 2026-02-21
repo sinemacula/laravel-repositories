@@ -3,19 +3,21 @@
 ## Project Overview
 
 Laravel Repositories is Sine Macula's Laravel integration package for implementing the repository pattern over Eloquent
-models with criteria-driven query composition.
+models with criteria-driven query composition and model-like repository ergonomics.
 
 Current implementation includes:
 
-- Abstract repository base class with Laravel container-backed model resolution
+- Abstract repository base class with Laravel container-backed model resolution and model-type validation
 - Criteria contracts for reusable query constraints applied to models/builders
 - Persistent and transient criteria pipelines with explicit lifecycle controls
 - Scope registration and application for per-query behavior customization
 - Model/query forwarding with reset semantics after repository operations
 - Explicit query entrypoints (`query()` / `newQuery()`) while preserving magic forwarding compatibility
+- Static repository dispatch compatibility for model-like calls (for example `Repository::find($id)`)
 - Dedicated repository exception handling for invalid model configuration
 - Optional presenter contract for repository-layer presentation concerns
-- Comprehensive unit/integration coverage and repository quality tooling integration
+- PHPUnit 11 test suites for unit and Laravel integration coverage (Orchestra Testbench)
+- Repository quality tooling integration through qlty and static analysis checks
 
 This repository is intended to remain:
 
@@ -41,6 +43,7 @@ The package currently centers around:
 - Stateful repository query lifecycle requiring transient/scoped container bindings for safe request isolation
 - Contracts for repository behavior, criteria components, and presentable resources
 - Compatibility with Laravel database and support component expectations
+- PHPUnit configuration anchored to `phpunit.xml.dist` with `tests/Unit` and `tests/Integration` suites
 
 This package is an integration layer. It must not become a generic ORM replacement, cross-framework data abstraction
 library, or an application business workflow engine.
@@ -195,9 +198,9 @@ Manual approval is required for:
 - Format code: `composer format`
 - Run tests: `composer test`
 - Run tests with coverage: `composer test-coverage`
-- Run a single test file: `vendor/bin/phpunit tests/Unit/ExampleTest.php`
+- Run a single test file: `vendor/bin/phpunit tests/Unit/RepositoryTest.php`
 - Run a single test method:
-  `vendor/bin/phpunit --filter testThatTrueIsTrue tests/Unit/ExampleTest.php`
+  `vendor/bin/phpunit --filter testMakeModelThrowsWhenResolvedClassIsNotEloquentModel tests/Unit/RepositoryTest.php`
 
 ## Tests & Quality
 

@@ -116,6 +116,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      *
      * @return static
      */
+    #[\Override]
     public function resetScopes(): static
     {
         $this->scopes = [];
@@ -130,6 +131,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException|\SineMacula\Repositories\Exceptions\RepositoryException
      */
+    #[\Override]
     public function makeModel(): Model
     {
         $model = $this->app->make($this->model());
@@ -153,6 +155,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      *
      * @return void
      */
+    #[\Override]
     public function resetModel(): void
     {
         $this->makeModel();
@@ -163,6 +166,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      *
      * @return \Illuminate\Database\Eloquent\Model
      */
+    #[\Override]
     public function getModel(): Model
     {
         if (!$this->model instanceof Model) {
@@ -178,6 +182,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * @param  \Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void  $scope
      * @return static
      */
+    #[\Override]
     public function addScope(\Closure $scope): static
     {
         $this->scopes[] = $scope;
