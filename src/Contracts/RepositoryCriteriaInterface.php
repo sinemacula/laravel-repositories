@@ -12,7 +12,11 @@ use Illuminate\Support\Collection;
  *
  * @template TModel of \Illuminate\Database\Eloquent\Model
  *
+ * @formatter:off
+ *
  * @phpstan-type TCriterion \SineMacula\Repositories\Contracts\CriteriaInterface<TModel>
+ *
+ * @formatter:on
  */
 interface RepositoryCriteriaInterface
 {
