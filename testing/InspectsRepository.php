@@ -102,8 +102,8 @@ trait InspectsRepository
     /**
      * Determine whether the repository constructor completed successfully.
      *
-     * Returns true when $model holds a resolved Model instance, which
-     * indicates that makeModel() and boot() both executed.
+     * Returns true when $model holds a resolved Model instance, which indicates
+     * that makeModel() and boot() both executed.
      *
      * @return bool
      */
@@ -130,7 +130,10 @@ trait InspectsRepository
     /**
      * Force the internal persistent criteria collection.
      *
+     * // @formatter:off
+     *
      * @param  \Illuminate\Support\Collection<int, \SineMacula\Repositories\Contracts\CriteriaInterface<TModel>>  $criteria
+     *                                                                                                                       // @formatter:on
      * @return void
      */
     public function forcePersistentCriteria(Collection $criteria): void
@@ -141,7 +144,10 @@ trait InspectsRepository
     /**
      * Force the internal transient criteria collection.
      *
+     * // @formatter:off
+     *
      * @param  \Illuminate\Support\Collection<int, \SineMacula\Repositories\Contracts\CriteriaInterface<TModel>>  $criteria
+     *                                                                                                                       // @formatter:on
      * @return void
      */
     public function forceTransientCriteria(Collection $criteria): void

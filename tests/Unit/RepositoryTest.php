@@ -55,9 +55,10 @@ class RepositoryTest extends TestCase
      */
     public function testStaticCallsRequireInitializedLaravelApplicationContainer(): void
     {
-        $original_container = Container::getInstance();
+        $originalContainer = Container::getInstance();
 
         try {
+
             Container::setInstance(new Container);
 
             $this->expectException(RepositoryException::class);
@@ -65,7 +66,7 @@ class RepositoryTest extends TestCase
 
             TestUserRepository::count();
         } finally {
-            Container::setInstance($original_container);
+            Container::setInstance($originalContainer);
         }
     }
 }

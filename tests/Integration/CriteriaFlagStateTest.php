@@ -365,37 +365,64 @@ class CriteriaFlagStateTest extends IntegrationTestCase
         static::assertCount(3, $repository->query()->get());
     }
 
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
-
     /**
-     * Verify transient flags ($skipCriteria, $forceUseCriteria) reset after
-     * each query while $disableCriteria persists.
+     * Verify the skip criteria flag resets to false after a query executes.
      *
      * @return void
      */
-    public function testTransientFlagsResetAfterQuery(): void
+    public function testSkipCriteriaFlagResetsAfterQuery(): void
     {
         $this->seedUsers();
 
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
-
-        // Skip for one query
         $repository->skipCriteria();
-        static::assertTrue($repository->isCriteriaSkipped());
-        $repository->query();
-        static::assertFalse($repository->isCriteriaSkipped());
 
-        // Force for one query
+        static::assertTrue($repository->isCriteriaSkipped());
+
+        $repository->query();
+
+        static::assertFalse($repository->isCriteriaSkipped());
+    }
+
+    /**
+     * Verify the force-use criteria flag resets to false after a query
+     * executes.
+     *
+     * @return void
+     */
+    public function testForceUseCriteriaFlagResetsAfterQuery(): void
+    {
+        $this->seedUsers();
+
+        $repository = $this->repository();
+        $repository->pushCriteria(new ActiveUsersCriterion);
         $repository->disableCriteria();
         $repository->useCriteria();
-        static::assertTrue($repository->isForceUsingCriteria());
-        $repository->query();
-        static::assertFalse($repository->isForceUsingCriteria());
 
-        // disableCriteria persists
+        static::assertTrue($repository->isForceUsingCriteria());
+
+        $repository->query();
+
+        static::assertFalse($repository->isForceUsingCriteria());
+    }
+
+    /**
+     * Verify the disable criteria flag persists across queries.
+     *
+     * @return void
+     */
+    public function testDisableCriteriaPersistsAfterQuery(): void
+    {
+        $this->seedUsers();
+
+        $repository = $this->repository();
+        $repository->pushCriteria(new ActiveUsersCriterion);
+        $repository->disableCriteria();
+        $repository->useCriteria();
+
+        $repository->query();
+
         static::assertTrue($repository->isCriteriaDisabled());
     }
 
@@ -417,6 +444,10 @@ class CriteriaFlagStateTest extends IntegrationTestCase
 
         static::assertSame(0, $repository->transientCriteriaCount());
     }
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
 
     /**
      * Seed baseline users for flag state scenarios.

@@ -11,9 +11,9 @@ use SineMacula\Repositories\Contracts\CriteriaInterface;
 /**
  * Configurable criterion stub for downstream tests.
  *
- * Provides a simple, predictable criterion that can be used in tests to
- * verify repository behavior such as criteria ordering, application counts,
- * and flag interactions without writing a custom criterion class.
+ * Provides a simple, predictable criterion that can be used in tests to verify
+ * repository behavior such as criteria ordering, application counts, and flag
+ * interactions without writing a custom criterion class.
  *
  * See TESTING.md for usage patterns.
  *
@@ -30,17 +30,23 @@ class CriterionStub implements CriteriaInterface
     /**
      * Create a new criterion stub.
      *
+     * // @formatter:off
+     *
      * @param  (\Closure(\Illuminate\Contracts\Database\Eloquent\Builder): \Illuminate\Contracts\Database\Eloquent\Builder)|null  $callback
+     *                                                                                                                                       // @formatter:on
      */
     public function __construct(
+
+        /** The optional callback to apply to the builder. */
         private readonly ?\Closure $callback = null,
+
     ) {}
 
     /**
      * Apply the criterion.
      *
-     * If a callback was provided, it is invoked with the builder and its
-     * return value is used. Otherwise the builder is returned unmodified.
+     * If a callback was provided, it is invoked with the builder and its return
+     * value is used. Otherwise the builder is returned unmodified.
      *
      * @param  \Illuminate\Contracts\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Model  $model
      * @return \Illuminate\Contracts\Database\Eloquent\Builder

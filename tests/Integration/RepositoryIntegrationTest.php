@@ -204,15 +204,15 @@ class RepositoryIntegrationTest extends IntegrationTestCase
      */
     public function testRemoveCriteriaSupportsObjectAndClassStringRemoval(): void
     {
-        $repository      = $this->repository();
-        $active_criteria = new ActiveUsersCriterion;
+        $repository     = $this->repository();
+        $activeCriteria = new ActiveUsersCriterion;
 
-        $repository->pushCriteria([$active_criteria, new NamedUsersCriterion('Alice')]);
+        $repository->pushCriteria([$activeCriteria, new NamedUsersCriterion('Alice')]);
         $repository->withCriteria(new NamedUsersCriterion('Bob'));
 
         static::assertCount(3, $repository->getCriteria());
 
-        $repository->removeCriteria($active_criteria);
+        $repository->removeCriteria($activeCriteria);
         static::assertCount(2, $repository->getCriteria());
 
         $repository->removeCriteria(NamedUsersCriterion::class);
