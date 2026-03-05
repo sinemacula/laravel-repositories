@@ -96,8 +96,8 @@ interface RepositoryCriteriaInterface
      * Temporarily disables the application of criteria in queries.
      *
      * Use this method to temporarily bypass all criteria for the next query,
-     * even if `enableCriteria()` has been called. This does not
-     * affect the permanent enabled/disabled state.
+     * even if `enableCriteria()` has been called. This does not affect the
+     * permanent enabled/disabled state.
      *
      * @return static
      */

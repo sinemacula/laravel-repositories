@@ -2,14 +2,35 @@
 
 namespace SineMacula\Repositories\Concerns;
 
-use Illuminate\Contracts\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
+use SineMacula\Repositories\Contracts\ContributesMetadata;
 use SineMacula\Repositories\Contracts\CriteriaInterface;
+use SineMacula\Repositories\Contracts\DeclaresEagerLoading;
+use SineMacula\Repositories\Contracts\DeclaresFieldSelection;
+use SineMacula\Repositories\Contracts\DeclaresRelationshipCounts;
 
 /**
  * Shared criteria-state lifecycle for repositories, including persistent and
  * transient criteria application with runtime control toggles.
+ *
+ * Flag precedence:
+ * - $skipCriteria overrides all other flags; when true, no criteria
+ *   (persistent or transient) are applied. Both $skipCriteria and
+ *   $forceUseCriteria are reset after the query, and transient criteria are
+ *   cleared.
+ * - $forceUseCriteria overrides $disableCriteria for persistent criteria,
+ *   allowing useCriteria()/withCriteria() to temporarily re-enable criteria
+ *   even when globally disabled.
+ * - $disableCriteria does not gate transient criteria; only persistent criteria
+ *   are suppressed. Use skipCriteria() to suppress all criteria including
+ *   transient.
+ *
+ * Application ordering:
+ * - Transient criteria first (insertion order, then cleared)
+ * - Persistent criteria second (insertion order, retained)
+ * - Supplementary capabilities (eager-loading, field selection, counts,
+ *   metadata) are collected from each criterion after its apply() method
+ *   executes, in the same order.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -114,6 +135,7 @@ trait ManagesCriteria
     #[\Override]
     public function getCriteria(): Collection
     {
+        /** @phpstan-ignore return.type (trait template resolution — reported and actual types are identical) */
         return $this->persistentCriteria->merge($this->transientCriteria);
     }
 
@@ -188,13 +210,16 @@ trait ManagesCriteria
     /**
      * Apply the criteria to the current query.
      *
+     * Called after prepareQueryBuilder() has normalized $model to a Builder.
+     *
      * @return static
+     *
+     * @internal Use the public criteria management API
+     *           (pushCriteria, withCriteria, etc.).
      */
     protected function applyCriteria(): static
     {
-        if (!$this->model instanceof Builder && !$this->model instanceof Model) {
-            $this->resetModel();
-        }
+        $this->resetCollectedCapabilities();
 
         if ($this->skipCriteria) {
 
@@ -208,15 +233,20 @@ trait ManagesCriteria
         if ($this->transientCriteria->isNotEmpty()) {
 
             foreach ($this->transientCriteria as $criterion) {
+
                 $this->model = $criterion->apply($this->model);
+                $this->collectCapabilities($criterion);
             }
 
             $this->resetTransientCriteria();
         }
 
         if (($this->forceUseCriteria || !$this->disableCriteria) && $this->persistentCriteria->isNotEmpty()) {
+
             foreach ($this->persistentCriteria as $criterion) {
+
                 $this->model = $criterion->apply($this->model);
+                $this->collectCapabilities($criterion);
             }
         }
 
@@ -238,7 +268,8 @@ trait ManagesCriteria
     }
 
     /**
-     * Determine whether a persisted criterion matches the given removal request.
+     * Determine whether a persisted criterion matches the given removal
+     * request.
      *
      * @param  mixed  $persisted
      * @param  array<int, string|TCriterion>  $criteria
@@ -251,6 +282,7 @@ trait ManagesCriteria
         }
 
         foreach ($criteria as $criterion) {
+
             if (
                 (is_object($criterion) && $persisted instanceof $criterion)
                 || (is_string($criterion) && $persisted::class === $criterion)
@@ -284,5 +316,47 @@ trait ManagesCriteria
         $this->persistentCriteria = collect();
 
         return $this;
+    }
+
+    /**
+     * Reset all collected capability declarations.
+     *
+     * @return void
+     *
+     * @internal called at the start of applyCriteria()
+     */
+    private function resetCollectedCapabilities(): void
+    {
+        $this->collectedEagerLoads = [];
+        $this->collectedFields     = [];
+        $this->collectedCounts     = [];
+        $this->collectedMetadata   = [];
+    }
+
+    /**
+     * Collect supplementary capability declarations from a criterion.
+     *
+     * @param  \SineMacula\Repositories\Contracts\CriteriaInterface<TModel>  $criterion
+     * @return void
+     *
+     * @internal called during applyCriteria() for each applied criterion
+     */
+    private function collectCapabilities(CriteriaInterface $criterion): void
+    {
+        if ($criterion instanceof DeclaresEagerLoading) {
+            $this->collectedEagerLoads = array_merge($this->collectedEagerLoads, $criterion->eagerLoads());
+        }
+
+        if ($criterion instanceof DeclaresFieldSelection) {
+            $this->collectedFields = array_values(array_unique(array_merge($this->collectedFields, $criterion->fields())));
+        }
+
+        if ($criterion instanceof DeclaresRelationshipCounts) {
+            $this->collectedCounts = array_merge($this->collectedCounts, $criterion->withCounts());
+        }
+
+        if ($criterion instanceof ContributesMetadata) {
+            $this->collectedMetadata = array_merge($this->collectedMetadata, $criterion->metadata());
+        }
     }
 }

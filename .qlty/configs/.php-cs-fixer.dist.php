@@ -7,6 +7,7 @@ use PhpCsFixer\Runner\Parallel\ParallelConfigFactory;
 $finder = Finder::create()
     ->in([
         dirname(__DIR__, 2) . '/src',
+        dirname(__DIR__, 2) . '/testing',
         dirname(__DIR__, 2) . '/tests',
     ])
     ->name('*.php')

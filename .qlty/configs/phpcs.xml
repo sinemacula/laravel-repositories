@@ -75,6 +75,7 @@
 
     <!-- File paths to lint -->
     <file>src</file>
+    <file>testing</file>
     <file>tests</file>
 
 </ruleset>
