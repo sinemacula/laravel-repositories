@@ -15,10 +15,14 @@ foundation this package builds on.
 
 ## Features
 
-- **Repository Base Class**: A container-resolved repository abstraction with explicit model validation and lifecycle
-  reset behavior.
+- **Repository Base Class**: A container-resolved repository abstraction with explicit model validation, lifecycle reset
+  behavior, and a `boot()` extension point for subclass initialization.
 - **Criteria Lifecycle Controls**: Persistent and one-shot criteria pipelines with runtime enable, disable, skip, and
   reset controls.
+- **Supplementary Capability Contracts**: Opt-in interfaces that criteria can implement to declare eager-loading
+  (`DeclaresEagerLoading`), field selection (`DeclaresFieldSelection`), relationship counts
+  (`DeclaresRelationshipCounts`), and metadata (`ContributesMetadata`) alongside query modification. The repository
+  collects these declarations at criteria application time and exposes them via dedicated accessors.
 - **Scoped Query Mutation**: Per-query scope registration for concise query customization without polluting models.
 - **Model-Like Ergonomics**: Explicit query entrypoints (`query()` / `newQuery()`) plus magic forwarding for
   model-style usage such as `Repository::find($id)`.
@@ -53,6 +57,35 @@ composer test
 composer test-coverage
 composer check
 ```
+
+## Versioning Policy
+
+This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+**What constitutes a breaking change:**
+
+- Adding, removing, or changing method signatures on any interface (`CriteriaInterface`, `RepositoryInterface`,
+  `RepositoryCriteriaInterface`, `ContributesMetadata`, `DeclaresEagerLoading`, `DeclaresFieldSelection`,
+  `DeclaresRelationshipCounts`)
+- Changing the observable behavior of public methods in ways that violate documented contracts
+- Changing protected members that are classified as [stable extension points](UPGRADING.md)
+
+**Deprecation policy:**
+
+- Features planned for removal will be marked with `@deprecated` annotations that include a description, the
+  recommended replacement, and the version in which the feature will be removed.
+- Deprecated features will survive at least one minor or major release cycle before removal.
+- PHPStan (with `phpstan-deprecation-rules`) will surface deprecation warnings in your IDE and CI pipeline.
+
+**What is NOT covered by stability guarantees:**
+
+- Members marked `@internal` (including the `ManagesCriteria` trait)
+- Protected properties and methods not classified as stable extension points
+- Undocumented behavioral details (e.g., internal criteria application ordering)
+
+See [CHANGELOG.md](CHANGELOG.md) for a history of changes, [UPGRADING.md](UPGRADING.md) for migration guidance
+between major versions, and [EXTENSION-POINTS.md](EXTENSION-POINTS.md) for the extension point classification and
+lifecycle documentation.
 
 ## Contributing
 

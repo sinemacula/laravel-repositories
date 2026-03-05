@@ -6,6 +6,7 @@ namespace Tests\Support\Criteria;
 
 use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Override;
 use SineMacula\Repositories\Contracts\CriteriaInterface;
 
 /**
@@ -23,14 +24,17 @@ class ActiveUsersCriterion implements CriteriaInterface
     /**
      * Apply the active-user condition.
      *
+     * The repository guarantees Builder input; the assertion narrows the
+     * type for static analysis only.
+     *
      * @param  \Illuminate\Contracts\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Model  $model
      * @return \Illuminate\Contracts\Database\Eloquent\Builder
      */
-    #[\Override]
+    #[Override]
     public function apply(Builder|Model $model): Builder
     {
-        $query = $model instanceof Model ? $model->newQuery() : $model;
+        assert($model instanceof Builder);
 
-        return $query->where('active', true);
+        return $model->where('active', true);
     }
 }

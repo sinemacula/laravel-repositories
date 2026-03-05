@@ -275,7 +275,7 @@ return (new Config)
         */
         'fully_qualified_strict_types' => false,
         'global_namespace_import'      => [
-            'import_classes'   => false,
+            'import_classes'   => true,
             'import_constants' => false,
             'import_functions' => false,
         ],
