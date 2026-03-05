@@ -4,13 +4,12 @@ declare(strict_types = 1);
 
 namespace Tests\Integration;
 
-use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
 use SineMacula\Repositories\Repository;
 use Tests\Support\Criteria\ActiveUsersCriterion;
 use Tests\Support\Criteria\NamedUsersCriterion;
-use Tests\Support\Repositories\TestUserRepository;
+use Tests\Support\InteractsWithUserRepository;
 
 /**
  * Criteria flag state machine tests.
@@ -39,6 +38,8 @@ use Tests\Support\Repositories\TestUserRepository;
 #[CoversClass(ManagesCriteria::class)]
 class CriteriaFlagStateTest extends IntegrationTestCase
 {
+    use InteractsWithUserRepository;
+
     // -------------------------------------------------------------------------
     // Group A: Criteria enabled ($disableCriteria=false), no skip
     // -------------------------------------------------------------------------
@@ -443,35 +444,5 @@ class CriteriaFlagStateTest extends IntegrationTestCase
         $repository->query();
 
         static::assertSame(0, $repository->transientCriteriaCount());
-    }
-
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
-
-    /**
-     * Seed baseline users for flag state scenarios.
-     *
-     * @return void
-     */
-    private function seedUsers(): void
-    {
-        DB::table('test_users')->insert([
-            ['id' => 1, 'name' => 'Alice', 'active' => true],
-            ['id' => 2, 'name' => 'Bob', 'active' => false],
-            ['id' => 3, 'name' => 'Carol', 'active' => true],
-        ]);
-    }
-
-    /**
-     * Resolve the repository under test.
-     *
-     * @return \Tests\Support\Repositories\TestUserRepository
-     */
-    private function repository(): TestUserRepository
-    {
-        static::assertNotNull($this->app);
-
-        return $this->app->make(TestUserRepository::class);
     }
 }
