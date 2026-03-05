@@ -14,6 +14,7 @@ parameters:
 
 	scanDirectories:
 		- %currentWorkingDirectory%/src
+		- %currentWorkingDirectory%/testing
 		- %currentWorkingDirectory%/tests
 
 	paths:
