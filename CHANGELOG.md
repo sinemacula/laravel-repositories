@@ -7,11 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Removed
-
-- `PresentableInterface` contract. The interface was unused within the package and had no known downstream consumers.
-
-## [2.0.0] - 2026-02-28
+## [2.0.0] - 2026-03-05
 
 ### Added
 
@@ -75,6 +71,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `PresentableInterface` contract. The interface was unused within the package and had no known downstream consumers.
 - Direct instantiation via `new static()` in `__callStatic()` (replaced by container resolution).
 
 ## [1.0.4] - 2026-02-19
