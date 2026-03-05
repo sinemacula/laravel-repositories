@@ -244,11 +244,11 @@ class RepositoryIntegrationTest extends IntegrationTestCase
     }
 
     /**
-     * Verify direct scope application recovers from an invalid model reference.
+     * Verify query recovers from an invalid model reference and applies scopes.
      *
      * @return void
      */
-    public function testApplyScopesRecoversFromInvalidInternalModelReference(): void
+    public function testQueryRecoversFromInvalidModelAndAppliesScopes(): void
     {
         $this->seedUsers();
 
@@ -257,12 +257,11 @@ class RepositoryIntegrationTest extends IntegrationTestCase
         $repository->addScope(static function (BuilderContract $query): void {
             $query->where('active', true);
         });
-        $repository->invokeApplyScopes();
 
-        $model = $repository->currentModel();
+        $query = $repository->query();
 
-        static::assertInstanceOf(BuilderContract::class, $model);
-        static::assertCount(2, $model->get());
+        static::assertInstanceOf(BuilderContract::class, $query);
+        static::assertCount(2, $query->get());
     }
 
     /**
@@ -285,6 +284,65 @@ class RepositoryIntegrationTest extends IntegrationTestCase
         static::assertSame(0, $repository->transientCriteriaCount());
         static::assertSame(0, $repository->scopesCount());
         static::assertInstanceOf(TestUser::class, $repository->getModel());
+    }
+
+    /**
+     * Verify resetCriteria() clears both persistent and transient criteria.
+     *
+     * @return void
+     */
+    public function testResetCriteriaClearsBothPersistentAndTransientCriteria(): void
+    {
+        $repository = $this->repository();
+        $repository->pushCriteria(new ActiveUsersCriterion);
+        $repository->withCriteria(new NamedUsersCriterion('Alice'));
+
+        static::assertSame(1, $repository->persistentCriteriaCount());
+        static::assertSame(1, $repository->transientCriteriaCount());
+
+        $repository->resetCriteria();
+
+        static::assertSame(0, $repository->persistentCriteriaCount());
+        static::assertSame(0, $repository->transientCriteriaCount());
+    }
+
+    /**
+     * Verify resetModel() restores a fresh model instance from the container.
+     *
+     * @return void
+     */
+    public function testResetModelRestoresFreshModelInstance(): void
+    {
+        $repository = $this->repository();
+        $repository->forceModel(null);
+
+        static::assertNull($repository->currentModel());
+
+        $repository->resetModel();
+
+        static::assertInstanceOf(TestUser::class, $repository->currentModel());
+    }
+
+    /**
+     * Verify resetScopes() clears all registered scopes.
+     *
+     * @return void
+     */
+    public function testResetScopesClearsAllRegisteredScopes(): void
+    {
+        $repository = $this->repository();
+        $repository->addScope(static function (BuilderContract $query): void {
+            $query->where('active', true);
+        });
+        $repository->addScope(static function (BuilderContract $query): void {
+            $query->where('name', 'Alice');
+        });
+
+        static::assertSame(2, $repository->scopesCount());
+
+        $repository->resetScopes();
+
+        static::assertSame(0, $repository->scopesCount());
     }
 
     /**

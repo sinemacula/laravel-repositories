@@ -14,31 +14,8 @@ use SineMacula\Repositories\Contracts\RepositoryInterface;
 use SineMacula\Repositories\Exceptions\RepositoryException;
 
 /**
- * Core Eloquent repository abstraction that coordinates model resolution, query
- * composition, and repository state lifecycle.
- *
- * This class resolves the target model from Laravel's container, applies
- * persistent/transient criteria and scopes to query builders, and forwards
- * model-style calls while resetting transient state between operations.
- *
- * ## Lifecycle Phases
- *
- * The repository operates in two distinct phases:
- *
- * **At rest** — The default state after construction and after each query
- * completes. The $model property holds a resolved Model instance. Public
- * methods such as getModel() observe this phase.
- *
- * **Query composition** — Active while a query is being built. The $model
- * property holds a Builder instance. All criteria and scopes receive a
- * Builder during this phase; no defensive Model-to-Builder conversion is
- * needed. This phase ends when query() or __call() completes and resets
- * the repository back to rest.
- *
- * Transition points:
- * - At rest → Query composition: prepareQueryBuilder()
- *   normalizes Model to Builder
- * - Query composition → At rest: query() or __call() resets via resetModel()
+ * Core Eloquent repository abstraction that coordinates model resolution,
+ * criteria-driven query composition, and transient state lifecycle.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -131,7 +108,6 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
         if ($container instanceof Application) {
 
             $instance = $container->make(static::class);
-
             $callable = \Closure::fromCallable([$instance, $method]);
 
             return $callable(...$arguments);
@@ -152,11 +128,11 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      */
     public function __call(string $method, array $arguments): mixed
     {
-        $query    = $this->prepareQueryBuilder();
-        $callable = \Closure::fromCallable([$query, $method]);
-        $result   = $callable(...$arguments);
+        $query           = $this->prepareQueryBuilder();
+        $callable        = \Closure::fromCallable([$query, $method]);
+        $forwardedResult = $callable(...$arguments);
 
-        return $this->resetAndReturn($result);
+        return $this->resetAndReturn($forwardedResult);
     }
 
     /**
@@ -200,6 +176,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      *
      * @return class-string<TModel>
      */
+    #[\Override]
     abstract public function model(): string;
 
     /**
@@ -365,11 +342,18 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     /**
      * Prepare a query builder with criteria and scopes applied.
      *
-     * Normalizes the model to a Builder before applying criteria and scopes,
-     * guaranteeing that all criteria receive a Builder input
-     * (never a raw Model).
+     * Normalizes the model to a Builder before applying criteria
+     * and scopes, guaranteeing that all criteria receive a Builder
+     * input (never a raw Model).
      *
      * @return \Illuminate\Contracts\Database\Eloquent\Builder
+     *
+     * @formatter:off
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     *
+     * @formatter:on
      *
      * @internal Orchestration method. Use query() to obtain a prepared builder.
      */
@@ -411,18 +395,25 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     /**
      * Reset the various transient values and return the result.
      *
-     * @param  mixed  $result
+     * @param  mixed  $queryResult
      * @return mixed
+     *
+     * @formatter:off
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     *
+     * @formatter:on
      *
      * @internal cleanup step in the magic method forwarding pipeline
      */
-    protected function resetAndReturn(mixed $result): mixed
+    protected function resetAndReturn(mixed $queryResult): mixed
     {
         $this->resetTransientCriteria();
         $this->resetScopes();
         $this->resetModel();
 
-        return $result;
+        return $queryResult;
     }
 
     /**
