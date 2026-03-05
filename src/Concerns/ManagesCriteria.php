@@ -2,8 +2,8 @@
 
 namespace SineMacula\Repositories\Concerns;
 
-use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
+use Override;
 use SineMacula\Repositories\Contracts\ContributesMetadata;
 use SineMacula\Repositories\Contracts\CriteriaInterface;
 use SineMacula\Repositories\Contracts\DeclaresEagerLoading;
@@ -11,27 +11,27 @@ use SineMacula\Repositories\Contracts\DeclaresFieldSelection;
 use SineMacula\Repositories\Contracts\DeclaresRelationshipCounts;
 
 /**
- * Shared criteria-state lifecycle for repositories, including persistent
- * and transient criteria application with runtime control toggles.
+ * Shared criteria-state lifecycle for repositories, including persistent and
+ * transient criteria application with runtime control toggles.
  *
  * Flag precedence:
  * - $skipCriteria overrides all other flags; when true, no criteria
  *   (persistent or transient) are applied. Both $skipCriteria and
- *   $forceUseCriteria are reset after the query, and transient
- *   criteria are cleared.
- * - $forceUseCriteria overrides $disableCriteria for persistent
- *   criteria, allowing useCriteria()/withCriteria() to temporarily
- *   re-enable criteria even when globally disabled.
- * - $disableCriteria does not gate transient criteria; only
- *   persistent criteria are suppressed. Use skipCriteria() to
- *   suppress all criteria including transient.
+ *   $forceUseCriteria are reset after the query, and transient criteria are
+ *   cleared.
+ * - $forceUseCriteria overrides $disableCriteria for persistent criteria,
+ *   allowing useCriteria()/withCriteria() to temporarily re-enable criteria
+ *   even when globally disabled.
+ * - $disableCriteria does not gate transient criteria; only persistent criteria
+ *   are suppressed. Use skipCriteria() to suppress all criteria including
+ *   transient.
  *
  * Application ordering:
  * - Transient criteria first (insertion order, then cleared)
  * - Persistent criteria second (insertion order, retained)
- * - Supplementary capabilities (eager-loading, field selection,
- *   counts, metadata) are collected from each criterion after its
- *   apply() method executes, in the same order.
+ * - Supplementary capabilities (eager-loading, field selection, counts,
+ *   metadata) are collected from each criterion after its apply() method
+ *   executes, in the same order.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -217,10 +217,10 @@ trait ManagesCriteria
      *
      * Called after prepareQueryBuilder() has normalized $model to a Builder.
      *
+     * @return static
+     *
      * @internal Use the public criteria management API
      *           (pushCriteria, withCriteria, etc.).
-     *
-     * @return static
      */
     protected function applyCriteria(): static
     {
@@ -261,53 +261,6 @@ trait ManagesCriteria
     }
 
     /**
-     * Collect supplementary capability declarations from a criterion.
-     *
-     * @internal called during applyCriteria() for each applied criterion
-     *
-     * @formatter:off
-     *
-     * @param  \SineMacula\Repositories\Contracts\CriteriaInterface<TModel>  $criterion
-     *
-     * @formatter:on
-     *
-     * @return void
-     */
-    private function collectCapabilities(CriteriaInterface $criterion): void
-    {
-        if ($criterion instanceof DeclaresEagerLoading) {
-            $this->collectedEagerLoads = array_merge($this->collectedEagerLoads, $criterion->eagerLoads());
-        }
-
-        if ($criterion instanceof DeclaresFieldSelection) {
-            $this->collectedFields = array_values(array_unique(array_merge($this->collectedFields, $criterion->fields())));
-        }
-
-        if ($criterion instanceof DeclaresRelationshipCounts) {
-            $this->collectedCounts = array_merge($this->collectedCounts, $criterion->withCounts());
-        }
-
-        if ($criterion instanceof ContributesMetadata) {
-            $this->collectedMetadata = array_merge($this->collectedMetadata, $criterion->metadata());
-        }
-    }
-
-    /**
-     * Reset all collected capability declarations.
-     *
-     * @internal called at the start of applyCriteria()
-     *
-     * @return void
-     */
-    private function resetCollectedCapabilities(): void
-    {
-        $this->collectedEagerLoads = [];
-        $this->collectedFields     = [];
-        $this->collectedCounts     = [];
-        $this->collectedMetadata   = [];
-    }
-
-    /**
      * Sanitize the given array of criteria to ensure they are valid criteria
      * instances.
      *
@@ -334,6 +287,7 @@ trait ManagesCriteria
         }
 
         foreach ($criteria as $criterion) {
+
             if (
                 (is_object($criterion) && $persisted instanceof $criterion)
                 || (is_string($criterion) && $persisted::class === $criterion)
@@ -367,5 +321,52 @@ trait ManagesCriteria
         $this->persistentCriteria = collect();
 
         return $this;
+    }
+
+    /**
+     * Reset all collected capability declarations.
+     *
+     * @return void
+     *
+     * @internal called at the start of applyCriteria()
+     */
+    private function resetCollectedCapabilities(): void
+    {
+        $this->collectedEagerLoads = [];
+        $this->collectedFields     = [];
+        $this->collectedCounts     = [];
+        $this->collectedMetadata   = [];
+    }
+
+    /**
+     * Collect supplementary capability declarations from a criterion.
+     *
+     * @internal called during applyCriteria() for each applied criterion
+     *
+     * @formatter:off
+     *
+     * @param  \SineMacula\Repositories\Contracts\CriteriaInterface<TModel>  $criterion
+     *
+     * @formatter:on
+     *
+     * @return void
+     */
+    private function collectCapabilities(CriteriaInterface $criterion): void
+    {
+        if ($criterion instanceof DeclaresEagerLoading) {
+            $this->collectedEagerLoads = array_merge($this->collectedEagerLoads, $criterion->eagerLoads());
+        }
+
+        if ($criterion instanceof DeclaresFieldSelection) {
+            $this->collectedFields = array_values(array_unique(array_merge($this->collectedFields, $criterion->fields())));
+        }
+
+        if ($criterion instanceof DeclaresRelationshipCounts) {
+            $this->collectedCounts = array_merge($this->collectedCounts, $criterion->withCounts());
+        }
+
+        if ($criterion instanceof ContributesMetadata) {
+            $this->collectedMetadata = array_merge($this->collectedMetadata, $criterion->metadata());
+        }
     }
 }
