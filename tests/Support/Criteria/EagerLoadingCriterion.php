@@ -4,10 +4,8 @@ declare(strict_types = 1);
 
 namespace Tests\Support\Criteria;
 
-use Closure;
 use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Override;
 use SineMacula\Repositories\Contracts\ContributesMetadata;
 use SineMacula\Repositories\Contracts\CriteriaInterface;
 use SineMacula\Repositories\Contracts\DeclaresEagerLoading;
@@ -35,7 +33,7 @@ class EagerLoadingCriterion implements ContributesMetadata, CriteriaInterface, D
      * @param  \Illuminate\Contracts\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Model  $model
      * @return \Illuminate\Contracts\Database\Eloquent\Builder
      */
-    #[Override]
+    #[\Override]
     public function apply(Builder|Model $model): Builder
     {
         assert($model instanceof Builder);
@@ -46,9 +44,9 @@ class EagerLoadingCriterion implements ContributesMetadata, CriteriaInterface, D
     /**
      * Declare eager-loading relationships.
      *
-     * @return array<string, (Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void)|null>
+     * @return array<string, (\Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void)|null>
      */
-    #[Override]
+    #[\Override]
     public function eagerLoads(): array
     {
         return [
@@ -62,7 +60,7 @@ class EagerLoadingCriterion implements ContributesMetadata, CriteriaInterface, D
      *
      * @return array<int, string>
      */
-    #[Override]
+    #[\Override]
     public function fields(): array
     {
         return ['id', 'name', 'active'];
@@ -71,9 +69,9 @@ class EagerLoadingCriterion implements ContributesMetadata, CriteriaInterface, D
     /**
      * Declare relationship counts.
      *
-     * @return array<string, (Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void)|null>
+     * @return array<string, (\Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void)|null>
      */
-    #[Override]
+    #[\Override]
     public function withCounts(): array
     {
         return [
@@ -86,7 +84,7 @@ class EagerLoadingCriterion implements ContributesMetadata, CriteriaInterface, D
      *
      * @return array<string, mixed>
      */
-    #[Override]
+    #[\Override]
     public function metadata(): array
     {
         return [

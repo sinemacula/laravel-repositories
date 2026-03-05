@@ -4,7 +4,6 @@ declare(strict_types = 1);
 
 namespace Tests\Support\Repositories;
 
-use Override;
 use SineMacula\Repositories\Repository;
 use SineMacula\Repositories\Testing\InspectsRepository;
 use Tests\Support\Models\TestUser;
@@ -35,7 +34,7 @@ class TestUserRepository extends Repository
      *
      * @return class-string<\Tests\Support\Models\TestUser>
      */
-    #[Override]
+    #[\Override]
     public function model(): string
     {
         return TestUser::class;
@@ -46,7 +45,7 @@ class TestUserRepository extends Repository
      *
      * @return void
      */
-    #[Override]
+    #[\Override]
     protected function boot(): void
     {
         $this->booted = true;

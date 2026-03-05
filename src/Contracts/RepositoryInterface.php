@@ -46,12 +46,7 @@ interface RepositoryInterface
     /**
      * Add a new scope.
      *
-     * @formatter:off
-     *
      * @param  \Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void  $scope
-     *
-     * @formatter:on
-     *
      * @return static
      */
     public function addScope(\Closure $scope): static;

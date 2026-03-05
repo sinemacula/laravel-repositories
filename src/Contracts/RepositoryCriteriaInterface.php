@@ -12,11 +12,7 @@ use Illuminate\Support\Collection;
  *
  * @template TModel of \Illuminate\Database\Eloquent\Model
  *
- * @formatter:off
- *
  * @phpstan-type TCriterion \SineMacula\Repositories\Contracts\CriteriaInterface<TModel>
- *
- * @formatter:on
  */
 interface RepositoryCriteriaInterface
 {
@@ -100,8 +96,8 @@ interface RepositoryCriteriaInterface
      * Temporarily disables the application of criteria in queries.
      *
      * Use this method to temporarily bypass all criteria for the next query,
-     * even if `enableCriteria()` has been called. This does not
-     * affect the permanent enabled/disabled state.
+     * even if `enableCriteria()` has been called. This does not affect the
+     * permanent enabled/disabled state.
      *
      * @return static
      */

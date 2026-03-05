@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+
+- `PresentableInterface` contract. The interface was unused within the package and had no known downstream consumers.
+
 ## [2.0.0] - 2026-02-28
 
 ### Added
@@ -68,11 +72,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   scopes. This eliminates `instanceof` discrimination checks in `applyCriteria()` and `applyScopes()`.
 - Minimum PHP version remains ^8.3.
 - Removed `minimum-stability: dev` and `prefer-stable: true` from `composer.json`.
-
-### Deprecated
-
-- `PresentableInterface` is deprecated and will be removed in v3.0.0. The interface is unused within the package and has
-  no documented purpose. If you implement this interface, please open an issue to discuss your use case.
 
 ### Removed
 

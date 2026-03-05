@@ -25,11 +25,7 @@ interface DeclaresEagerLoading
      * Keys are relationship names. Values are optional constraint closures
      * (null for unconstrained eager-loading).
      *
-     * @formatter:off
-     *
      * @return array<string, (\Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void)|null>
-     *
-     * @formatter:on
      */
     public function eagerLoads(): array;
 }

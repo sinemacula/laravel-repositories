@@ -4,10 +4,8 @@ declare(strict_types = 1);
 
 namespace SineMacula\Repositories\Testing;
 
-use Closure;
 use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
-use Override;
 use SineMacula\Repositories\Contracts\CriteriaInterface;
 
 /**
@@ -32,10 +30,10 @@ class CriterionStub implements CriteriaInterface
     /**
      * Create a new criterion stub.
      *
-     * @param  (Closure(\Illuminate\Contracts\Database\Eloquent\Builder): \Illuminate\Contracts\Database\Eloquent\Builder)|null  $callback
+     * @param  (\Closure(\Illuminate\Contracts\Database\Eloquent\Builder): \Illuminate\Contracts\Database\Eloquent\Builder)|null  $callback
      */
     public function __construct(
-        private readonly ?Closure $callback = null,
+        private readonly ?\Closure $callback = null,
     ) {}
 
     /**
@@ -47,7 +45,7 @@ class CriterionStub implements CriteriaInterface
      * @param  \Illuminate\Contracts\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Model  $model
      * @return \Illuminate\Contracts\Database\Eloquent\Builder
      */
-    #[Override]
+    #[\Override]
     public function apply(Builder|Model $model): Builder
     {
         $this->applyCount++;

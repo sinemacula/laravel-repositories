@@ -3,7 +3,6 @@
 namespace SineMacula\Repositories\Concerns;
 
 use Illuminate\Support\Collection;
-use Override;
 use SineMacula\Repositories\Contracts\ContributesMetadata;
 use SineMacula\Repositories\Contracts\CriteriaInterface;
 use SineMacula\Repositories\Contracts\DeclaresEagerLoading;
@@ -54,7 +53,7 @@ trait ManagesCriteria
      * @param  array<int, TCriterion>|TCriterion  $criteria
      * @return static
      */
-    #[Override]
+    #[\Override]
     public function withCriteria(array|CriteriaInterface $criteria): static
     {
         $criteria = is_array($criteria) ? $criteria : [$criteria];
@@ -75,7 +74,7 @@ trait ManagesCriteria
      *
      * @return static
      */
-    #[Override]
+    #[\Override]
     public function useCriteria(): static
     {
         $this->skipCriteria     = false;
@@ -93,7 +92,7 @@ trait ManagesCriteria
      * @param  array<int, TCriterion>|TCriterion  $criteria
      * @return static
      */
-    #[Override]
+    #[\Override]
     public function pushCriteria(array|CriteriaInterface $criteria): static
     {
         $criteria = is_array($criteria) ? $criteria : [$criteria];
@@ -113,7 +112,7 @@ trait ManagesCriteria
      * @param  array<int, string|TCriterion>|string|TCriterion  $criteria
      * @return static
      */
-    #[Override]
+    #[\Override]
     public function removeCriteria(array|CriteriaInterface|string $criteria): static
     {
         $criteria = is_array($criteria) ? $criteria : [$criteria];
@@ -133,7 +132,7 @@ trait ManagesCriteria
      *
      * @return \Illuminate\Support\Collection<int, TCriterion>
      */
-    #[Override]
+    #[\Override]
     public function getCriteria(): Collection
     {
         /** @phpstan-ignore return.type (trait template resolution — reported and actual types are identical) */
@@ -149,7 +148,7 @@ trait ManagesCriteria
      *
      * @return static
      */
-    #[Override]
+    #[\Override]
     public function enableCriteria(): static
     {
         $this->disableCriteria = false;
@@ -166,7 +165,7 @@ trait ManagesCriteria
      *
      * @return static
      */
-    #[Override]
+    #[\Override]
     public function disableCriteria(): static
     {
         $this->disableCriteria = true;
@@ -183,7 +182,7 @@ trait ManagesCriteria
      *
      * @return static
      */
-    #[Override]
+    #[\Override]
     public function skipCriteria(): static
     {
         $this->skipCriteria = true;
@@ -199,7 +198,7 @@ trait ManagesCriteria
      *
      * @return static
      */
-    #[Override]
+    #[\Override]
     public function resetCriteria(): static
     {
         $this->resetPersistentCriteria()

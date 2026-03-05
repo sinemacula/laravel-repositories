@@ -22,12 +22,8 @@ use SineMacula\Repositories\Exceptions\RepositoryException;
  *
  * @template TModel of \Illuminate\Database\Eloquent\Model
  *
- * @formatter:off
- *
  * @implements \SineMacula\Repositories\Contracts\RepositoryInterface<TModel>
  * @implements \SineMacula\Repositories\Contracts\RepositoryCriteriaInterface<TModel>
- *
- * @formatter:on
  *
  * @mixin \Illuminate\Contracts\Database\Eloquent\Builder
  */
@@ -70,8 +66,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     protected array $collectedMetadata = [];
 
     /**
-     * Resolve the target model and initialize criteria and scope
-     * state.
+     * Resolve the target model and initialize criteria and scope state.
      *
      * @param  \Illuminate\Contracts\Foundation\Application  $app
      *
@@ -153,11 +148,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      *
      * @return \Illuminate\Database\Eloquent\Model
      *
-     * @formatter:off
-     *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException|\SineMacula\Repositories\Exceptions\RepositoryException
-     *
-     * @formatter:on
      */
     #[\Override]
     public function makeModel(): Model
@@ -248,12 +239,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     /**
      * Add a new scope.
      *
-     * @formatter:off
-     *
      * @param  \Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void  $scope
-     *
-     * @formatter:on
-     *
      * @return static
      */
     #[\Override]
@@ -268,11 +254,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * Get the eager-loading declarations collected from the most recent
      * criteria application.
      *
-     * @formatter:off
-     *
      * @return array<string, (\Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void)|null>
-     *
-     * @formatter:on
      */
     public function getCollectedEagerLoads(): array
     {
@@ -294,11 +276,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * Get the relationship count declarations collected from the most recent
      * criteria application.
      *
-     * @formatter:off
-     *
      * @return array<string, (\Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void)|null>
-     *
-     * @formatter:on
      */
     public function getCollectedCounts(): array
     {
@@ -318,15 +296,15 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     /**
      * Boot the repository instance.
      *
-     * Override this method to perform subclass initialization
-     * such as registering persistent criteria, adding scopes,
-     * or configuring subclass-specific state.
+     * Override this method to perform subclass initialization such as
+     * registering persistent criteria, adding scopes, or configuring
+     * subclass-specific state.
      *
      * When this method is called, the following state is guaranteed:
      * - $app holds the Application instance
      * - $persistentCriteria and $transientCriteria are empty Collections
-     * - All criteria flags are at their defaults
-     *   (disabled=false, skip=false, force=false)
+     * - All criteria flags are at their defaults (disabled=false, skip=false,
+     *   force=false)
      * - $scopes is an empty array
      * - $model holds a resolved Model instance
      *
@@ -342,18 +320,14 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     /**
      * Prepare a query builder with criteria and scopes applied.
      *
-     * Normalizes the model to a Builder before applying criteria
-     * and scopes, guaranteeing that all criteria receive a Builder
-     * input (never a raw Model).
+     * Normalizes the model to a Builder before applying criteria and scopes,
+     * guaranteeing that all criteria receive a Builder input (never a raw
+     * Model).
      *
      * @return \Illuminate\Contracts\Database\Eloquent\Builder
      *
-     * @formatter:off
-     *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \SineMacula\Repositories\Exceptions\RepositoryException
-     *
-     * @formatter:on
      *
      * @internal Orchestration method. Use query() to obtain a prepared builder.
      */
@@ -398,12 +372,8 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * @param  mixed  $queryResult
      * @return mixed
      *
-     * @formatter:off
-     *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \SineMacula\Repositories\Exceptions\RepositoryException
-     *
-     * @formatter:on
      *
      * @internal cleanup step in the magic method forwarding pipeline
      */

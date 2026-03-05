@@ -79,6 +79,10 @@ class CriteriaFlagStateTest extends IntegrationTestCase
         static::assertCount(1, $repository->query()->get());
     }
 
+    // -------------------------------------------------------------------------
+    // Group B: Skip active ($skipCriteria=true) — overrides everything
+    // -------------------------------------------------------------------------
+
     /**
      * State 3: D=false, S=false, F=true, T=empty.
      *
@@ -117,10 +121,6 @@ class CriteriaFlagStateTest extends IntegrationTestCase
         static::assertCount(1, $repository->query()->get());
     }
 
-    // -------------------------------------------------------------------------
-    // Group B: Skip active ($skipCriteria=true) — overrides everything
-    // -------------------------------------------------------------------------
-
     /**
      * State 5: D=false, S=true, F=false, T=empty.
      *
@@ -157,6 +157,10 @@ class CriteriaFlagStateTest extends IntegrationTestCase
 
         static::assertCount(3, $repository->query()->get());
     }
+
+    // -------------------------------------------------------------------------
+    // Group C: Criteria disabled ($disableCriteria=true), no skip
+    // -------------------------------------------------------------------------
 
     /**
      * State 7: D=false, S=true, F=true, T=empty.
@@ -195,10 +199,6 @@ class CriteriaFlagStateTest extends IntegrationTestCase
 
         static::assertCount(3, $repository->query()->get());
     }
-
-    // -------------------------------------------------------------------------
-    // Group C: Criteria disabled ($disableCriteria=true), no skip
-    // -------------------------------------------------------------------------
 
     /**
      * State 9: D=true, S=false, F=false, T=empty.
@@ -239,6 +239,10 @@ class CriteriaFlagStateTest extends IntegrationTestCase
         static::assertCount(1, $repository->query()->get());
     }
 
+    // -------------------------------------------------------------------------
+    // Group D: Disabled + Skip ($disableCriteria=true, $skipCriteria=true)
+    // -------------------------------------------------------------------------
+
     /**
      * State 11: D=true, S=false, F=true, T=empty.
      *
@@ -261,8 +265,8 @@ class CriteriaFlagStateTest extends IntegrationTestCase
     /**
      * State 12: D=true, S=false, F=true, T=present.
      *
-     * Force overrides disable for persistent; transient always applied
-     * when not skipped. Both criteria applied.
+     * Force overrides disable for persistent; transient always applied when not
+     * skipped. Both criteria applied.
      *
      * @return void
      */
@@ -277,10 +281,6 @@ class CriteriaFlagStateTest extends IntegrationTestCase
 
         static::assertCount(1, $repository->query()->get());
     }
-
-    // -------------------------------------------------------------------------
-    // Group D: Disabled + Skip ($disableCriteria=true, $skipCriteria=true)
-    // -------------------------------------------------------------------------
 
     /**
      * State 13: D=true, S=true, F=false, T=empty.
@@ -320,6 +320,10 @@ class CriteriaFlagStateTest extends IntegrationTestCase
 
         static::assertCount(3, $repository->query()->get());
     }
+
+    // -------------------------------------------------------------------------
+    // Flag reset verification
+    // -------------------------------------------------------------------------
 
     /**
      * State 15: D=true, S=true, F=true, T=empty.
@@ -362,7 +366,7 @@ class CriteriaFlagStateTest extends IntegrationTestCase
     }
 
     // -------------------------------------------------------------------------
-    // Flag reset verification
+    // Helpers
     // -------------------------------------------------------------------------
 
     /**
@@ -414,22 +418,6 @@ class CriteriaFlagStateTest extends IntegrationTestCase
         static::assertSame(0, $repository->transientCriteriaCount());
     }
 
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
-
-    /**
-     * Resolve the repository under test.
-     *
-     * @return \Tests\Support\Repositories\TestUserRepository
-     */
-    private function repository(): TestUserRepository
-    {
-        static::assertNotNull($this->app);
-
-        return $this->app->make(TestUserRepository::class);
-    }
-
     /**
      * Seed baseline users for flag state scenarios.
      *
@@ -442,5 +430,17 @@ class CriteriaFlagStateTest extends IntegrationTestCase
             ['id' => 2, 'name' => 'Bob', 'active' => false],
             ['id' => 3, 'name' => 'Carol', 'active' => true],
         ]);
+    }
+
+    /**
+     * Resolve the repository under test.
+     *
+     * @return \Tests\Support\Repositories\TestUserRepository
+     */
+    private function repository(): TestUserRepository
+    {
+        static::assertNotNull($this->app);
+
+        return $this->app->make(TestUserRepository::class);
     }
 }
