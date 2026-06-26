@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace SineMacula\Repositories;
 
 use Illuminate\Container\Container;
@@ -7,7 +9,6 @@ use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
-use Override;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
 use SineMacula\Repositories\Contracts\RepositoryCriteriaInterface;
 use SineMacula\Repositories\Contracts\RepositoryInterface;
@@ -77,7 +78,6 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
 
         /** @api-stable Resolves models and criteria from the container. */
         protected readonly Application $app,
-
     ) {
         $this->persistentCriteria = new Collection;
         $this->transientCriteria  = new Collection;
@@ -155,7 +155,8 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     {
         $model = $this->app->make($this->model());
 
-        if (!$this->isModelInstance($model)) {
+        // @phpstan-ignore instanceof.alwaysTrue (defensive runtime guard - the container can resolve a non-model when misconfigured)
+        if (!$model instanceof Model) {
             throw new RepositoryException("Class {$this->model()} must be an instance of Illuminate\\Database\\Eloquent\\Model");
         }
 
@@ -384,16 +385,5 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
         $this->resetModel();
 
         return $queryResult;
-    }
-
-    /**
-     * Determine whether the resolved value is a model instance.
-     *
-     * @param  mixed  $model
-     * @return bool
-     */
-    private function isModelInstance(mixed $model): bool
-    {
-        return $model instanceof Model;
     }
 }

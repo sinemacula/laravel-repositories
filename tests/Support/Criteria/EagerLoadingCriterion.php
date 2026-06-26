@@ -25,7 +25,7 @@ use SineMacula\Repositories\Contracts\DeclaresRelationshipCounts;
  *
  * @internal
  */
-class EagerLoadingCriterion implements ContributesMetadata, CriteriaInterface, DeclaresEagerLoading, DeclaresFieldSelection, DeclaresRelationshipCounts
+final class EagerLoadingCriterion implements ContributesMetadata, CriteriaInterface, DeclaresEagerLoading, DeclaresFieldSelection, DeclaresRelationshipCounts
 {
     /**
      * Apply the criterion (no-op for this test criterion).

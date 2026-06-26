@@ -18,7 +18,7 @@ use SineMacula\Repositories\Contracts\CriteriaInterface;
  *
  * @internal
  */
-class ActiveUsersCriterion implements CriteriaInterface
+final class ActiveUsersCriterion implements CriteriaInterface
 {
     /**
      * Apply the active-user condition.

@@ -24,7 +24,7 @@ use Tests\Support\Repositories\TestUserRepository;
  */
 #[CoversClass(Repository::class)]
 #[CoversClass(ManagesCriteria::class)]
-class SupplementaryCapabilityTest extends IntegrationTestCase
+final class SupplementaryCapabilityTest extends IntegrationTestCase
 {
     // -------------------------------------------------------------------------
     // Supplementary contract detection and collection
@@ -44,9 +44,9 @@ class SupplementaryCapabilityTest extends IntegrationTestCase
 
         $eagerLoads = $repository->getCollectedEagerLoads();
 
-        static::assertArrayHasKey('posts', $eagerLoads);
-        static::assertArrayHasKey('comments', $eagerLoads);
-        static::assertNull($eagerLoads['posts']);
+        self::assertArrayHasKey('posts', $eagerLoads);
+        self::assertArrayHasKey('comments', $eagerLoads);
+        self::assertNull($eagerLoads['posts']);
     }
 
     /**
@@ -61,7 +61,7 @@ class SupplementaryCapabilityTest extends IntegrationTestCase
 
         $repository->query();
 
-        static::assertSame(['id', 'name', 'active'], $repository->getCollectedFields());
+        self::assertSame(['id', 'name', 'active'], $repository->getCollectedFields());
     }
 
     /**
@@ -78,8 +78,8 @@ class SupplementaryCapabilityTest extends IntegrationTestCase
 
         $counts = $repository->getCollectedCounts();
 
-        static::assertArrayHasKey('posts', $counts);
-        static::assertNull($counts['posts']);
+        self::assertArrayHasKey('posts', $counts);
+        self::assertNull($counts['posts']);
     }
 
     /**
@@ -96,8 +96,8 @@ class SupplementaryCapabilityTest extends IntegrationTestCase
 
         $metadata = $repository->getCollectedMetadata();
 
-        static::assertSame('api', $metadata['source']);
-        static::assertSame(2, $metadata['version']);
+        self::assertSame('api', $metadata['source']);
+        self::assertSame(2, $metadata['version']);
     }
 
     /**
@@ -113,10 +113,10 @@ class SupplementaryCapabilityTest extends IntegrationTestCase
 
         $repository->query();
 
-        static::assertEmpty($repository->getCollectedEagerLoads());
-        static::assertEmpty($repository->getCollectedFields());
-        static::assertEmpty($repository->getCollectedCounts());
-        static::assertEmpty($repository->getCollectedMetadata());
+        self::assertEmpty($repository->getCollectedEagerLoads());
+        self::assertEmpty($repository->getCollectedFields());
+        self::assertEmpty($repository->getCollectedCounts());
+        self::assertEmpty($repository->getCollectedMetadata());
     }
 
     /**
@@ -132,12 +132,13 @@ class SupplementaryCapabilityTest extends IntegrationTestCase
 
         $repository->query();
 
-        // Two criteria, each declaring 'id', 'name', 'active' — duplicates merged
-        static::assertSame(['id', 'name', 'active'], $repository->getCollectedFields());
+        // Two criteria, each declaring 'id', 'name', 'active' - duplicates
+        // merged
+        self::assertSame(['id', 'name', 'active'], $repository->getCollectedFields());
 
         // Eager-loads from both merged (last wins for same key)
-        static::assertArrayHasKey('posts', $repository->getCollectedEagerLoads());
-        static::assertArrayHasKey('comments', $repository->getCollectedEagerLoads());
+        self::assertArrayHasKey('posts', $repository->getCollectedEagerLoads());
+        self::assertArrayHasKey('comments', $repository->getCollectedEagerLoads());
     }
 
     /**
@@ -152,7 +153,7 @@ class SupplementaryCapabilityTest extends IntegrationTestCase
 
         $repository->query();
 
-        static::assertNotEmpty($repository->getCollectedMetadata());
+        self::assertNotEmpty($repository->getCollectedMetadata());
 
         // Second query with only non-capability criteria
         $repository->removeCriteria(EagerLoadingCriterion::class);
@@ -160,7 +161,7 @@ class SupplementaryCapabilityTest extends IntegrationTestCase
 
         $repository->query();
 
-        static::assertEmpty($repository->getCollectedMetadata()); // @phpstan-ignore staticMethod.impossibleType
+        self::assertEmpty($repository->getCollectedMetadata()); // @phpstan-ignore staticMethod.impossibleType
     }
 
     /**
@@ -176,8 +177,8 @@ class SupplementaryCapabilityTest extends IntegrationTestCase
 
         $repository->query();
 
-        static::assertEmpty($repository->getCollectedEagerLoads());
-        static::assertEmpty($repository->getCollectedMetadata());
+        self::assertEmpty($repository->getCollectedEagerLoads());
+        self::assertEmpty($repository->getCollectedMetadata());
     }
 
     /**
@@ -196,8 +197,8 @@ class SupplementaryCapabilityTest extends IntegrationTestCase
         $repository->query();
 
         // Transient capability criterion contributes declarations
-        static::assertNotEmpty($repository->getCollectedEagerLoads());
-        static::assertNotEmpty($repository->getCollectedMetadata());
+        self::assertNotEmpty($repository->getCollectedEagerLoads());
+        self::assertNotEmpty($repository->getCollectedMetadata());
     }
 
     // -------------------------------------------------------------------------
@@ -224,12 +225,12 @@ class SupplementaryCapabilityTest extends IntegrationTestCase
         $users = $repository->query()->get();
 
         // Both applied: active AND named Alice → 1 result
-        static::assertCount(1, $users);
+        self::assertCount(1, $users);
 
         $first = $users->first();
 
-        static::assertNotNull($first);
-        static::assertSame('Alice', $first->getAttribute('name'));
+        self::assertNotNull($first);
+        self::assertSame('Alice', $first->getAttribute('name'));
     }
 
     // -------------------------------------------------------------------------
@@ -249,7 +250,7 @@ class SupplementaryCapabilityTest extends IntegrationTestCase
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
 
-        static::assertCount(2, $repository->query()->get());
+        self::assertCount(2, $repository->query()->get());
     }
 
     // -------------------------------------------------------------------------
@@ -263,7 +264,7 @@ class SupplementaryCapabilityTest extends IntegrationTestCase
      */
     private function repository(): TestUserRepository
     {
-        static::assertNotNull($this->app);
+        self::assertNotNull($this->app);
 
         return $this->app->make(TestUserRepository::class);
     }

@@ -18,7 +18,7 @@ use SineMacula\Repositories\Contracts\CriteriaInterface;
  *
  * @internal
  */
-class NamedUsersCriterion implements CriteriaInterface
+final class NamedUsersCriterion implements CriteriaInterface
 {
     /**
      * Constructor.
@@ -29,7 +29,6 @@ class NamedUsersCriterion implements CriteriaInterface
 
         /** The required user name */
         private readonly string $name,
-
     ) {}
 
     /**

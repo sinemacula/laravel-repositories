@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace SineMacula\Repositories\Concerns;
 
 use Illuminate\Support\Collection;
@@ -274,6 +276,8 @@ trait ManagesCriteria
      * @param  mixed  $persisted
      * @param  array<int, string|TCriterion>  $criteria
      * @return bool
+     *
+     * @imperative
      */
     private function criteriaMatchesRemovalRequest(mixed $persisted, array $criteria): bool
     {
@@ -355,8 +359,10 @@ trait ManagesCriteria
             $this->collectedCounts = array_merge($this->collectedCounts, $criterion->withCounts());
         }
 
-        if ($criterion instanceof ContributesMetadata) {
-            $this->collectedMetadata = array_merge($this->collectedMetadata, $criterion->metadata());
+        if (!$criterion instanceof ContributesMetadata) {
+            return;
         }
+
+        $this->collectedMetadata = array_merge($this->collectedMetadata, $criterion->metadata());
     }
 }

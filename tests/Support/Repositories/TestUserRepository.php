@@ -5,7 +5,7 @@ declare(strict_types = 1);
 namespace Tests\Support\Repositories;
 
 use SineMacula\Repositories\Repository;
-use SineMacula\Repositories\Testing\InspectsRepository;
+use SineMacula\Repositories\Testing\Concerns\InspectsRepository;
 use Tests\Support\Models\TestUser;
 
 /**
@@ -21,9 +21,9 @@ use Tests\Support\Models\TestUser;
  *
  * @internal
  */
-class TestUserRepository extends Repository
+final class TestUserRepository extends Repository
 {
-    /** @use \SineMacula\Repositories\Testing\InspectsRepository<\Tests\Support\Models\TestUser> */
+    /** @use \SineMacula\Repositories\Testing\Concerns\InspectsRepository<\Tests\Support\Models\TestUser> */
     use InspectsRepository;
 
     /** @var bool Indicates whether boot() was executed */

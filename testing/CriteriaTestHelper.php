@@ -21,10 +21,16 @@ use SineMacula\Repositories\Contracts\CriteriaInterface;
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
  */
-class CriteriaTestHelper
+final class CriteriaTestHelper
 {
-    /** @var \Illuminate\Database\Capsule\Manager|null Shared capsule instance */
+    // phpcs:disable Squiz.Commenting.VariableComment.TagNotAllowed -- @managed-static documents intentional shared state
+    /**
+     * @var \Illuminate\Database\Capsule\Manager|null Shared capsule instance
+     *
+     * @managed-static Memoized in-memory SQLite connection shared across calls.
+     */
     private static ?Capsule $capsule = null;
+    // phpcs:enable Squiz.Commenting.VariableComment.TagNotAllowed
 
     /**
      * Apply a criterion to a fresh query builder for the given table.
@@ -34,7 +40,10 @@ class CriteriaTestHelper
      *
      * Example:
      *
-     *     $builder = CriteriaTestHelper::apply(new ActiveUsersCriterion, 'users');
+     *     $builder = CriteriaTestHelper::apply(
+     *         new ActiveUsersCriterion,
+     *         'users'
+     *     );
      *     $this->assertStringContainsString('active', $builder->toSql());
      *     $this->assertContains(true, $builder->getBindings());
      *
@@ -99,8 +108,8 @@ class CriteriaTestHelper
     private static function model(string $table): Model
     {
         $model = new class extends Model {
-            /** @var bool */
-            public $timestamps = false;
+            /** @var array<string> */
+            protected $guarded = [];
         };
 
         $model->setTable($table);
