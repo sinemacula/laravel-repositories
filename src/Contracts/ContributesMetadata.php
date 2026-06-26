@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace SineMacula\Repositories\Contracts;
 
 /**
@@ -17,10 +19,12 @@ namespace SineMacula\Repositories\Contracts;
  */
 interface ContributesMetadata
 {
+    // phpcs:disable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint -- arbitrary criteria metadata
     /**
      * Return the metadata to contribute.
      *
      * @return array<string, mixed>
      */
     public function metadata(): array;
+    // phpcs:enable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint
 }

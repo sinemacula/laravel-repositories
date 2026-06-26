@@ -14,7 +14,7 @@ use Illuminate\Database\Eloquent\Model;
  *
  * @internal
  */
-class TestUser extends Model
+final class TestUser extends Model
 {
     /** @var bool Indicates whether the model tracks timestamps */
     public $timestamps = false;

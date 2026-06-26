@@ -2,7 +2,7 @@
 
 declare(strict_types = 1);
 
-namespace Tests\Support;
+namespace Tests\Support\Concerns;
 
 use Illuminate\Support\Facades\DB;
 use Tests\Support\Repositories\TestUserRepository;

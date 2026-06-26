@@ -91,6 +91,11 @@ package_filters = ["slevomat", "dealerdirect", "sinemacula"]
 
 [[plugin]]
 name = "php-cs-fixer"
+# Pinned to the last php-cs-fixer release whose symfony/console stays on the 7.x
+# line. 3.90+ pulls symfony/console 8 (requires PHP 8.4.1 and uses 8.4-only
+# syntax), which qlty's PHP 8.3 runner cannot parse. Bump once the runner ships
+# PHP 8.4.
+version = "3.89.0"
 package_file = "composer.json"
 package_filters = ["sinemacula"]
 
@@ -118,4 +123,10 @@ name = "yamllint"
 [[plugin]]
 name = "phpstan"
 version = "2.1.38"
-package_file = "composer.json"
+
+# phpstan needs the project's vendor tree to resolve types, so install it into
+# the sandbox before linting. The scoped `--ignore-platform-req='ext-*'` keeps
+# qlty's PHP 8.3 runner from pulling a PHP 8.4 dependency set; a blanket
+# `--ignore-platform-reqs` would break the bootstrap.
+[plugins.definitions.phpstan.drivers.lint]
+prepare_script = "~/.qlty/cache/tools/composer/generic-42cc848a9f5e/composer.phar install --no-scripts --ignore-platform-req='ext-*'"

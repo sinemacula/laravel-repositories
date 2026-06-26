@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace SineMacula\Repositories\Concerns;
 
 use Illuminate\Support\Collection;
@@ -255,6 +257,7 @@ trait ManagesCriteria
         return $this;
     }
 
+    // phpcs:disable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint -- sanitizes arbitrary input
     /**
      * Sanitize the given array of criteria to ensure they are valid criteria
      * instances.
@@ -266,7 +269,9 @@ trait ManagesCriteria
     {
         return array_filter($criteria, fn ($criterion) => $criterion instanceof CriteriaInterface);
     }
+    // phpcs:enable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint
 
+    // phpcs:disable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint -- compares against arbitrary persisted criteria
     /**
      * Determine whether a persisted criterion matches the given removal
      * request.
@@ -274,6 +279,8 @@ trait ManagesCriteria
      * @param  mixed  $persisted
      * @param  array<int, string|TCriterion>  $criteria
      * @return bool
+     *
+     * @imperative
      */
     private function criteriaMatchesRemovalRequest(mixed $persisted, array $criteria): bool
     {
@@ -293,6 +300,7 @@ trait ManagesCriteria
 
         return false;
     }
+    // phpcs:enable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint
 
     /**
      * Clears all transient criteria.
@@ -355,8 +363,10 @@ trait ManagesCriteria
             $this->collectedCounts = array_merge($this->collectedCounts, $criterion->withCounts());
         }
 
-        if ($criterion instanceof ContributesMetadata) {
-            $this->collectedMetadata = array_merge($this->collectedMetadata, $criterion->metadata());
+        if (!$criterion instanceof ContributesMetadata) {
+            return;
         }
+
+        $this->collectedMetadata = array_merge($this->collectedMetadata, $criterion->metadata());
     }
 }

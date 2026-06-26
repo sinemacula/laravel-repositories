@@ -22,24 +22,20 @@ use SineMacula\Repositories\Contracts\CriteriaInterface;
  *
  * @implements \SineMacula\Repositories\Contracts\CriteriaInterface<\Illuminate\Database\Eloquent\Model>
  */
-class CriterionStub implements CriteriaInterface
+final class CriterionStub implements CriteriaInterface
 {
     /** @var int The number of times apply() has been called */
-    public int $applyCount = 0;
+    private int $applyCount = 0;
 
     /**
      * Create a new criterion stub.
      *
-     * // @formatter:off
-     *
      * @param  (\Closure(\Illuminate\Contracts\Database\Eloquent\Builder): \Illuminate\Contracts\Database\Eloquent\Builder)|null  $callback
-     *                                                                                                                                       // @formatter:on
      */
     public function __construct(
 
         /** The optional callback to apply to the builder. */
         private readonly ?\Closure $callback = null,
-
     ) {}
 
     /**
@@ -73,5 +69,15 @@ class CriterionStub implements CriteriaInterface
     public function wasApplied(): bool
     {
         return $this->applyCount > 0;
+    }
+
+    /**
+     * Get the number of times the criterion has been applied.
+     *
+     * @return int
+     */
+    public function applyCount(): int
+    {
+        return $this->applyCount;
     }
 }

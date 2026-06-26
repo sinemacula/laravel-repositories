@@ -23,7 +23,7 @@ use Tests\Support\Repositories\TestUserRepository;
  */
 #[CoversClass(Repository::class)]
 #[CoversClass(RepositoryException::class)]
-class RepositoryTest extends TestCase
+final class RepositoryTest extends TestCase
 {
     /**
      * Ensure invalid model resolutions fail fast.
@@ -35,7 +35,7 @@ class RepositoryTest extends TestCase
     public function testMakeModelThrowsWhenResolvedClassIsNotEloquentModel(): void
     {
         $app = $this->createMock(Application::class);
-        $app->expects(static::exactly(2))
+        $app->expects(self::exactly(2))
             ->method('make')
             ->with(TestUser::class)
             ->willReturnOnConsecutiveCalls(new TestUser, new \stdClass);

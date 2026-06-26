@@ -17,7 +17,7 @@ use Tests\Support\Models\TestUser;
  *
  * @internal
  */
-class PlainTestUserRepository extends Repository
+final class PlainTestUserRepository extends Repository
 {
     /**
      * Return the model class.

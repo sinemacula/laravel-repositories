@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types = 1);
+
 namespace SineMacula\Repositories;
 
 use Illuminate\Container\Container;
@@ -7,7 +9,6 @@ use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
-use Override;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
 use SineMacula\Repositories\Contracts\RepositoryCriteriaInterface;
 use SineMacula\Repositories\Contracts\RepositoryInterface;
@@ -62,8 +63,10 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     /** @var array<string, (\Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void)|null> Relationship count declarations from applied criteria. */
     protected array $collectedCounts = [];
 
+    // phpcs:disable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint -- arbitrary criteria metadata
     /** @var array<string, mixed> Metadata from applied criteria. */
     protected array $collectedMetadata = [];
+    // phpcs:enable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint
 
     /**
      * Resolve the target model and initialize criteria and scope state.
@@ -77,7 +80,6 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
 
         /** @api-stable Resolves models and criteria from the container. */
         protected readonly Application $app,
-
     ) {
         $this->persistentCriteria = new Collection;
         $this->transientCriteria  = new Collection;
@@ -87,6 +89,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
         $this->boot();
     }
 
+    // phpcs:disable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint -- magic-method forwarding returns mixed
     /**
      * Trigger a static method call on the repository.
      *
@@ -110,7 +113,9 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
 
         throw new RepositoryException(sprintf('Static repository calls require an initialized Laravel container for `%s`.', static::class));
     }
+    // phpcs:enable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint
 
+    // phpcs:disable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint -- magic-method forwarding returns mixed
     /**
      * Forward method calls to the model.
      *
@@ -129,6 +134,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
 
         return $this->resetAndReturn($forwardedResult);
     }
+    // phpcs:enable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint
 
     /**
      * Reset the scopes.
@@ -155,7 +161,8 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     {
         $model = $this->app->make($this->model());
 
-        if (!$this->isModelInstance($model)) {
+        // @phpstan-ignore instanceof.alwaysTrue (defensive runtime guard - the container can resolve a non-model when misconfigured)
+        if (!$model instanceof Model) {
             throw new RepositoryException("Class {$this->model()} must be an instance of Illuminate\\Database\\Eloquent\\Model");
         }
 
@@ -283,6 +290,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
         return $this->collectedCounts;
     }
 
+    // phpcs:disable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint -- criteria metadata is arbitrary by contract
     /**
      * Get the metadata collected from the most recent criteria application.
      *
@@ -292,6 +300,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     {
         return $this->collectedMetadata;
     }
+    // phpcs:enable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint
 
     /**
      * Boot the repository instance.
@@ -366,6 +375,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
         return $this;
     }
 
+    // phpcs:disable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint -- magic-method forwarding returns mixed
     /**
      * Reset the various transient values and return the result.
      *
@@ -385,15 +395,5 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
 
         return $queryResult;
     }
-
-    /**
-     * Determine whether the resolved value is a model instance.
-     *
-     * @param  mixed  $model
-     * @return bool
-     */
-    private function isModelInstance(mixed $model): bool
-    {
-        return $model instanceof Model;
-    }
+    // phpcs:enable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint
 }

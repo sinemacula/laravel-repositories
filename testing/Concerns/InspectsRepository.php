@@ -2,7 +2,7 @@
 
 declare(strict_types = 1);
 
-namespace SineMacula\Repositories\Testing;
+namespace SineMacula\Repositories\Testing\Concerns;
 
 use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
@@ -130,10 +130,7 @@ trait InspectsRepository
     /**
      * Force the internal persistent criteria collection.
      *
-     * // @formatter:off
-     *
      * @param  \Illuminate\Support\Collection<int, \SineMacula\Repositories\Contracts\CriteriaInterface<TModel>>  $criteria
-     *                                                                                                                       // @formatter:on
      * @return void
      */
     public function forcePersistentCriteria(Collection $criteria): void
@@ -144,10 +141,7 @@ trait InspectsRepository
     /**
      * Force the internal transient criteria collection.
      *
-     * // @formatter:off
-     *
      * @param  \Illuminate\Support\Collection<int, \SineMacula\Repositories\Contracts\CriteriaInterface<TModel>>  $criteria
-     *                                                                                                                       // @formatter:on
      * @return void
      */
     public function forceTransientCriteria(Collection $criteria): void
@@ -169,6 +163,7 @@ trait InspectsRepository
         return $this->applyScopes();
     }
 
+    // phpcs:disable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint -- forwards arbitrary query results
     /**
      * Invoke the protected resetAndReturn() method.
      *
@@ -179,4 +174,5 @@ trait InspectsRepository
     {
         return $this->resetAndReturn($result);
     }
+    // phpcs:enable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint
 }

@@ -26,7 +26,7 @@ use Tests\Support\Repositories\TestUserRepository;
  */
 #[CoversClass(Repository::class)]
 #[CoversClass(ManagesCriteria::class)]
-class RepositoryIntegrationTest extends IntegrationTestCase
+final class RepositoryIntegrationTest extends IntegrationTestCase
 {
     /**
      * Verify constructor initialization and boot behavior.
@@ -37,11 +37,11 @@ class RepositoryIntegrationTest extends IntegrationTestCase
     {
         $repository = $this->repository();
 
-        static::assertTrue($repository->booted);
-        static::assertSame(0, $repository->persistentCriteriaCount());
-        static::assertSame(0, $repository->transientCriteriaCount());
-        static::assertSame(0, $repository->scopesCount());
-        static::assertInstanceOf(TestUser::class, $repository->getModel());
+        self::assertTrue($repository->booted);
+        self::assertSame(0, $repository->persistentCriteriaCount());
+        self::assertSame(0, $repository->transientCriteriaCount());
+        self::assertSame(0, $repository->scopesCount());
+        self::assertInstanceOf(TestUser::class, $repository->getModel());
     }
 
     /**
@@ -51,11 +51,11 @@ class RepositoryIntegrationTest extends IntegrationTestCase
      */
     public function testBaseBootMethodIsExecutedOnConstruction(): void
     {
-        static::assertNotNull($this->app);
+        self::assertNotNull($this->app);
 
         $repository = $this->app->make(PlainTestUserRepository::class);
 
-        static::assertInstanceOf(TestUser::class, $repository->getModel());
+        self::assertInstanceOf(TestUser::class, $repository->getModel());
     }
 
     /**
@@ -70,7 +70,7 @@ class RepositoryIntegrationTest extends IntegrationTestCase
 
         $model = $repository->getModel();
 
-        static::assertInstanceOf(TestUser::class, $model);
+        self::assertInstanceOf(TestUser::class, $model);
     }
 
     /**
@@ -89,10 +89,10 @@ class RepositoryIntegrationTest extends IntegrationTestCase
 
         $query = $repository->query();
 
-        static::assertInstanceOf(BuilderContract::class, $query);
-        static::assertSame(0, $repository->transientCriteriaCount());
-        static::assertSame(0, $repository->scopesCount());
-        static::assertInstanceOf(BuilderContract::class, $repository->newQuery());
+        self::assertInstanceOf(BuilderContract::class, $query);
+        self::assertSame(0, $repository->transientCriteriaCount());
+        self::assertSame(0, $repository->scopesCount());
+        self::assertInstanceOf(BuilderContract::class, $repository->newQuery());
     }
 
     /**
@@ -105,7 +105,7 @@ class RepositoryIntegrationTest extends IntegrationTestCase
         $repository = $this->repository();
         $repository->forceModel(null);
 
-        static::assertInstanceOf(BuilderContract::class, $repository->query());
+        self::assertInstanceOf(BuilderContract::class, $repository->query());
     }
 
     /**
@@ -125,10 +125,10 @@ class RepositoryIntegrationTest extends IntegrationTestCase
             })
             ->__call('get', []);
 
-        static::assertCount(1, $users);
-        static::assertSame(0, $repository->transientCriteriaCount());
-        static::assertSame(0, $repository->scopesCount());
-        static::assertInstanceOf(TestUser::class, $repository->getModel());
+        self::assertCount(1, $users);
+        self::assertSame(0, $repository->transientCriteriaCount());
+        self::assertSame(0, $repository->scopesCount());
+        self::assertInstanceOf(TestUser::class, $repository->getModel());
     }
 
     /**
@@ -142,8 +142,8 @@ class RepositoryIntegrationTest extends IntegrationTestCase
 
         $user = TestUserRepository::find(1);
 
-        static::assertInstanceOf(TestUser::class, $user);
-        static::assertSame('Alice', $user->getAttribute('name'));
+        self::assertInstanceOf(TestUser::class, $user);
+        self::assertSame('Alice', $user->getAttribute('name'));
     }
 
     /**
@@ -158,19 +158,19 @@ class RepositoryIntegrationTest extends IntegrationTestCase
         $repository = $this->repository();
         $repository->pushCriteria([new ActiveUsersCriterion, 'invalid']);
 
-        static::assertCount(2, $repository->query()->get());
+        self::assertCount(2, $repository->query()->get());
 
         $repository->disableCriteria();
 
-        static::assertCount(3, $repository->query()->get());
+        self::assertCount(3, $repository->query()->get());
 
         $repository->useCriteria();
-        static::assertCount(2, $repository->query()->get());
+        self::assertCount(2, $repository->query()->get());
 
         $repository->enableCriteria();
 
-        static::assertFalse($repository->isCriteriaDisabled());
-        static::assertFalse($repository->isForceUsingCriteria());
+        self::assertFalse($repository->isCriteriaDisabled());
+        self::assertFalse($repository->isForceUsingCriteria());
     }
 
     /**
@@ -188,13 +188,13 @@ class RepositoryIntegrationTest extends IntegrationTestCase
             ->withCriteria(new NamedUsersCriterion('Alice'))
             ->skipCriteria();
 
-        static::assertTrue($repository->isCriteriaSkipped());
-        static::assertTrue($repository->isForceUsingCriteria());
-        static::assertCount(3, $repository->query()->get());
-        static::assertFalse($repository->isCriteriaSkipped());
-        static::assertFalse($repository->isForceUsingCriteria());
-        static::assertSame(0, $repository->transientCriteriaCount());
-        static::assertCount(2, $repository->query()->get());
+        self::assertTrue($repository->isCriteriaSkipped());
+        self::assertTrue($repository->isForceUsingCriteria());
+        self::assertCount(3, $repository->query()->get());
+        self::assertFalse($repository->isCriteriaSkipped());
+        self::assertFalse($repository->isForceUsingCriteria());
+        self::assertSame(0, $repository->transientCriteriaCount());
+        self::assertCount(2, $repository->query()->get());
     }
 
     /**
@@ -210,13 +210,13 @@ class RepositoryIntegrationTest extends IntegrationTestCase
         $repository->pushCriteria([$activeCriteria, new NamedUsersCriterion('Alice')]);
         $repository->withCriteria(new NamedUsersCriterion('Bob'));
 
-        static::assertCount(3, $repository->getCriteria());
+        self::assertCount(3, $repository->getCriteria());
 
         $repository->removeCriteria($activeCriteria);
-        static::assertCount(2, $repository->getCriteria());
+        self::assertCount(2, $repository->getCriteria());
 
         $repository->removeCriteria(NamedUsersCriterion::class);
-        static::assertCount(0, $repository->getCriteria());
+        self::assertCount(0, $repository->getCriteria());
     }
 
     /**
@@ -237,10 +237,10 @@ class RepositoryIntegrationTest extends IntegrationTestCase
         $repository->forceTransientCriteria($transient);
 
         $repository->removeCriteria([new NamedUsersCriterion('Alice')]);
-        static::assertSame(2, $repository->persistentCriteriaCount());
+        self::assertSame(2, $repository->persistentCriteriaCount());
 
         $repository->removeCriteria(ActiveUsersCriterion::class);
-        static::assertSame(1, $repository->persistentCriteriaCount());
+        self::assertSame(1, $repository->persistentCriteriaCount());
     }
 
     /**
@@ -260,8 +260,8 @@ class RepositoryIntegrationTest extends IntegrationTestCase
 
         $query = $repository->query();
 
-        static::assertInstanceOf(BuilderContract::class, $query);
-        static::assertCount(2, $query->get());
+        self::assertInstanceOf(BuilderContract::class, $query);
+        self::assertCount(2, $query->get());
     }
 
     /**
@@ -280,10 +280,10 @@ class RepositoryIntegrationTest extends IntegrationTestCase
 
         $result = $repository->invokeResetAndReturn('result');
 
-        static::assertSame('result', $result);
-        static::assertSame(0, $repository->transientCriteriaCount());
-        static::assertSame(0, $repository->scopesCount());
-        static::assertInstanceOf(TestUser::class, $repository->getModel());
+        self::assertSame('result', $result);
+        self::assertSame(0, $repository->transientCriteriaCount());
+        self::assertSame(0, $repository->scopesCount());
+        self::assertInstanceOf(TestUser::class, $repository->getModel());
     }
 
     /**
@@ -297,13 +297,13 @@ class RepositoryIntegrationTest extends IntegrationTestCase
         $repository->pushCriteria(new ActiveUsersCriterion);
         $repository->withCriteria(new NamedUsersCriterion('Alice'));
 
-        static::assertSame(1, $repository->persistentCriteriaCount());
-        static::assertSame(1, $repository->transientCriteriaCount());
+        self::assertSame(1, $repository->persistentCriteriaCount());
+        self::assertSame(1, $repository->transientCriteriaCount());
 
         $repository->resetCriteria();
 
-        static::assertSame(0, $repository->persistentCriteriaCount());
-        static::assertSame(0, $repository->transientCriteriaCount());
+        self::assertSame(0, $repository->persistentCriteriaCount());
+        self::assertSame(0, $repository->transientCriteriaCount());
     }
 
     /**
@@ -316,11 +316,11 @@ class RepositoryIntegrationTest extends IntegrationTestCase
         $repository = $this->repository();
         $repository->forceModel(null);
 
-        static::assertNull($repository->currentModel());
+        self::assertNull($repository->currentModel());
 
         $repository->resetModel();
 
-        static::assertInstanceOf(TestUser::class, $repository->currentModel());
+        self::assertInstanceOf(TestUser::class, $repository->currentModel());
     }
 
     /**
@@ -338,11 +338,11 @@ class RepositoryIntegrationTest extends IntegrationTestCase
             $query->where('name', 'Alice');
         });
 
-        static::assertSame(2, $repository->scopesCount());
+        self::assertSame(2, $repository->scopesCount());
 
         $repository->resetScopes();
 
-        static::assertSame(0, $repository->scopesCount());
+        self::assertSame(0, $repository->scopesCount());
     }
 
     /**
@@ -352,7 +352,7 @@ class RepositoryIntegrationTest extends IntegrationTestCase
      */
     private function repository(): TestUserRepository
     {
-        static::assertNotNull($this->app);
+        self::assertNotNull($this->app);
 
         return $this->app->make(TestUserRepository::class);
     }
