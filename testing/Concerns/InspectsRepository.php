@@ -163,7 +163,6 @@ trait InspectsRepository
         return $this->applyScopes();
     }
 
-    // phpcs:disable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint -- forwards arbitrary query results
     /**
      * Invoke the protected resetAndReturn() method.
      *
@@ -174,5 +173,4 @@ trait InspectsRepository
     {
         return $this->resetAndReturn($result);
     }
-    // phpcs:enable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint
 }

@@ -257,7 +257,6 @@ trait ManagesCriteria
         return $this;
     }
 
-    // phpcs:disable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint -- sanitizes arbitrary input
     /**
      * Sanitize the given array of criteria to ensure they are valid criteria
      * instances.
@@ -269,9 +268,7 @@ trait ManagesCriteria
     {
         return array_filter($criteria, fn ($criterion) => $criterion instanceof CriteriaInterface);
     }
-    // phpcs:enable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint
 
-    // phpcs:disable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint -- compares against arbitrary persisted criteria
     /**
      * Determine whether a persisted criterion matches the given removal
      * request.
@@ -300,7 +297,6 @@ trait ManagesCriteria
 
         return false;
     }
-    // phpcs:enable SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint
 
     /**
      * Clears all transient criteria.
