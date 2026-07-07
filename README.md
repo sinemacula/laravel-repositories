@@ -2,6 +2,7 @@
 
 [![Latest Stable Version](https://img.shields.io/packagist/v/sinemacula/laravel-repositories.svg)](https://packagist.org/packages/sinemacula/laravel-repositories)
 [![Build Status](https://github.com/sinemacula/laravel-repositories/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/sinemacula/laravel-repositories/actions/workflows/tests.yml)
+[![Quality Gates](https://github.com/sinemacula/laravel-repositories/actions/workflows/quality-gates.yml/badge.svg?branch=master)](https://github.com/sinemacula/laravel-repositories/actions/workflows/quality-gates.yml)
 [![Maintainability](https://qlty.sh/gh/sinemacula/projects/laravel-repositories/maintainability.svg)](https://qlty.sh/gh/sinemacula/projects/laravel-repositories)
 [![Code Coverage](https://qlty.sh/gh/sinemacula/projects/laravel-repositories/coverage.svg)](https://qlty.sh/gh/sinemacula/projects/laravel-repositories)
 [![Total Downloads](https://img.shields.io/packagist/dt/sinemacula/laravel-repositories.svg)](https://packagist.org/packages/sinemacula/laravel-repositories)
@@ -32,11 +33,22 @@ foundation this package builds on.
 
 ## Installation
 
-To install the Laravel API Repositories package, run the following command in your project directory:
+To install the Laravel Repositories package, run the following command in your project directory:
 
 ```bash
 composer require sinemacula/laravel-repositories
 ```
+
+## Configuration
+
+Publish the configuration file to customize the opt-in repository cache:
+
+```bash
+php artisan vendor:publish --provider="SineMacula\Repositories\RepositoryServiceProvider" --tag=config
+```
+
+Every option lives under `repositories.cache.*` and only affects repositories that opt into caching via the
+`Cacheable` trait.
 
 ## Usage
 
@@ -53,7 +65,7 @@ $user = UserRepository::find($id);
 Repositories carry transient criteria and scope state while a query pipeline is being built. Register repositories as
 transient or scoped bindings (`bind` or `scoped`) rather than `singleton` to avoid state leakage across requests.
 
-## Caching
+### Caching
 
 Caching is fully opt-in: add the `Cacheable` trait to a repository and its read verbs (`get`, `all`, `find`, `first`,
 `firstWhere`, `firstOrFail`, `findOrFail`, `sole`, `value`, `pluck`) are served from a cache keyed by a fingerprint of
@@ -82,7 +94,7 @@ $repository->flushCache();                   // Drop every cached entry for the 
 $status = $repository->getCacheStatus();     // isPopulated() / getAge() / getLastInvalidatedAt()
 ```
 
-### Invalidation
+#### Invalidation
 
 Write verbs forwarded through the repository (`create`, `update`, `delete`, `firstOrCreate`, `updateOrCreate`,
 `upsert`, `increment`, `decrement`, `restore`, and friends) invalidate every cached entry for the repository's table
@@ -100,24 +112,23 @@ safe degraded state is stale-until-TTL rather than surfacing an error the caller
 Writes performed outside the repository (directly on the model, query builder, or database) are invisible to the
 cache and are served stale until the TTL expires or `flushCache()` is called.
 
-### Negative caching and the size guard
+#### Negative caching and the size guard
 
 A read that returns nothing is cached as a miss marker under the shorter `negative_ttl` (10 seconds by default), so
 repeated probes for a missing record do not hammer the database while a stale "not found" stays tightly bounded.
 Results exceeding `max_rows` or `max_bytes` are still fetched and returned but never stored, preventing unbounded
 cache growth.
 
-### Reference mode
+#### Reference mode
 
 For small, static tables read in full (countries, currencies, statuses), set `protected bool $cacheReferenceTable =
 true` to opt into whole-table reference mode: the table is loaded once, cached as a single snapshot, memoised on the
 repository instance, and indexed by primary key, so `get`, `all`, and `find` resolve without touching the database.
 Other read verbs skip the cache entirely in this mode.
 
-### Configuration
+#### Cache configuration
 
-Publish the config with `php artisan vendor:publish --provider="SineMacula\Repositories\RepositoryServiceProvider"
---tag=config`. Every option lives under `repositories.cache.*` and may be overridden per repository via a property:
+Every option may be overridden per repository via a property:
 
 | Config key         | Env variable                       | Property                | Default        |
 |--------------------|------------------------------------|-------------------------|----------------|
@@ -133,50 +144,55 @@ Publish the config with `php artisan vendor:publish --provider="SineMacula\Repos
 Using a dedicated cache store (`REPOSITORY_CACHE_STORE`) is recommended so application-wide flushes of the default
 store never evict repository caches, and vice versa.
 
+### Testing Utilities
+
+The package exports test utilities under the `SineMacula\Repositories\Testing` namespace for downstream packages that
+extend `Repository` or implement `CriteriaInterface`. See [docs/testing.md](docs/testing.md) for the setup and the
+documented testing patterns.
+
+### Extension Points
+
+Every protected member of the repository is classified as Stable, Transitional, or Internal, with stability
+guarantees documented per member. The package adheres to [Semantic Versioning](https://semver.org/); changes to
+stable extension points count as breaking. See [docs/extension-points.md](docs/extension-points.md) for the full
+classification.
+
+### Upgrading
+
+See [UPGRADE.md](UPGRADE.md) for version-by-version migration guides, including breaking changes and the steps
+required to move from 1.x to 2.x.
+
+## Requirements
+
+- PHP ^8.3
+- Laravel 11+
+
 ## Testing
 
 ```bash
-composer test
-composer test-coverage
-composer check
+composer test                # PHPUnit suite in parallel via Paratest
+composer test:coverage       # suite with Clover coverage output
+composer test:mutation       # Infection mutation gate (min MSI 90)
+composer test:mutation:full  # full mutation suite without thresholds
+composer check               # static analysis and lint via qlty
+composer format              # format via qlty
+composer smells              # duplication / complexity smells via qlty
 ```
 
-## Versioning Policy
+## Changelog
 
-This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-**What constitutes a breaking change:**
-
-- Adding, removing, or changing method signatures on any interface (`CriteriaInterface`, `RepositoryInterface`,
-  `RepositoryCriteriaInterface`, `ContributesMetadata`, `DeclaresEagerLoading`, `DeclaresFieldSelection`,
-  `DeclaresRelationshipCounts`)
-- Changing the observable behavior of public methods in ways that violate documented contracts
-- Changing protected members that are classified as [stable extension points](UPGRADING.md)
-
-**Deprecation policy:**
-
-- Features planned for removal will be marked with `@deprecated` annotations that include a description, the
-  recommended replacement, and the version in which the feature will be removed.
-- Deprecated features will survive at least one minor or major release cycle before removal.
-- PHPStan (with `phpstan-deprecation-rules`) will surface deprecation warnings in your IDE and CI pipeline.
-
-**What is NOT covered by stability guarantees:**
-
-- Members marked `@internal` (including the `ManagesCriteria` trait)
-- Protected properties and methods not classified as stable extension points
-- Undocumented behavioral details (e.g., internal criteria application ordering)
-
-See [CHANGELOG.md](CHANGELOG.md) for a history of changes, [UPGRADING.md](UPGRADING.md) for migration guidance
-between major versions, and [EXTENSION-POINTS.md](EXTENSION-POINTS.md) for the extension point classification and
-lifecycle documentation.
+See [CHANGELOG.md](CHANGELOG.md) for a list of notable changes, and [UPGRADE.md](UPGRADE.md) for version upgrade
+guides.
 
 ## Contributing
 
-Contributions are welcome via GitHub pull requests.
+Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on branching, commits, code
+quality, and pull requests.
 
 ## Security
 
-If you discover a security issue, please contact Sine Macula directly rather than opening a public issue.
+If you discover a security vulnerability, please report it responsibly. See [SECURITY.md](SECURITY.md) for the
+disclosure policy and contact details.
 
 ## License
 

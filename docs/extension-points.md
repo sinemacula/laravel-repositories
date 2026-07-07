@@ -243,7 +243,7 @@ the [Versioning Policy](README.md#versioning-policy):
 
 - Stable members will not change behavior or signature without a deprecation notice in a prior release.
 - The minimum deprecation window is one minor or major release cycle.
-- Deprecated members will include documentation of the migration path in [UPGRADING.md](UPGRADING.md).
+- Deprecated members will include documentation of the migration path in [UPGRADE.md](../UPGRADE.md).
 
 **Transitional** members may change in any minor or major release. Changes will be documented in
 [CHANGELOG.md](CHANGELOG.md) with migration guidance where applicable.

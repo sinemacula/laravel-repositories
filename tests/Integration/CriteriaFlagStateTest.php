@@ -241,7 +241,7 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
     }
 
     // -------------------------------------------------------------------------
-    // Group D: Disabled + Skip ($disableCriteria=true, $skipCriteria=true)
+    // Group D: Disabled + Skip (disableCriteria and skipCriteria both true)
     // -------------------------------------------------------------------------
 
     /**

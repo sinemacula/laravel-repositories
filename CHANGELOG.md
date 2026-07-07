@@ -2,29 +2,8 @@
 
 All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
-
-### Added
-
-- `Cacheable` trait providing opt-in transparent per-query caching for repositories: reads are served from a cache
-  keyed by a query fingerprint (compiled SQL, bindings, read verb, arguments, and eager loads) and writes invalidate
-  the whole table.
-- Whole-table reference mode (`$cacheReferenceTable`) for small, static tables read in full, with an instance memo
-  and primary-key index.
-- Negative caching of null/miss reads under a dedicated shorter TTL, and a size guard (`max_rows` / `max_bytes`)
-  that prevents oversized results from being stored.
-- Per-table invalidation via cache tags on taggable stores, or a generational table version bumped atomically on
-  non-taggable stores.
-- `CacheInvalidator` contract implemented by both cache strategies, plus the `CacheStore`, `ReferenceCache`,
-  `CacheSizeGuard`, `CacheStoreOptions`, `CacheStatus`, `CacheMiss`, and `QueryFingerprint` collaborators and the
-  `CacheKeys` enum.
-- `RepositoryServiceProvider` merging the new `repositories` config file and offering it for publishing.
-- Concern boot chain: `Repository` now invokes a dedicated `boot{Concern}` hook on every used concern after
-  `boot()`, so multiple bootable concerns can coexist without trait collisions.
-- Infection mutation-testing gate (`composer test:mutation` / `test:mutation:full`) and a `composer smells` script.
+The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres
+to [Semantic Versioning](https://semver.org/).
 
 ## [2.0.0] - 2026-03-05
 
@@ -131,16 +110,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Persistent and transient criteria collections with enable/disable/skip/reset controls.
 - Magic method forwarding (`__call`, `__callStatic`) for model-like ergonomics.
 
-[Unreleased]: https://github.com/sinemacula/laravel-repositories/compare/v2.0.0...HEAD
-
 [2.0.0]: https://github.com/sinemacula/laravel-repositories/compare/v1.0.4...v2.0.0
-
 [1.0.4]: https://github.com/sinemacula/laravel-repositories/compare/v1.0.3...v1.0.4
-
 [1.0.3]: https://github.com/sinemacula/laravel-repositories/compare/v1.0.2...v1.0.3
-
 [1.0.2]: https://github.com/sinemacula/laravel-repositories/compare/v1.0.1...v1.0.2
-
 [1.0.1]: https://github.com/sinemacula/laravel-repositories/compare/v1.0.0...v1.0.1
-
 [1.0.0]: https://github.com/sinemacula/laravel-repositories/releases/tag/v1.0.0

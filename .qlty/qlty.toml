@@ -84,10 +84,15 @@ name = "osv-scanner"
 
 [[plugin]]
 name = "php-codesniffer"
-version = "3.13.5"
+version = "4.0.1"
 mode = "comment"
 package_file = "composer.json"
 package_filters = ["slevomat", "dealerdirect", "sinemacula"]
+
+# phpcs 4.x exits 3 on findings; without this qlty treats that as a hard error
+# and drops every finding instead of reporting them.
+[plugins.definitions.php-codesniffer.drivers.lint]
+success_codes = [0, 1, 2, 3]
 
 [[plugin]]
 name = "php-cs-fixer"
@@ -122,7 +127,7 @@ name = "yamllint"
 
 [[plugin]]
 name = "phpstan"
-version = "2.1.38"
+version = "2.1.46"
 
 # phpstan needs the project's vendor tree to resolve types, so install it into
 # the sandbox before linting. The scoped `--ignore-platform-req='ext-*'` keeps

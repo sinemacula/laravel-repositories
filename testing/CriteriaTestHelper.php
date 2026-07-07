@@ -16,21 +16,21 @@ use SineMacula\Repositories\Contracts\CriteriaInterface;
  * connection, service container, or integration test framework. Uses an
  * in-memory SQLite connection via Laravel's Capsule Manager.
  *
- * See TESTING.md for usage patterns.
+ * See docs/testing.md for usage patterns.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
  */
 final class CriteriaTestHelper
 {
-    // phpcs:disable Squiz.Commenting.VariableComment.TagNotAllowed -- @managed-static documents intentional shared state
+    // phpcs:disable Squiz.Commenting.VariableComment -- @managed-static documents intentional shared state
     /**
      * @var \Illuminate\Database\Capsule\Manager|null Shared capsule instance
      *
      * @managed-static Memoized in-memory SQLite connection shared across calls.
      */
     private static ?Capsule $capsule = null;
-    // phpcs:enable Squiz.Commenting.VariableComment.TagNotAllowed
+    // phpcs:enable Squiz.Commenting.VariableComment
 
     /**
      * Apply a criterion to a fresh query builder for the given table.

@@ -13,8 +13,8 @@ use Illuminate\Support\Collection;
  * doubles.
  *
  * Use this trait on your test repository subclass instead of writing custom
- * public wrapper methods for protected properties. See TESTING.md for usage
- * patterns.
+ * public wrapper methods for protected properties. See docs/testing.md for
+ * usage patterns.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
