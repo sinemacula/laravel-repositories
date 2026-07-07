@@ -5,16 +5,22 @@
 
     <!--
         The repository pattern legitimately traffics in mixed: the magic
-        __call/__callStatic forwarders return arbitrary builder results, and
-        criteria contribute arbitrary key-value metadata. Exempt those files
-        from the mixed-typehint sniff rather than scattering per-member
-        suppressions through them.
+        __call/__callStatic forwarders return arbitrary builder results,
+        criteria contribute arbitrary key-value metadata, and the per-query
+        cache stores and fingerprints arbitrary forwarded results. Exempt
+        those files from the mixed-typehint sniff rather than scattering
+        per-member suppressions through them.
     -->
     <rule ref="SlevomatCodingStandard.TypeHints.DisallowMixedTypeHint">
         <exclude-pattern>*/src/Repository.php</exclude-pattern>
+        <exclude-pattern>*/src/Concerns/Cacheable.php</exclude-pattern>
+        <exclude-pattern>*/src/Concerns/CacheSizeGuard.php</exclude-pattern>
+        <exclude-pattern>*/src/Concerns/CacheStore.php</exclude-pattern>
         <exclude-pattern>*/src/Concerns/ManagesCriteria.php</exclude-pattern>
+        <exclude-pattern>*/src/Concerns/QueryFingerprint.php</exclude-pattern>
         <exclude-pattern>*/src/Contracts/ContributesMetadata.php</exclude-pattern>
         <exclude-pattern>*/testing/Concerns/InspectsRepository.php</exclude-pattern>
+        <exclude-pattern>*/tests/Support/Concerns/InteractsWithNonPublicMembers.php</exclude-pattern>
     </rule>
 
     <file>src</file>

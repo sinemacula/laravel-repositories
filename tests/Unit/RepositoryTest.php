@@ -11,6 +11,7 @@ use PHPUnit\Framework\TestCase;
 use SineMacula\Repositories\Exceptions\RepositoryException;
 use SineMacula\Repositories\Repository;
 use Tests\Support\Models\TestUser;
+use Tests\Support\Repositories\BootableConcernRepository;
 use Tests\Support\Repositories\TestUserRepository;
 
 /**
@@ -46,6 +47,26 @@ final class RepositoryTest extends TestCase
         $this->expectExceptionMessage('must be an instance of Illuminate\Database\Eloquent\Model');
 
         $repository->makeModel();
+    }
+
+    /**
+     * Ensure the constructor boots every used concern that exposes a dedicated
+     * boot hook, after the subclass boot() has run.
+     *
+     * @return void
+     *
+     * @throws \PHPUnit\Framework\MockObject\Exception
+     */
+    public function testConstructorBootsConcernsWithDedicatedBootHooks(): void
+    {
+        $app = $this->createMock(Application::class);
+        $app->method('make')
+            ->with(TestUser::class)
+            ->willReturn(new TestUser);
+
+        $repository = new BootableConcernRepository($app);
+
+        self::assertTrue($repository->hasBootedConcern());
     }
 
     /**

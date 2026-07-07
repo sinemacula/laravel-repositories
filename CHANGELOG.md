@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `Cacheable` trait providing opt-in transparent per-query caching for repositories: reads are served from a cache
+  keyed by a query fingerprint (compiled SQL, bindings, read verb, arguments, and eager loads) and writes invalidate
+  the whole table.
+- Whole-table reference mode (`$cacheReferenceTable`) for small, static tables read in full, with an instance memo
+  and primary-key index.
+- Negative caching of null/miss reads under a dedicated shorter TTL, and a size guard (`max_rows` / `max_bytes`)
+  that prevents oversized results from being stored.
+- Per-table invalidation via cache tags on taggable stores, or a generational table version bumped atomically on
+  non-taggable stores.
+- `CacheInvalidator` contract implemented by both cache strategies, plus the `CacheStore`, `ReferenceCache`,
+  `CacheSizeGuard`, `CacheStoreOptions`, `CacheStatus`, `CacheMiss`, and `QueryFingerprint` collaborators and the
+  `CacheKeys` enum.
+- `RepositoryServiceProvider` merging the new `repositories` config file and offering it for publishing.
+- Concern boot chain: `Repository` now invokes a dedicated `boot{Concern}` hook on every used concern after
+  `boot()`, so multiple bootable concerns can coexist without trait collisions.
+- Infection mutation-testing gate (`composer test:mutation` / `test:mutation:full`) and a `composer smells` script.
+
 ## [2.0.0] - 2026-03-05
 
 ### Added
