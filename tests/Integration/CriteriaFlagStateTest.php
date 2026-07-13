@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace Tests\Integration;
 
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\CoversTrait;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
 use SineMacula\Repositories\Repository;
 use Tests\Support\Concerns\InteractsWithUserRepository;
@@ -35,7 +36,7 @@ use Tests\Support\Criteria\NamedUsersCriterion;
  * @internal
  */
 #[CoversClass(Repository::class)]
-#[CoversClass(ManagesCriteria::class)]
+#[CoversTrait(ManagesCriteria::class)]
 final class CriteriaFlagStateTest extends IntegrationTestCase
 {
     use InteractsWithUserRepository;

@@ -6,6 +6,7 @@ namespace Tests\Integration;
 
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\CoversTrait;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
 use SineMacula\Repositories\Repository;
 use Tests\Support\Criteria\ActiveUsersCriterion;
@@ -23,7 +24,7 @@ use Tests\Support\Repositories\TestUserRepository;
  * @internal
  */
 #[CoversClass(Repository::class)]
-#[CoversClass(ManagesCriteria::class)]
+#[CoversTrait(ManagesCriteria::class)]
 final class SupplementaryCapabilityTest extends IntegrationTestCase
 {
     // -------------------------------------------------------------------------
