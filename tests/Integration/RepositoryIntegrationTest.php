@@ -8,6 +8,7 @@ use Illuminate\Contracts\Database\Eloquent\Builder as BuilderContract;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\CoversTrait;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
 use SineMacula\Repositories\Repository;
 use Tests\Support\Criteria\ActiveUsersCriterion;
@@ -25,7 +26,7 @@ use Tests\Support\Repositories\TestUserRepository;
  * @internal
  */
 #[CoversClass(Repository::class)]
-#[CoversClass(ManagesCriteria::class)]
+#[CoversTrait(ManagesCriteria::class)]
 final class RepositoryIntegrationTest extends IntegrationTestCase
 {
     /**

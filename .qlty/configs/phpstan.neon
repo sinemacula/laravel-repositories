@@ -10,3 +10,15 @@ parameters:
         - src
         - testing
         - tests
+
+    # The Cacheable trait's collaborators are assigned by bootCacheable(),
+    # which Repository::bootConcerns() invokes from the constructor, so the
+    # properties are initialized during construction even though the dynamic
+    # dispatch is invisible to the uninitialized-property check. The check
+    # reports against the consuming class, so scope the ignore to the test
+    # fixtures that use the trait.
+    ignoreErrors:
+        -
+            identifier: property.uninitialized
+            paths:
+                - '*/tests/Support/Repositories/*'

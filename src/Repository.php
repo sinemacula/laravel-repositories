@@ -85,6 +85,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
         $this->resetScopes();
         $this->makeModel();
         $this->boot();
+        $this->bootConcerns();
     }
 
     /**
@@ -385,5 +386,29 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
         $this->resetModel();
 
         return $queryResult;
+    }
+
+    /**
+     * Boot each used concern that exposes a boot{Concern} hook.
+     *
+     * Concerns such as Cacheable need boot-time setup but cannot override
+     * boot() without colliding with a subclass boot() override, so the base
+     * repository invokes their dedicated boot hooks after boot() has run. This
+     * lets a single repository safely use more than one bootable concern.
+     *
+     * @return void
+     */
+    private function bootConcerns(): void
+    {
+        foreach (class_uses_recursive(static::class) as $concern) {
+
+            $method = 'boot' . class_basename($concern);
+
+            if (!method_exists($this, $method)) {
+                continue;
+            }
+
+            $this->{$method}(); // @phpstan-ignore method.dynamicName
+        }
     }
 }

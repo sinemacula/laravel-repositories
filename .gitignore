@@ -1,6 +1,6 @@
 /vendor
 /.idea
-/reports
+/build
 /phpunit.xml
 /.phpunit.cache
 .phpunit.result.cache

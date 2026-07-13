@@ -15,7 +15,7 @@ use SineMacula\Repositories\Contracts\CriteriaInterface;
  * repository behavior such as criteria ordering, application counts, and flag
  * interactions without writing a custom criterion class.
  *
- * See TESTING.md for usage patterns.
+ * See docs/testing.md for usage patterns.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.

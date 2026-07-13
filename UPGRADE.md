@@ -1,4 +1,4 @@
-# Upgrading
+# Upgrade Guide
 
 This document provides migration guidance for breaking changes between major versions.
 
