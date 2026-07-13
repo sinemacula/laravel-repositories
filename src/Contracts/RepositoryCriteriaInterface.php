@@ -7,7 +7,9 @@ namespace SineMacula\Repositories\Contracts;
 use Illuminate\Support\Collection;
 
 /**
- * Repository criteria interface.
+ * Declares the criteria lifecycle contract a repository must expose: register
+ * criteria (persistently or for the next query only), remove them, inspect
+ * what is currently active, and toggle their application at runtime.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.

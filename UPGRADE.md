@@ -2,6 +2,62 @@
 
 This document provides migration guidance for breaking changes between major versions.
 
+## From v2.1.x to v2.2.0
+
+v2.2.0 adds two consumer-visible changes to the base `Repository` and to `Cacheable`'s reference mode.
+
+### 1. Repository::all() is now a concrete method
+
+**What changed:** `all()` is now implemented directly on `Repository` as `all(mixed ...$arguments): mixed`, delegating
+to the `get()` pipeline so criteria, scopes, and caching apply exactly as they would for `get()`.
+
+**Who is affected:** Subclasses that declare their own `all()` method with an incompatible signature. PHP enforces
+method signature compatibility at class-load time, so a subclass `all()` that does not match
+`all(mixed ...$arguments): mixed` now fatals when the class is loaded.
+
+**Before (v2.1):**
+
+```php
+final class UserRepository extends Repository
+{
+    public function all(array $columns = ['*']): Collection
+    {
+        // custom implementation
+    }
+}
+```
+
+**After (v2.2):**
+
+```php
+// Remove the override entirely - the base class now provides it - or match
+// the base signature and delegate:
+final class UserRepository extends Repository
+{
+    public function all(mixed ...$arguments): mixed
+    {
+        return parent::all(...$arguments);
+    }
+}
+```
+
+**Action:** Remove any subclass `all()` override, or re-sign it to match `all(mixed ...$arguments): mixed`.
+
+### 2. Reference-mode reads now honour active criteria and scopes
+
+**What changed:** A repository with `protected bool $cacheReferenceTable = true` previously always served the
+unfiltered whole-table snapshot from `get()`, `all()`, and `find()`, even when criteria or scopes were active. Reference
+mode now executes a real, uncached query instead of the snapshot whenever criteria or scopes are pending.
+
+**Why:** The old behaviour silently discarded active criteria and scopes on reference-mode repositories, returning more
+data than the caller asked for.
+
+**Who is affected:** Consumers combining `cacheReferenceTable = true` with `pushCriteria()`, `withCriteria()`, or
+`addScope()` and relying on the previous (incorrect) unfiltered result.
+
+**Action:** No change is required for typical usage - this delivers the already-documented reference-mode contract. To
+keep serving the unfiltered snapshot regardless of active criteria, call `skipCriteria()` explicitly before the read.
+
 ## From v1.x to v2.0
 
 v2.0.0 introduced seven categories of breaking change. This section covers each one with the change rationale and

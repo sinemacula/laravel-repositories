@@ -8,7 +8,6 @@ use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 use SineMacula\Repositories\Contracts\CacheInvalidator;
 use SineMacula\Repositories\Exceptions\UnfingerprintableQueryException;
@@ -33,6 +32,7 @@ use SineMacula\Repositories\Exceptions\UnfingerprintableQueryException;
  *   - `protected int $cacheReferenceTtl` - reference-mode cache duration
  *   - `protected ?int $cacheNegativeTtl` - null/miss cache duration
  *   - `protected bool $cacheReferenceTable = true` - opt into whole-table mode
+ *   - `protected bool $cacheRegistryEnabled = true` - non-taggable version bump
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -134,24 +134,31 @@ trait Cacheable
         $model = $this->getModel();
         $table = $model->getTable();
 
-        $storeName = $this->resolveProperty('cacheStoreName') ?? Config::get('repositories.cache.store') ?? Config::get('cache.default');
-        $storeName = is_string($storeName) ? $storeName : 'array';
-        $store     = Cache::store($storeName);
+        $configuration = CacheConfiguration::resolveFor([
+            'cacheStoreName'       => $this->resolveProperty('cacheStoreName'),
+            'cacheKeyPrefix'       => $this->resolveProperty('cacheKeyPrefix'),
+            'cacheReferenceTable'  => $this->resolveProperty('cacheReferenceTable'),
+            'cacheTtl'             => $this->resolveProperty('cacheTtl'),
+            'cacheReferenceTtl'    => $this->resolveProperty('cacheReferenceTtl'),
+            'cacheNegativeTtl'     => $this->resolveProperty('cacheNegativeTtl'),
+            'cacheMaxRows'         => $this->resolveProperty('cacheMaxRows'),
+            'cacheMaxBytes'        => $this->resolveProperty('cacheMaxBytes'),
+            'cacheRegistryEnabled' => $this->resolveProperty('cacheRegistryEnabled'),
+        ], $table);
 
-        $prefix = $this->resolveProperty('cacheKeyPrefix') ?? $table;
-        $prefix = is_string($prefix) ? $prefix : $table;
+        $store = Cache::store($configuration->storeName);
 
-        $this->cacheReferenceMode = (bool) ($this->resolveProperty('cacheReferenceTable') ?? false);
+        $this->cacheReferenceMode = $configuration->referenceMode;
 
         // The reference-mode snapshot key is qualified with the connection
         // identity (unlike the per-query key, which folds it into the query
         // fingerprint instead), so two connections exposing the same table
         // name never share a whole-table snapshot.
         $connection      = $model->getConnection();
-        $referencePrefix = $prefix . ':' . $connection->getName() . ':' . $connection->getDatabaseName();
+        $referencePrefix = $configuration->prefix . ':' . $connection->getName() . ':' . $connection->getDatabaseName();
 
-        $this->cacheStore     = new CacheStore($store, $prefix, $this->resolveStoreOptions());
-        $this->referenceCache = new ReferenceCache($store, $referencePrefix, $this->resolveReferenceTtl(), $this->resolveSizeGuard());
+        $this->cacheStore     = new CacheStore($store, $configuration->prefix, $configuration->storeOptions);
+        $this->referenceCache = new ReferenceCache($store, $referencePrefix, $configuration->referenceTtl, $configuration->storeOptions->sizeGuard);
     }
 
     /**
@@ -197,7 +204,7 @@ trait Cacheable
         // it cannot leak past the write onto an unrelated later read.
         $this->bypassCache = false;
 
-        $result = parent::__call($method, $arguments);
+        $outcome = parent::__call($method, $arguments);
 
         try {
             $this->activeStore()->flushTable();
@@ -208,7 +215,7 @@ trait Cacheable
             Log::error('Cache flush after write failed', ['exception' => $exception]);
         }
 
-        return $result;
+        return $outcome;
     }
 
     /**
@@ -224,8 +231,7 @@ trait Cacheable
      * @param  array<int, mixed>  $arguments
      * @return mixed
      *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     * @throws \Throwable
      */
     private function resolveCachedRead(string $method, array $arguments): mixed
     {
@@ -250,17 +256,17 @@ trait Cacheable
                 return parent::resetAndReturn($cached instanceof CacheMiss ? null : $cached);
             }
 
-            $result = \Closure::fromCallable([$query, $method])(...$arguments);
+            $value = \Closure::fromCallable([$query, $method])(...$arguments);
 
-            if ($result !== null) {
-                $this->cacheStore->put($hash, $result, $this->rowCount($result));
+            if ($value !== null) {
+                $this->cacheStore->put($hash, $value, $this->rowCount($value));
             } else {
                 $this->cacheStore->putMiss($hash);
             }
 
-            return parent::resetAndReturn($result);
-
+            return parent::resetAndReturn($value);
         } catch (\Throwable $exception) {
+
             $this->resetAfterFailure();
 
             throw $exception;
@@ -368,16 +374,16 @@ trait Cacheable
     /**
      * Count the rows represented by a query result for the size guard.
      *
-     * @param  mixed  $result
+     * @param  mixed  $value
      * @return int
      */
-    private function rowCount(mixed $result): int
+    private function rowCount(mixed $value): int
     {
-        if ($result instanceof Collection) {
-            return $result->count();
+        if ($value instanceof Collection) {
+            return $value->count();
         }
 
-        return $result instanceof Model ? 1 : 0;
+        return $value instanceof Model ? 1 : 0;
     }
 
     /**
@@ -406,71 +412,6 @@ trait Cacheable
     private function activeStore(): CacheInvalidator
     {
         return $this->cacheReferenceMode ? $this->referenceCache : $this->cacheStore;
-    }
-
-    /**
-     * Resolve the configured cache TTL.
-     *
-     * @return int
-     */
-    private function resolveTtl(): int
-    {
-        $ttl = $this->resolveProperty('cacheTtl') ?? Config::get('repositories.cache.ttl', 3600);
-
-        return is_numeric($ttl) ? (int) $ttl : 3600;
-    }
-
-    /**
-     * Resolve the configured reference-mode cache TTL.
-     *
-     * @return int
-     */
-    private function resolveReferenceTtl(): int
-    {
-        $ttl = $this->resolveProperty('cacheReferenceTtl') ?? Config::get('repositories.cache.reference_ttl', 3600);
-
-        return is_numeric($ttl) ? (int) $ttl : 3600;
-    }
-
-    /**
-     * Resolve the configured negative-lookup (null/miss) cache TTL.
-     *
-     * @return int
-     */
-    private function resolveNegativeTtl(): int
-    {
-        $ttl = $this->resolveProperty('cacheNegativeTtl') ?? Config::get('repositories.cache.negative_ttl', 10);
-
-        return is_numeric($ttl) ? (int) $ttl : 10;
-    }
-
-    /**
-     * Resolve the per-query cache store options from properties and config.
-     *
-     * @return \SineMacula\Repositories\Concerns\CacheStoreOptions
-     */
-    private function resolveStoreOptions(): CacheStoreOptions
-    {
-        $registryEnabled = $this->resolveProperty('cacheRegistryEnabled')
-            ?? Config::get('repositories.cache.registry_enabled', true);
-
-        return new CacheStoreOptions($this->resolveTtl(), $this->resolveSizeGuard(), (bool) $registryEnabled, $this->resolveNegativeTtl());
-    }
-
-    /**
-     * Build the size guard from the configured row and byte ceilings.
-     *
-     * @return \SineMacula\Repositories\Concerns\CacheSizeGuard
-     */
-    private function resolveSizeGuard(): CacheSizeGuard
-    {
-        $maxRows  = $this->resolveProperty('cacheMaxRows')  ?? Config::get('repositories.cache.max_rows', 1000);
-        $maxBytes = $this->resolveProperty('cacheMaxBytes') ?? Config::get('repositories.cache.max_bytes', 262144);
-
-        return new CacheSizeGuard(
-            is_numeric($maxRows) ? (int) $maxRows : null,
-            is_numeric($maxBytes) ? (int) $maxBytes : null,
-        );
     }
 
     /**

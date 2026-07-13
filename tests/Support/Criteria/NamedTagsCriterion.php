@@ -24,6 +24,7 @@ final class NamedTagsCriterion implements CriteriaInterface
      * Constructor.
      *
      * @param  string  $name
+     * @return void
      */
     public function __construct(
 

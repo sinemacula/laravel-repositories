@@ -296,26 +296,26 @@ trait ManagesCriteria
     }
 
     /**
-     * Determine whether a persisted criterion matches the given removal
+     * Determine whether a candidate criterion matches the given removal
      * request.
      *
-     * @param  mixed  $persisted
+     * @param  mixed  $candidate
      * @param  array<int, string|TCriterion>  $criteria
      * @return bool
      *
      * @imperative
      */
-    private function criteriaMatchesRemovalRequest(mixed $persisted, array $criteria): bool
+    private function criteriaMatchesRemovalRequest(mixed $candidate, array $criteria): bool
     {
-        if (!is_object($persisted)) {
+        if (!is_object($candidate)) {
             return false;
         }
 
         foreach ($criteria as $criterion) {
 
             if (
-                (is_object($criterion) && $persisted instanceof $criterion)
-                || (is_string($criterion) && $persisted::class === $criterion)
+                (is_object($criterion) && $candidate instanceof $criterion)
+                || (is_string($criterion) && $candidate::class === $criterion)
             ) {
                 return true;
             }

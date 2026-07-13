@@ -29,7 +29,7 @@ use Tests\Support\Repositories\CustomPrefixCacheableTagRepository;
 use Tests\Support\Repositories\CustomStoreCacheableTagRepository;
 use Tests\Support\Repositories\ReferenceTableTagRepository;
 use Tests\Support\Repositories\ShortTtlTagRepository;
-use Tests\Support\Repositories\TunedCacheableTagRepository;
+use Tests\Support\Repositories\SizeGuardedTagRepository;
 
 /**
  * Tests for the Cacheable trait.
@@ -145,7 +145,7 @@ final class CacheableTest extends IntegrationTestCase
 
         Log::shouldReceive('error')
             ->once()
-            ->with('Cache flush after write failed', \Mockery::on(
+            ->with(\Mockery::type('string'), \Mockery::on(
                 static fn (array $context): bool => $context['exception'] instanceof \RuntimeException
                     && $context['exception']->getMessage() === 'cache down',
             ));
@@ -169,9 +169,11 @@ final class CacheableTest extends IntegrationTestCase
 
         self::assertTrue($this->repository->getCacheStatus()->isPopulated());
 
+        Tag::create(['name' => 'vue']);
+
         $result = $this->repository->withoutCache()->get(); // @phpstan-ignore staticMethod.dynamicCall
 
-        self::assertInstanceOf(Collection::class, $result);
+        self::assertCount(3, $result);
         self::assertTrue($this->repository->getCacheStatus()->isPopulated());
     }
 
@@ -314,7 +316,6 @@ final class CacheableTest extends IntegrationTestCase
     public function testBootInvokesParentBootChain(): void
     {
         self::assertTrue($this->repository->booted);
-        self::assertInstanceOf(CacheStore::class, $this->getProperty($this->repository, 'cacheStore'));
     }
 
     /**
@@ -542,10 +543,11 @@ final class CacheableTest extends IntegrationTestCase
             });
 
         try {
+
             $this->repository->findOrFail(999); // @phpstan-ignore staticMethod.dynamicCall
             self::fail('Expected the cached findOrFail() to throw.');
-        } catch (ModelNotFoundException) {
-            // The dirty builder and scope must not survive the failure.
+        } catch (ModelNotFoundException $exception) {
+            self::assertSame(Tag::class, $exception->getModel());
         }
 
         $result = $this->repository->get(); // @phpstan-ignore staticMethod.dynamicCall
@@ -554,162 +556,71 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that the row count used by the size guard is the collection size for
-     * a collection, exactly one for a single model, and zero otherwise.
+     * Test that a single-model result is cached when its row count of one does
+     * not exceed the size guard, proving the guard sees a single Model result
+     * as exactly one row.
      *
      * @return void
      */
-    public function testRowCountReflectsResultShape(): void
-    {
-        $rowCount = new \ReflectionMethod($this->repository, 'rowCount');
-
-        self::assertSame(2, $rowCount->invoke($this->repository, new Collection(['a', 'b'])));
-        self::assertSame(1, $rowCount->invoke($this->repository, new Tag));
-        self::assertSame(0, $rowCount->invoke($this->repository, 'not-a-model'));
-        self::assertSame(0, $rowCount->invoke($this->repository, null));
-    }
-
-    /**
-     * Test that the reference-mode key argument is taken from the first
-     * argument, defaults to zero, and preserves integer and string keys while
-     * casting any other type to a string.
-     *
-     * @return void
-     */
-    public function testReferenceIdResolvesPrimaryKeyArgument(): void
-    {
-        $referenceId = new \ReflectionMethod($this->repository, 'referenceId');
-
-        self::assertSame(5, $referenceId->invoke($this->repository, [5, 99]));
-        self::assertSame('php', $referenceId->invoke($this->repository, ['php']));
-        self::assertSame(0, $referenceId->invoke($this->repository, []));
-        self::assertSame([1, 'two'], $referenceId->invoke($this->repository, [[1, 3.5, 'two']]));
-        self::assertNull($referenceId->invoke($this->repository, [1.5]));
-    }
-
-    /**
-     * Test that the repository's cache tuning properties take precedence over
-     * the package configuration when resolving the store options.
-     *
-     * @return void
-     */
-    public function testTuningPropertiesTakePrecedenceOverConfig(): void
+    public function testSingleModelResultIsCachedWithinAOneRowSizeGuard(): void
     {
         assert($this->app !== null);
 
-        $repository = $this->app->make(TunedCacheableTagRepository::class);
+        $repository = $this->app->make(SizeGuardedTagRepository::class);
 
-        $resolveTtl          = new \ReflectionMethod($repository, 'resolveTtl');
-        $resolveReferenceTtl = new \ReflectionMethod($repository, 'resolveReferenceTtl');
-        $resolveNegativeTtl  = new \ReflectionMethod($repository, 'resolveNegativeTtl');
-        $resolveStoreOptions = new \ReflectionMethod($repository, 'resolveStoreOptions');
+        $repository->find(1); // @phpstan-ignore staticMethod.dynamicCall
 
-        self::assertSame(120, $resolveTtl->invoke($repository));
-        self::assertSame(240, $resolveReferenceTtl->invoke($repository));
-        self::assertSame(30, $resolveNegativeTtl->invoke($repository));
+        DB::enableQueryLog();
 
-        $options = $resolveStoreOptions->invoke($repository);
+        $repository->find(1); // @phpstan-ignore staticMethod.dynamicCall
 
-        self::assertInstanceOf(CacheStoreOptions::class, $options);
-        self::assertSame(120, $options->ttl);
-        self::assertSame(30, $options->negativeTtl);
-        self::assertFalse($options->registryEnabled);
-        self::assertSame(50, (new \ReflectionProperty(CacheSizeGuard::class, 'maxRows'))->getValue($options->sizeGuard));
-        self::assertSame(2048, (new \ReflectionProperty(CacheSizeGuard::class, 'maxBytes'))->getValue($options->sizeGuard));
+        self::assertCount(0, DB::getQueryLog());
+
+        DB::disableQueryLog();
     }
 
     /**
-     * Test that the per-query and reference cache TTLs fall back to one hour
-     * when neither a repository property nor numeric configuration is present.
+     * Test that a scalar value() result is cached regardless of the size
+     * guard's row ceiling, proving a non-collection, non-model result counts
+     * as zero rows.
      *
      * @return void
      */
-    public function testCacheTtlsFallBackToOneHourForNonNumericConfig(): void
+    public function testScalarValueResultIsCachedRegardlessOfRowSizeGuard(): void
     {
         assert($this->app !== null);
 
-        Config::set('repositories.cache.ttl', 'not-numeric');
-        Config::set('repositories.cache.reference_ttl', 'not-numeric');
+        $repository = $this->app->make(SizeGuardedTagRepository::class);
 
-        $repository = $this->app->make(CacheableTagRepository::class);
+        $repository->value('name'); // @phpstan-ignore staticMethod.dynamicCall
 
-        self::assertSame(3600, (new \ReflectionMethod($repository, 'resolveTtl'))->invoke($repository));
-        self::assertSame(3600, (new \ReflectionMethod($repository, 'resolveReferenceTtl'))->invoke($repository));
+        DB::enableQueryLog();
+
+        $repository->value('name'); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(0, DB::getQueryLog());
+
+        DB::disableQueryLog();
     }
 
     /**
-     * Test that the negative-lookup TTL casts a numeric configuration value to
-     * an int and falls back to ten seconds for a non-numeric value.
+     * Test that a reference-mode find() with a mixed-type array of ids
+     * resolves only the entries whose id is a supported int or string shape,
+     * silently dropping any other value rather than including or crashing on
+     * it.
      *
      * @return void
      */
-    public function testNegativeTtlCastsNumericConfigAndFallsBackForNonNumeric(): void
+    public function testReferenceModeFindWithMixedTypeArrayResolvesOnlySupportedIds(): void
     {
         assert($this->app !== null);
 
-        $repository = $this->app->make(CacheableTagRepository::class);
-        $resolve    = new \ReflectionMethod($repository, 'resolveNegativeTtl');
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
 
-        Config::set('repositories.cache.negative_ttl', '25');
+        $found = $repository->find([1, 3.5, 2]); // @phpstan-ignore staticMethod.dynamicCall
 
-        self::assertSame(25, $resolve->invoke($repository));
-
-        Config::set('repositories.cache.negative_ttl', 'not-numeric');
-
-        self::assertSame(10, $resolve->invoke($repository));
-    }
-
-    /**
-     * Test that every tuning resolver falls back to its packaged default when
-     * the configuration keys are absent entirely.
-     *
-     * @return void
-     */
-    public function testResolversFallBackToPackagedDefaultsWhenConfigIsAbsent(): void
-    {
-        assert($this->app !== null);
-
-        Config::set('repositories.cache', []);
-
-        $repository = $this->app->make(CacheableTagRepository::class);
-
-        self::assertSame(3600, (new \ReflectionMethod($repository, 'resolveTtl'))->invoke($repository));
-        self::assertSame(3600, (new \ReflectionMethod($repository, 'resolveReferenceTtl'))->invoke($repository));
-        self::assertSame(10, (new \ReflectionMethod($repository, 'resolveNegativeTtl'))->invoke($repository));
-
-        $options = (new \ReflectionMethod($repository, 'resolveStoreOptions'))->invoke($repository);
-
-        self::assertInstanceOf(CacheStoreOptions::class, $options);
-        self::assertTrue($options->registryEnabled);
-        self::assertSame(1000, (new \ReflectionProperty(CacheSizeGuard::class, 'maxRows'))->getValue($options->sizeGuard));
-        self::assertSame(262144, (new \ReflectionProperty(CacheSizeGuard::class, 'maxBytes'))->getValue($options->sizeGuard));
-    }
-
-    /**
-     * Test that numeric string configuration values are cast to integers by
-     * the tuning resolvers.
-     *
-     * @return void
-     */
-    public function testNumericStringTuningConfigIsCastToInteger(): void
-    {
-        assert($this->app !== null);
-
-        Config::set('repositories.cache.ttl', '120');
-        Config::set('repositories.cache.reference_ttl', '240');
-        Config::set('repositories.cache.max_rows', '50');
-        Config::set('repositories.cache.max_bytes', '2048');
-
-        $repository = $this->app->make(CacheableTagRepository::class);
-
-        self::assertSame(120, (new \ReflectionMethod($repository, 'resolveTtl'))->invoke($repository));
-        self::assertSame(240, (new \ReflectionMethod($repository, 'resolveReferenceTtl'))->invoke($repository));
-
-        $guard = (new \ReflectionMethod($repository, 'resolveSizeGuard'))->invoke($repository);
-
-        self::assertInstanceOf(CacheSizeGuard::class, $guard);
-        self::assertSame(50, (new \ReflectionProperty(CacheSizeGuard::class, 'maxRows'))->getValue($guard));
-        self::assertSame(2048, (new \ReflectionProperty(CacheSizeGuard::class, 'maxBytes'))->getValue($guard));
+        self::assertInstanceOf(Collection::class, $found);
+        self::assertCount(2, $found);
     }
 
     /**

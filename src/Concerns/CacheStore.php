@@ -138,21 +138,21 @@ final class CacheStore implements CacheInvalidator
     }
 
     /**
-     * Store the given result for a query fingerprint, subject to the size
+     * Store the given value for a query fingerprint, subject to the size
      * guard.
      *
      * @param  string  $hash
-     * @param  mixed  $result
+     * @param  mixed  $value
      * @param  int  $rows
      * @return void
      */
-    public function put(string $hash, mixed $result, int $rows): void
+    public function put(string $hash, mixed $value, int $rows): void
     {
-        if (!$this->options->sizeGuard->allows($result, $rows)) {
+        if (!$this->options->sizeGuard->allows($value, $rows)) {
             return;
         }
 
-        $this->scopedStore()->put($this->keyFor($hash), $result, $this->options->ttl);
+        $this->scopedStore()->put($this->keyFor($hash), $value, $this->options->ttl);
         $this->store->put($this->metaKey, ['populated_at' => now()->timestamp], $this->options->ttl);
     }
 

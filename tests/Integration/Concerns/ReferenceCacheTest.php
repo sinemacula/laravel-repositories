@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Repositories\Concerns\CacheSizeGuard;
+use SineMacula\Repositories\Concerns\CacheStatus;
 use SineMacula\Repositories\Concerns\ReferenceCache;
 use Tests\Integration\IntegrationTestCase;
 use Tests\Support\Models\Tag;
@@ -22,6 +23,7 @@ use Tests\Support\Models\Tag;
  *
  * @internal
  */
+#[CoversClass(CacheStatus::class)]
 #[CoversClass(ReferenceCache::class)]
 final class ReferenceCacheTest extends IntegrationTestCase
 {

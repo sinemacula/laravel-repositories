@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Log;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Repositories\Concerns\CacheMiss;
 use SineMacula\Repositories\Concerns\CacheSizeGuard;
+use SineMacula\Repositories\Concerns\CacheStatus;
 use SineMacula\Repositories\Concerns\CacheStore;
 use SineMacula\Repositories\Concerns\CacheStoreOptions;
 use SineMacula\Repositories\Enums\CacheKeys;
@@ -30,6 +31,7 @@ use Tests\Integration\IntegrationTestCase;
  *
  * @internal
  */
+#[CoversClass(CacheStatus::class)]
 #[CoversClass(CacheStore::class)]
 final class CacheStoreTest extends IntegrationTestCase
 {

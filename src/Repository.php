@@ -9,7 +9,9 @@ use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
+use SineMacula\Repositories\Concerns\BootsConcerns;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
+use SineMacula\Repositories\Concerns\ResetsTransientState;
 use SineMacula\Repositories\Contracts\RepositoryCriteriaInterface;
 use SineMacula\Repositories\Contracts\RepositoryInterface;
 use SineMacula\Repositories\Exceptions\RepositoryException;
@@ -31,7 +33,7 @@ use SineMacula\Repositories\Exceptions\RepositoryException;
 abstract class Repository implements RepositoryCriteriaInterface, RepositoryInterface
 {
     /** @use \SineMacula\Repositories\Concerns\ManagesCriteria<TModel> */
-    use ManagesCriteria;
+    use BootsConcerns, ManagesCriteria, ResetsTransientState;
 
     /** @var \Illuminate\Contracts\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Model|null The resolved model or active query builder. */
     protected Builder|Model|null $model = null;
@@ -70,6 +72,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * Resolve the target model and initialize criteria and scope state.
      *
      * @param  \Illuminate\Contracts\Foundation\Application  $app
+     * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \SineMacula\Repositories\Exceptions\RepositoryException
@@ -119,8 +122,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * @param  array<int, mixed>  $arguments
      * @return mixed
      *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     * @throws \Throwable
      */
     public function __call(string $method, array $arguments): mixed
     {
@@ -130,8 +132,8 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
             $callable = \Closure::fromCallable([$query, $method]);
 
             return $this->resetAndReturn($callable(...$arguments));
-
         } catch (\Throwable $exception) {
+
             $this->resetAfterFailure();
 
             throw $exception;
@@ -414,55 +416,5 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
         $this->resetModel();
 
         return $queryResult;
-    }
-
-    /**
-     * Reset transient state after a failed forwarded call so the next query
-     * starts from a clean builder instead of re-applying criteria and scopes
-     * onto the dirty one.
-     *
-     * Model re-resolution failures are deliberately not rethrown here: the
-     * original exception is the one propagating to the caller, and nulling the
-     * model guarantees the next prepareQueryBuilder() rebuilds it (surfacing
-     * any resolution failure at that point).
-     *
-     * @return void
-     *
-     * @internal cleanup step in the magic method forwarding pipeline
-     */
-    protected function resetAfterFailure(): void
-    {
-        $this->resetTransientCriteria();
-        $this->resetScopes();
-
-        try {
-            $this->resetModel();
-        } catch (\Throwable) {
-            $this->model = null;
-        }
-    }
-
-    /**
-     * Boot each used concern that exposes a boot{Concern} hook.
-     *
-     * Concerns such as Cacheable need boot-time setup but cannot override
-     * boot() without colliding with a subclass boot() override, so the base
-     * repository invokes their dedicated boot hooks after boot() has run. This
-     * lets a single repository safely use more than one bootable concern.
-     *
-     * @return void
-     */
-    private function bootConcerns(): void
-    {
-        foreach (class_uses_recursive(static::class) as $concern) {
-
-            $method = 'boot' . class_basename($concern);
-
-            if (!method_exists($this, $method)) {
-                continue;
-            }
-
-            $this->{$method}(); // @phpstan-ignore method.dynamicName
-        }
     }
 }
