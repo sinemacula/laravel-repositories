@@ -232,6 +232,8 @@ final class CacheStoreTest extends IntegrationTestCase
         $store      = new CacheStore(Cache::store('file'), 'versioned-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
         $versionKey = 'repositories:repository-cache-version:versioned-table';
 
+        Log::shouldReceive('error')->never();
+
         $store->put(self::HASH, collect(['first']), 1);
 
         self::assertNull($store->getStore()->get($versionKey));
@@ -411,6 +413,8 @@ final class CacheStoreTest extends IntegrationTestCase
         $options = new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10);
         (new CacheStore(Cache::store('file'), 'file-table', $options))->put(self::HASH, collect(['a']), 1);
 
+        Log::shouldReceive('error')->never();
+
         CacheStore::invalidateTable('file', 'file-table', registryEnabled: true);
 
         self::assertNull((new CacheStore(Cache::store('file'), 'file-table', $options))->fetch(self::HASH));
@@ -576,7 +580,8 @@ final class CacheStoreTest extends IntegrationTestCase
         Log::shouldReceive('error')
             ->once()
             ->with('Table version increment failed after seed retry', \Mockery::on(
-                static fn (array $context): bool => $context['table'] === 'failing-table',
+                static fn (array $context): bool => $context['table'] === 'failing-table'
+                    && $context['version_key']                        === 'repositories:repository-cache-version:failing-table',
             ));
 
         $cacheStore->flushTable();

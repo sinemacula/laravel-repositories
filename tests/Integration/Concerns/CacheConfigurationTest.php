@@ -130,6 +130,7 @@ final class CacheConfigurationTest extends IntegrationTestCase
     {
         Config::set('repositories.cache.ttl', '120');
         Config::set('repositories.cache.reference_ttl', '240');
+        Config::set('repositories.cache.negative_ttl', '15');
         Config::set('repositories.cache.max_rows', '50');
         Config::set('repositories.cache.max_bytes', '2048');
 
@@ -137,8 +138,42 @@ final class CacheConfigurationTest extends IntegrationTestCase
 
         self::assertSame(120, $configuration->storeOptions->ttl);
         self::assertSame(240, $configuration->referenceTtl);
+        self::assertSame(15, $configuration->storeOptions->negativeTtl);
         self::assertTrue($configuration->storeOptions->sizeGuard->allows(['a'], 50));
         self::assertFalse($configuration->storeOptions->sizeGuard->allows(['a'], 51));
+    }
+
+    /**
+     * Test that a repository-level override takes exact precedence over the
+     * packaged default even though the default is itself a non-null value,
+     * proving the override is read first rather than merely coalesced with
+     * it.
+     *
+     * @return void
+     */
+    public function testMaxBytesOverrideTakesExactPrecedenceOverNonNullConfigDefault(): void
+    {
+        $configuration = CacheConfiguration::resolveFor(['cacheMaxBytes' => 100], 'tags');
+
+        self::assertTrue($configuration->storeOptions->sizeGuard->allows(self::payloadOfSerializedByteLength(100), 1));
+        self::assertFalse($configuration->storeOptions->sizeGuard->allows(self::payloadOfSerializedByteLength(101), 1));
+    }
+
+    /**
+     * Test that the packaged byte-size default is applied at its exact
+     * boundary, so a result serializing to precisely the ceiling is allowed
+     * and one byte over is rejected.
+     *
+     * @return void
+     */
+    public function testMaxBytesPackagedDefaultAppliesExactByteCeiling(): void
+    {
+        Config::set('repositories.cache', []);
+
+        $configuration = CacheConfiguration::resolveFor([], 'tags');
+
+        self::assertTrue($configuration->storeOptions->sizeGuard->allows(self::payloadOfSerializedByteLength(262144), 1));
+        self::assertFalse($configuration->storeOptions->sizeGuard->allows(self::payloadOfSerializedByteLength(262145), 1));
     }
 
     /**
@@ -155,5 +190,21 @@ final class CacheConfigurationTest extends IntegrationTestCase
         $configuration = CacheConfiguration::resolveFor([], 'tags');
 
         self::assertSame('array', $configuration->storeName);
+    }
+
+    /**
+     * Build a string whose serialized representation is exactly the given
+     * byte length.
+     *
+     * @param  int  $bytes
+     * @return string
+     */
+    private static function payloadOfSerializedByteLength(int $bytes): string
+    {
+        $length  = $bytes - 6 - strlen((string) $bytes);
+        $payload = str_repeat('x', max($length, 0));
+        $length -= strlen(serialize($payload)) - $bytes;
+
+        return str_repeat('x', max($length, 0));
     }
 }

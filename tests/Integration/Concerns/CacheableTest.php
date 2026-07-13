@@ -24,12 +24,16 @@ use Tests\Integration\IntegrationTestCase;
 use Tests\Support\Concerns\InteractsWithNonPublicMembers;
 use Tests\Support\Criteria\NamedTagsCriterion;
 use Tests\Support\Models\Tag;
+use Tests\Support\Repositories\ByteSizeGuardedTagRepository;
 use Tests\Support\Repositories\CacheableTagRepository;
 use Tests\Support\Repositories\CustomPrefixCacheableTagRepository;
 use Tests\Support\Repositories\CustomStoreCacheableTagRepository;
 use Tests\Support\Repositories\ReferenceTableTagRepository;
+use Tests\Support\Repositories\RegistryDisabledFileStoreTagRepository;
+use Tests\Support\Repositories\ShortReferenceTtlTagRepository;
 use Tests\Support\Repositories\ShortTtlTagRepository;
 use Tests\Support\Repositories\SizeGuardedTagRepository;
+use Tests\Support\Repositories\TunedCacheableTagRepository;
 
 /**
  * Tests for the Cacheable trait.
@@ -1038,5 +1042,188 @@ final class CacheableTest extends IntegrationTestCase
 
         self::assertSame($expectedPending, $referencePending);
         self::assertSame($expectedPending, $applyCriteriaPending);
+    }
+
+    /**
+     * Test that a repository's reference-mode TTL override is honoured, so
+     * the snapshot expires at the configured duration rather than the
+     * packaged default.
+     *
+     * @return void
+     */
+    public function testReferenceTtlOverrideExpiresSnapshotAfterConfiguredDuration(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ShortReferenceTtlTagRepository::class);
+
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertTrue($repository->getCacheStatus()->isPopulated());
+
+        $this->travel(6)->seconds();
+
+        self::assertFalse($repository->getCacheStatus()->isPopulated());
+    }
+
+    /**
+     * Test that a repository's negative-lookup TTL override is honoured, so a
+     * negative cache entry survives past the packaged default duration.
+     *
+     * @return void
+     */
+    public function testNegativeTtlOverrideOutlivesThePackagedDefaultDuration(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(TunedCacheableTagRepository::class);
+
+        self::assertNull($repository->find(999)); // @phpstan-ignore staticMethod.dynamicCall
+
+        // Past the packaged 10s default, within the repository's 30s override.
+        $this->travel(15)->seconds();
+
+        DB::enableQueryLog();
+
+        self::assertNull($repository->find(999)); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(0, DB::getQueryLog());
+
+        DB::disableQueryLog();
+    }
+
+    /**
+     * Test that a repository's row-ceiling override is honoured, so a result
+     * exceeding it is never cached.
+     *
+     * @return void
+     */
+    public function testRowCeilingOverridePreventsCachingOfOversizedResult(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(SizeGuardedTagRepository::class);
+
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertFalse($repository->getCacheStatus()->isPopulated());
+    }
+
+    /**
+     * Test that a repository's byte-ceiling override is honoured, so a result
+     * exceeding it is never cached.
+     *
+     * @return void
+     */
+    public function testByteCeilingOverridePreventsCachingOfOversizedResult(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ByteSizeGuardedTagRepository::class);
+
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertFalse($repository->getCacheStatus()->isPopulated());
+    }
+
+    /**
+     * Test that a repository's disabled version-bump registry override is
+     * honoured, so a write on a non-taggable store leaves a previously cached
+     * entry reachable instead of orphaning it.
+     *
+     * @return void
+     */
+    public function testRegistryDisabledOverrideLeavesStaleEntryAfterWriteOnNonTaggableStore(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(RegistryDisabledFileStoreTagRepository::class);
+
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        $repository->create(['name' => 'vue']); // @phpstan-ignore staticMethod.dynamicCall
+
+        DB::enableQueryLog();
+
+        $result = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(2, $result);
+        self::assertCount(0, DB::getQueryLog());
+
+        DB::disableQueryLog();
+    }
+
+    /**
+     * Test that the reference-mode snapshot cache key is composed from the
+     * exact prefix, connection name, and database name in that order, so
+     * dropping or reordering any component of that composition is observable
+     * as a missing key.
+     *
+     * @return void
+     */
+    public function testReferenceModeCacheKeyIncludesPrefixConnectionAndDatabase(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        /** @var \Illuminate\Cache\CacheManager $cacheManager */
+        $cacheManager = app('cache');
+
+        self::assertTrue($cacheManager->store('array')->has('repositories:repository-cache:tags:testing::memory:'));
+    }
+
+    /**
+     * Test that a reference-mode find() consumes the one-shot criteria flags,
+     * so neither flag survives the call to leak onto a later, unrelated read.
+     *
+     * @return void
+     */
+    public function testReferenceModeFindConsumesOneShotCriteriaFlags(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+
+        $this->setProperty($repository, 'skipCriteria', true);
+        $this->setProperty($repository, 'forceUseCriteria', true);
+
+        $repository->find(1); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertFalse($this->getProperty($repository, 'skipCriteria'));
+        self::assertFalse($this->getProperty($repository, 'forceUseCriteria'));
+    }
+
+    /**
+     * Test that referenceId() filters an array argument down to the supported
+     * int and string key shapes, preserving their values and dropping every
+     * other shape, rather than merely coalescing to the same array by chance.
+     *
+     * @return void
+     */
+    public function testReferenceIdFiltersArrayToSupportedKeyShapesOnly(): void
+    {
+        $ids = $this->invokeMethod($this->repository, 'referenceId', [[1, 3.5, 'two', null, true, [3]]]);
+
+        self::assertSame([1, 'two'], $ids);
+    }
+
+    /**
+     * Test that rowCount() returns the exact row count for each result shape:
+     * a collection's item count, a single model as exactly one row, and every
+     * other value (including null) as zero rows.
+     *
+     * @return void
+     */
+    public function testRowCountReturnsExactCountsForEachResultShape(): void
+    {
+        $model = new Tag(['name' => 'php']);
+
+        self::assertSame(3, $this->invokeMethod($this->repository, 'rowCount', collect([1, 2, 3])));
+        self::assertSame(1, $this->invokeMethod($this->repository, 'rowCount', $model));
+        self::assertSame(0, $this->invokeMethod($this->repository, 'rowCount', 'scalar-value'));
+        self::assertSame(0, $this->invokeMethod($this->repository, 'rowCount', null));
     }
 }

@@ -114,7 +114,9 @@ final class QueryFingerprintTest extends IntegrationTestCase
      * Test that a backed enum passed as a verb argument yields a distinct
      * fingerprint per case, proving the enum normalisation branch is actually
      * reached (Laravel scalarises enum bindings before they ever reach the
-     * fingerprint, so the binding path alone cannot exercise it).
+     * fingerprint, so the binding path alone cannot exercise it), and that the
+     * enum collapses to its raw backing value rather than an object
+     * serialisation.
      *
      * @return void
      */
@@ -122,8 +124,10 @@ final class QueryFingerprintTest extends IntegrationTestCase
     {
         $active   = QueryFingerprint::for(Tag::query(), 'find', [Status::ACTIVE]);
         $inactive = QueryFingerprint::for(Tag::query(), 'find', [Status::INACTIVE]);
+        $rawValue = QueryFingerprint::for(Tag::query(), 'find', [Status::ACTIVE->value]);
 
         self::assertNotSame($active, $inactive);
+        self::assertSame($rawValue, $active);
     }
 
     /**
@@ -297,5 +301,34 @@ final class QueryFingerprintTest extends IntegrationTestCase
         $tagAlias = QueryFingerprint::for(TagAlias::query());
 
         self::assertNotSame($tag, $tagAlias);
+    }
+
+    /**
+     * Test that registered eager loads are folded into the fingerprint, so a
+     * read with eager loads does not collide with the equivalent plain read.
+     *
+     * @return void
+     */
+    public function testEagerLoadPresenceIsFoldedIntoFingerprint(): void
+    {
+        $withRelations    = QueryFingerprint::for(Tag::query()->with('posts'), 'get');
+        $withoutRelations = QueryFingerprint::for(Tag::query(), 'get');
+
+        self::assertNotSame($withRelations, $withoutRelations);
+    }
+
+    /**
+     * Test that the order in which eager loads are registered does not affect
+     * the fingerprint, so two reads requesting the same relations in a
+     * different order still share a cache entry.
+     *
+     * @return void
+     */
+    public function testEagerLoadRegistrationOrderDoesNotAffectFingerprint(): void
+    {
+        $first  = QueryFingerprint::for(Tag::query()->with(['posts', 'articles']), 'get');
+        $second = QueryFingerprint::for(Tag::query()->with(['articles', 'posts']), 'get');
+
+        self::assertSame($first, $second);
     }
 }
