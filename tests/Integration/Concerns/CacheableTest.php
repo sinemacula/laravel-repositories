@@ -140,7 +140,7 @@ final class CacheableTest extends IntegrationTestCase
         Cache::extend('throwing', fn (): Repository => new Repository($store));
         Config::set('cache.stores.throwing', ['driver' => 'throwing']);
 
-        $failing = new CacheStore('throwing', 'tags', new CacheStoreOptions(3600, new CacheSizeGuard(null, null), false, 0));
+        $failing = new CacheStore(Cache::store('throwing'), 'tags', new CacheStoreOptions(3600, new CacheSizeGuard(null, null), false, 0));
         $this->setProperty($this->repository, 'cacheStore', $failing);
 
         Log::shouldReceive('error')

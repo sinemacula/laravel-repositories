@@ -7,6 +7,7 @@ namespace SineMacula\Repositories\Concerns;
 use Illuminate\Cache\Repository as ConcreteRepository;
 use Illuminate\Contracts\Cache\Repository as CacheContract;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use SineMacula\Repositories\Contracts\CacheInvalidator;
 use SineMacula\Repositories\Enums\CacheKeys;
 
@@ -25,12 +26,11 @@ use SineMacula\Repositories\Enums\CacheKeys;
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
+ *
+ * @internal
  */
 final class CacheStore implements CacheInvalidator
 {
-    /** @var \Illuminate\Contracts\Cache\Repository The underlying cache store instance. */
-    private readonly CacheContract $store;
-
     /** @var string The cache tag scoping all per-query entries for the table. */
     private readonly string $tag;
 
@@ -49,26 +49,23 @@ final class CacheStore implements CacheInvalidator
     /**
      * Create a new cache store instance.
      *
-     * @param  string  $cacheStore
+     * @param  \Illuminate\Contracts\Cache\Repository  $store
      * @param  string  $table
      * @param  \SineMacula\Repositories\Concerns\CacheStoreOptions  $options
      * @return void
      */
     public function __construct(
 
-        /** The name of the configured cache store to use. */
-        private readonly string $cacheStore,
+        /** The underlying cache store instance. */
+        private readonly CacheContract $store,
 
-        /** The table whose per-query entries are managed. */
+        /** The cache key prefix scoping this store's per-query entries. */
         private readonly string $table,
 
         /** The cache behaviour options for this store. */
         private readonly CacheStoreOptions $options,
     ) {
-        $store = Cache::store($this->cacheStore);
-
-        $this->store         = $store;
-        $this->taggableStore = $store instanceof ConcreteRepository && $store->supportsTags() ? $store : null;
+        $this->taggableStore = $this->store instanceof ConcreteRepository && $this->store->supportsTags() ? $this->store : null;
         $this->tag           = self::tagFor($this->table);
         $this->metaKey       = CacheKeys::REPOSITORY_CACHE_META->resolveKey([$this->table]);
         $this->versionKey    = self::versionKeyFor($this->table);
@@ -85,16 +82,21 @@ final class CacheStore implements CacheInvalidator
      * write flushTable() performs, because the caller is not the owning
      * repository and does not track that table's cache status.
      *
-     * @param  string  $cacheStore
+     * Resolves the store via the Cache facade rather than constructor
+     * injection, since a static cross-cutting entry point has no composition
+     * root to inject one from.
+     *
+     * @param  string  $cacheStoreName
      * @param  string  $table
      * @param  bool  $registryEnabled
      * @return void
      */
-    public static function invalidateTable(string $cacheStore, string $table, bool $registryEnabled): void
+    public static function invalidateTable(string $cacheStoreName, string $table, bool $registryEnabled): void
     {
-        $store = Cache::store($cacheStore);
+        $store = Cache::store($cacheStoreName);
 
         if ($store instanceof ConcreteRepository && $store->supportsTags()) {
+
             $store->tags([self::tagFor($table)])->flush();
 
             return;
@@ -104,32 +106,26 @@ final class CacheStore implements CacheInvalidator
             return;
         }
 
-        self::incrementVersion($store, self::versionKeyFor($table));
-    }
+        $versionKey = self::versionKeyFor($table);
 
-    /**
-     * Get the cached result for the given query fingerprint, or null on a miss.
-     *
-     * A negatively cached read is stored as a CacheMiss marker and translated
-     * back to null here, so callers see a transparent null on a negative hit.
-     *
-     * @param  string  $hash
-     * @return mixed
-     */
-    public function get(string $hash): mixed
-    {
-        $value = $this->fetch($hash);
+        if (self::incrementVersion($store, $versionKey) !== null) {
+            return;
+        }
 
-        return $value instanceof CacheMiss ? null : $value;
+        Log::error('Table version increment failed after seed retry', [
+            'store'       => $cacheStoreName,
+            'table'       => $table,
+            'version_key' => $versionKey,
+        ]);
     }
 
     /**
      * Get the raw cached entry for the given query fingerprint in a single
      * round trip.
      *
-     * Unlike get(), the negative-cache marker is returned as-is, so a caller
-     * can distinguish an absent entry (null), a negative hit (CacheMiss), and
-     * a cached value without a separate has() check - and without the window
+     * The negative-cache marker is returned as-is, so a caller can
+     * distinguish an absent entry (null), a negative hit (CacheMiss), and a
+     * cached value without a separate has() check - and without the window
      * where an entry expiring between the two calls masquerades as a negative
      * hit.
      *
@@ -139,17 +135,6 @@ final class CacheStore implements CacheInvalidator
     public function fetch(string $hash): mixed
     {
         return $this->scopedStore()->get($this->keyFor($hash));
-    }
-
-    /**
-     * Determine whether a cached entry exists for the given fingerprint.
-     *
-     * @param  string  $hash
-     * @return bool
-     */
-    public function has(string $hash): bool
-    {
-        return $this->scopedStore()->has($this->keyFor($hash));
     }
 
     /**
@@ -235,6 +220,59 @@ final class CacheStore implements CacheInvalidator
     }
 
     /**
+     * Atomically increment a table's generational version, seeding the key
+     * when the store cannot increment a missing entry.
+     *
+     * Some stores (e.g. the database driver) return false instead of creating
+     * the key on increment, which would silently reduce every version bump to
+     * a no-op; add() seeds the key atomically so concurrent writers converge
+     * on a single counter before retrying the increment. Returns null when the
+     * increment still fails after the seed retry - a store outage rather than
+     * a missing key - so the caller can surface the failure instead of masking
+     * it.
+     *
+     * @param  \Illuminate\Contracts\Cache\Repository  $store
+     * @param  string  $versionKey
+     * @return int|null
+     */
+    private static function incrementVersion(CacheContract $store, string $versionKey): ?int
+    {
+        $bumped = $store->increment($versionKey);
+
+        if (is_int($bumped)) {
+            return $bumped;
+        }
+
+        $store->add($versionKey, 0);
+
+        $bumped = $store->increment($versionKey);
+
+        return is_int($bumped) ? $bumped : null;
+    }
+
+    /**
+     * Resolve the cache tag scoping all per-query entries for a table.
+     *
+     * @param  string  $table
+     * @return string
+     */
+    private static function tagFor(string $table): string
+    {
+        return 'repo-table:' . $table;
+    }
+
+    /**
+     * Resolve the cache key holding a table's generational version.
+     *
+     * @param  string  $table
+     * @return string
+     */
+    private static function versionKeyFor(string $table): string
+    {
+        return CacheKeys::REPOSITORY_CACHE_VERSION->resolveKey([$table]);
+    }
+
+    /**
      * Resolve the cache key for a query fingerprint.
      *
      * On taggable stores the tag handles invalidation, so the key is the bare
@@ -267,25 +305,10 @@ final class CacheStore implements CacheInvalidator
      * Resolve the table's current generational version, memoised for the
      * lifetime of this store instance.
      *
-     * CONSISTENCY CONTRACT - NON-TAGGABLE STORES (file, database, etc.)
-     *
-     * The version is read from the cache once per instance and then held in
-     * $this->version for the remainder of the request. This is intentional
-     * request-scoped snapshotting: within a single request all cache-key
-     * lookups embed the same version, so reads are coherent and the per-query
-     * keys remain stable without repeated round-trips to the backing store.
-     *
-     * The trade-off is eventual consistency across processes. If a different
-     * request (or queue worker) bumps the version via a write while this
-     * instance is alive, the bump is invisible here until this instance is
-     * destroyed (typically at end-of-request). During that window this instance
-     * may serve cache entries that have been logically invalidated by the other
-     * process. Because the orphaned entries expire naturally by their TTL, the
-     * inconsistency is bounded and self-healing.
-     *
-     * Taggable stores (e.g. Redis with tags enabled) are not affected by this
-     * contract - they skip the generational-version path entirely and rely on
-     * the tag-invalidation mechanism instead.
+     * Only applies to non-taggable stores. The version is read once per
+     * instance and held for the request, so a concurrent bump elsewhere is
+     * invisible here until this instance is discarded; orphaned entries still
+     * expire by TTL, so the inconsistency is bounded and self-healing.
      *
      * @return int
      */
@@ -304,60 +327,28 @@ final class CacheStore implements CacheInvalidator
      * Bump the table's generational version, orphaning every existing per-query
      * key for the table in a single atomic write.
      *
+     * Falls back to a local, unpersisted bump when the store cannot persist
+     * the increment, so this instance still stops serving pre-flush entries;
+     * the failure is logged since other processes never observe it.
+     *
      * @return void
      */
     private function bumpVersion(): void
     {
         $bumped = self::incrementVersion($this->store, $this->versionKey);
 
-        $this->version = is_int($bumped) ? $bumped : $this->tableVersion() + 1;
-    }
+        if ($bumped !== null) {
 
-    /**
-     * Atomically increment a table's generational version, seeding the key
-     * when the store cannot increment a missing entry.
-     *
-     * Some stores (e.g. the database driver) return false instead of creating
-     * the key on increment, which would silently reduce every version bump to
-     * a no-op; add() seeds the key atomically so concurrent writers converge
-     * on a single counter before retrying the increment.
-     *
-     * @param  \Illuminate\Contracts\Cache\Repository  $store
-     * @param  string  $versionKey
-     * @return bool|int
-     */
-    private static function incrementVersion(CacheContract $store, string $versionKey): bool|int
-    {
-        $bumped = $store->increment($versionKey);
+            $this->version = $bumped;
 
-        if (is_int($bumped)) {
-            return $bumped;
+            return;
         }
 
-        $store->add($versionKey, 0);
+        Log::error('Table version increment failed after seed retry', [
+            'table'       => $this->table,
+            'version_key' => $this->versionKey,
+        ]);
 
-        return $store->increment($versionKey);
-    }
-
-    /**
-     * Resolve the cache tag scoping all per-query entries for a table.
-     *
-     * @param  string  $table
-     * @return string
-     */
-    private static function tagFor(string $table): string
-    {
-        return 'repo-table:' . $table;
-    }
-
-    /**
-     * Resolve the cache key holding a table's generational version.
-     *
-     * @param  string  $table
-     * @return string
-     */
-    private static function versionKeyFor(string $table): string
-    {
-        return CacheKeys::REPOSITORY_CACHE_VERSION->resolveKey([$table]);
+        $this->version = $this->tableVersion() + 1;
     }
 }

@@ -7,6 +7,7 @@ namespace SineMacula\Repositories\Concerns;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 use SineMacula\Repositories\Contracts\CacheInvalidator;
@@ -130,17 +131,27 @@ trait Cacheable
      */
     protected function bootCacheable(): void
     {
-        $table = $this->getModel()->getTable();
-        $store = $this->resolveProperty('cacheStoreName') ?? Config::get('repositories.cache.store') ?? Config::get('cache.default');
-        $store = is_string($store) ? $store : 'array';
+        $model = $this->getModel();
+        $table = $model->getTable();
+
+        $storeName = $this->resolveProperty('cacheStoreName') ?? Config::get('repositories.cache.store') ?? Config::get('cache.default');
+        $storeName = is_string($storeName) ? $storeName : 'array';
+        $store     = Cache::store($storeName);
 
         $prefix = $this->resolveProperty('cacheKeyPrefix') ?? $table;
         $prefix = is_string($prefix) ? $prefix : $table;
 
         $this->cacheReferenceMode = (bool) ($this->resolveProperty('cacheReferenceTable') ?? false);
 
+        // The reference-mode snapshot key is qualified with the connection
+        // identity (unlike the per-query key, which folds it into the query
+        // fingerprint instead), so two connections exposing the same table
+        // name never share a whole-table snapshot.
+        $connection      = $model->getConnection();
+        $referencePrefix = $prefix . ':' . $connection->getName() . ':' . $connection->getDatabaseName();
+
         $this->cacheStore     = new CacheStore($store, $prefix, $this->resolveStoreOptions());
-        $this->referenceCache = new ReferenceCache($store, $prefix, $this->resolveReferenceTtl(), $this->resolveSizeGuard());
+        $this->referenceCache = new ReferenceCache($store, $referencePrefix, $this->resolveReferenceTtl(), $this->resolveSizeGuard());
     }
 
     /**

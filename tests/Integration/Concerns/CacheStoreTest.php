@@ -11,6 +11,7 @@ use Illuminate\Contracts\Cache\Store;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Log;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Repositories\Concerns\CacheMiss;
 use SineMacula\Repositories\Concerns\CacheSizeGuard;
@@ -50,7 +51,7 @@ final class CacheStoreTest extends IntegrationTestCase
 
         Carbon::setTestNow(Carbon::parse('2026-03-09 12:00:00'));
 
-        $this->cacheStore = new CacheStore('array', 'test-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
+        $this->cacheStore = new CacheStore(Cache::store('array'), 'test-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
     }
 
     /**
@@ -77,23 +78,10 @@ final class CacheStoreTest extends IntegrationTestCase
 
         $this->cacheStore->put(self::HASH, $items, $items->count());
 
-        $cached = $this->cacheStore->get(self::HASH);
+        $cached = $this->cacheStore->fetch(self::HASH);
 
         self::assertInstanceOf(Collection::class, $cached);
         self::assertSame(['foo', 'bar', 'baz'], $cached->all());
-    }
-
-    /**
-     * Test that a negatively cached miss is present yet reads back as null.
-     *
-     * @return void
-     */
-    public function testPutMissStoresMarkerThatReadsBackAsNull(): void
-    {
-        $this->cacheStore->putMiss(self::HASH);
-
-        self::assertTrue($this->cacheStore->has(self::HASH));
-        self::assertNull($this->cacheStore->get(self::HASH));
     }
 
     /**
@@ -107,14 +95,14 @@ final class CacheStoreTest extends IntegrationTestCase
         $this->cacheStore->putMiss(self::HASH);
         $this->cacheStore->put('positive', collect(['x']), 1);
 
-        self::assertTrue($this->cacheStore->has(self::HASH));
+        self::assertInstanceOf(CacheMiss::class, $this->cacheStore->fetch(self::HASH));
 
         // 11 seconds on: past the 10s negative TTL but well within the 3600s
         // TTL.
         Carbon::setTestNow(Carbon::parse('2026-03-09 12:00:11'));
 
-        self::assertFalse($this->cacheStore->has(self::HASH));
-        self::assertTrue($this->cacheStore->has('positive'));
+        self::assertNull($this->cacheStore->fetch(self::HASH));
+        self::assertNotNull($this->cacheStore->fetch('positive'));
     }
 
     /**
@@ -129,31 +117,7 @@ final class CacheStoreTest extends IntegrationTestCase
 
         $this->cacheStore->flushTable();
 
-        self::assertFalse($this->cacheStore->has(self::HASH));
-    }
-
-    /**
-     * Test that get returns null on a cache miss.
-     *
-     * @return void
-     */
-    public function testGetReturnsNullOnCacheMiss(): void
-    {
-        self::assertNull($this->cacheStore->get(self::HASH));
-    }
-
-    /**
-     * Test that has reflects whether an entry exists for a fingerprint.
-     *
-     * @return void
-     */
-    public function testHasReflectsEntryPresence(): void
-    {
-        self::assertFalse($this->cacheStore->has(self::HASH));
-
-        $this->cacheStore->put(self::HASH, collect(['item']), 1);
-
-        self::assertTrue($this->cacheStore->has(self::HASH));
+        self::assertNull($this->cacheStore->fetch(self::HASH));
     }
 
     /**
@@ -166,8 +130,8 @@ final class CacheStoreTest extends IntegrationTestCase
         $this->cacheStore->put('hash-a', collect(['a']), 1);
         $this->cacheStore->put('hash-b', collect(['b', 'c']), 2);
 
-        $first  = $this->cacheStore->get('hash-a');
-        $second = $this->cacheStore->get('hash-b');
+        $first  = $this->cacheStore->fetch('hash-a');
+        $second = $this->cacheStore->fetch('hash-b');
 
         self::assertInstanceOf(Collection::class, $first);
         self::assertInstanceOf(Collection::class, $second);
@@ -193,18 +157,17 @@ final class CacheStoreTest extends IntegrationTestCase
 
     /**
      * Test that the size guard skips storing when the row count exceeds the
-     * configured ceiling, while a get still misses.
+     * configured ceiling, while a fetch still misses.
      *
      * @return void
      */
     public function testSizeGuardSkipsStoringWhenRowCountExceeded(): void
     {
-        $store = new CacheStore('array', 'test-table', new CacheStoreOptions(3600, new CacheSizeGuard(2, 262144), true, 10));
+        $store = new CacheStore(Cache::store('array'), 'test-table', new CacheStoreOptions(3600, new CacheSizeGuard(2, 262144), true, 10));
 
         $store->put(self::HASH, collect(['a', 'b', 'c']), 3);
 
-        self::assertNull($store->get(self::HASH));
-        self::assertFalse($store->has(self::HASH));
+        self::assertNull($store->fetch(self::HASH));
     }
 
     /**
@@ -215,11 +178,11 @@ final class CacheStoreTest extends IntegrationTestCase
      */
     public function testSizeGuardSkipsStoringWhenByteSizeExceeded(): void
     {
-        $store = new CacheStore('array', 'test-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 8), true, 10));
+        $store = new CacheStore(Cache::store('array'), 'test-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 8), true, 10));
 
         $store->put(self::HASH, collect([str_repeat('x', 256)]), 1);
 
-        self::assertNull($store->get(self::HASH));
+        self::assertNull($store->fetch(self::HASH));
     }
 
     /**
@@ -233,7 +196,7 @@ final class CacheStoreTest extends IntegrationTestCase
 
         $this->cacheStore->flushTable();
 
-        self::assertNull($this->cacheStore->get(self::HASH));
+        self::assertNull($this->cacheStore->fetch(self::HASH));
     }
 
     /**
@@ -244,15 +207,15 @@ final class CacheStoreTest extends IntegrationTestCase
      */
     public function testFlushTableInvalidatesEntryViaVersionBumpOnNonTaggableStore(): void
     {
-        $store = new CacheStore('file', 'test-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
+        $store = new CacheStore(Cache::store('file'), 'test-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
 
         $store->put(self::HASH, collect(['item']), 1);
 
-        self::assertNotNull($store->get(self::HASH));
+        self::assertNotNull($store->fetch(self::HASH));
 
         $store->flushTable();
 
-        self::assertNull($store->get(self::HASH));
+        self::assertNull($store->fetch(self::HASH));
     }
 
     /**
@@ -264,7 +227,7 @@ final class CacheStoreTest extends IntegrationTestCase
      */
     public function testFlushTableBumpsGenerationalVersionOnNonTaggableStore(): void
     {
-        $store      = new CacheStore('file', 'versioned-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
+        $store      = new CacheStore(Cache::store('file'), 'versioned-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
         $versionKey = 'repositories:repository-cache-version:versioned-table';
 
         $store->put(self::HASH, collect(['first']), 1);
@@ -274,16 +237,16 @@ final class CacheStoreTest extends IntegrationTestCase
         $store->flushTable();
 
         self::assertSame(1, $store->getStore()->get($versionKey));
-        self::assertNull($store->get(self::HASH));
+        self::assertNull($store->fetch(self::HASH));
 
         $store->put(self::HASH, collect(['second']), 1);
 
-        self::assertNotNull($store->get(self::HASH));
+        self::assertNotNull($store->fetch(self::HASH));
 
         $store->flushTable();
 
         self::assertSame(2, $store->getStore()->get($versionKey));
-        self::assertNull($store->get(self::HASH));
+        self::assertNull($store->fetch(self::HASH));
     }
 
     /**
@@ -294,13 +257,13 @@ final class CacheStoreTest extends IntegrationTestCase
      */
     public function testFlushTableLeavesEntryWhenRegistryDisabledOnNonTaggableStore(): void
     {
-        $store = new CacheStore('file', 'test-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), false, 10));
+        $store = new CacheStore(Cache::store('file'), 'test-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), false, 10));
 
         $store->put(self::HASH, collect(['item']), 1);
 
         $store->flushTable();
 
-        self::assertNotNull($store->get(self::HASH));
+        self::assertNotNull($store->fetch(self::HASH));
     }
 
     /**
@@ -386,15 +349,15 @@ final class CacheStoreTest extends IntegrationTestCase
      */
     public function testTaggableStoreFlushesViaTagsWhenRegistryDisabled(): void
     {
-        $store = new CacheStore('array', 'test-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), false, 10));
+        $store = new CacheStore(Cache::store('array'), 'test-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), false, 10));
 
         $store->put(self::HASH, collect(['item']), 1);
 
-        self::assertNotNull($store->get(self::HASH));
+        self::assertNotNull($store->fetch(self::HASH));
 
         $store->flushTable();
 
-        self::assertNull($store->get(self::HASH));
+        self::assertNull($store->fetch(self::HASH));
     }
 
     /**
@@ -405,16 +368,16 @@ final class CacheStoreTest extends IntegrationTestCase
      */
     public function testTagIsolatesEntriesBetweenTables(): void
     {
-        $tableA = new CacheStore('array', 'table-a', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
-        $tableB = new CacheStore('array', 'table-b', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
+        $tableA = new CacheStore(Cache::store('array'), 'table-a', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
+        $tableB = new CacheStore(Cache::store('array'), 'table-b', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
 
         $tableA->put(self::HASH, collect(['a']), 1);
         $tableB->put(self::HASH, collect(['b']), 1);
 
         $tableA->flushTable();
 
-        self::assertNull($tableA->get(self::HASH));
-        self::assertNotNull($tableB->get(self::HASH));
+        self::assertNull($tableA->fetch(self::HASH));
+        self::assertNotNull($tableB->fetch(self::HASH));
     }
 
     /**
@@ -428,9 +391,9 @@ final class CacheStoreTest extends IntegrationTestCase
     {
         $this->cacheStore->put(self::HASH, collect(['a', 'b']), 2);
 
-        CacheStore::invalidateTable('array', 'test-table', true);
+        CacheStore::invalidateTable('array', 'test-table', registryEnabled: true);
 
-        self::assertNull($this->cacheStore->get(self::HASH));
+        self::assertNull($this->cacheStore->fetch(self::HASH));
         self::assertNull(Cache::store('array')->get(CacheKeys::REPOSITORY_CACHE_VERSION->resolveKey(['test-table'])));
     }
 
@@ -444,11 +407,11 @@ final class CacheStoreTest extends IntegrationTestCase
     public function testInvalidateTableBumpsVersionOnNonTaggableStoreWhenRegistryEnabled(): void
     {
         $options = new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10);
-        (new CacheStore('file', 'file-table', $options))->put(self::HASH, collect(['a']), 1);
+        (new CacheStore(Cache::store('file'), 'file-table', $options))->put(self::HASH, collect(['a']), 1);
 
-        CacheStore::invalidateTable('file', 'file-table', true);
+        CacheStore::invalidateTable('file', 'file-table', registryEnabled: true);
 
-        self::assertNull((new CacheStore('file', 'file-table', $options))->get(self::HASH));
+        self::assertNull((new CacheStore(Cache::store('file'), 'file-table', $options))->fetch(self::HASH));
     }
 
     /**
@@ -460,11 +423,11 @@ final class CacheStoreTest extends IntegrationTestCase
     public function testInvalidateTableLeavesEntryOnNonTaggableStoreWhenRegistryDisabled(): void
     {
         $options = new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10);
-        (new CacheStore('file', 'file-table', $options))->put(self::HASH, collect(['a']), 1);
+        (new CacheStore(Cache::store('file'), 'file-table', $options))->put(self::HASH, collect(['a']), 1);
 
-        CacheStore::invalidateTable('file', 'file-table', false);
+        CacheStore::invalidateTable('file', 'file-table', registryEnabled: false);
 
-        self::assertNotNull((new CacheStore('file', 'file-table', $options))->get(self::HASH));
+        self::assertNotNull((new CacheStore(Cache::store('file'), 'file-table', $options))->fetch(self::HASH));
     }
 
     /**
@@ -476,7 +439,7 @@ final class CacheStoreTest extends IntegrationTestCase
      */
     public function testNonTaggableKeysEmbedTableVersionAndFingerprint(): void
     {
-        $store = new CacheStore('file', 'key-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
+        $store = new CacheStore(Cache::store('file'), 'key-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
 
         $store->put(self::HASH, collect(['item']), 1);
 
@@ -493,14 +456,14 @@ final class CacheStoreTest extends IntegrationTestCase
     public function testServesEntriesUnderMemoisedVersionUntilInstanceDiscard(): void
     {
         $options = new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10);
-        $store   = new CacheStore('file', 'memo-table', $options);
+        $store   = new CacheStore(Cache::store('file'), 'memo-table', $options);
 
         $store->put(self::HASH, collect(['item']), 1);
 
-        CacheStore::invalidateTable('file', 'memo-table', true);
+        CacheStore::invalidateTable('file', 'memo-table', registryEnabled: true);
 
-        self::assertNotNull($store->get(self::HASH));
-        self::assertNull((new CacheStore('file', 'memo-table', $options))->get(self::HASH));
+        self::assertNotNull($store->fetch(self::HASH));
+        self::assertNull((new CacheStore(Cache::store('file'), 'memo-table', $options))->fetch(self::HASH));
     }
 
     /**
@@ -511,7 +474,7 @@ final class CacheStoreTest extends IntegrationTestCase
      */
     public function testEntriesAreScopedToTheCanonicalTableTag(): void
     {
-        $store = new CacheStore('array', 'tag-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
+        $store = new CacheStore(Cache::store('array'), 'tag-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
 
         $store->put(self::HASH, collect(['item']), 1);
 
@@ -521,7 +484,7 @@ final class CacheStoreTest extends IntegrationTestCase
 
         $repository->tags(['repo-table:tag-table'])->flush();
 
-        self::assertNull($store->get(self::HASH));
+        self::assertNull($store->fetch(self::HASH));
     }
 
     /**
@@ -544,11 +507,11 @@ final class CacheStoreTest extends IntegrationTestCase
         Cache::extend('incrementless', fn (): Repository => new Repository($store));
         Config::set('cache.stores.incrementless', ['driver' => 'incrementless']);
 
-        $cacheStore = new CacheStore('incrementless', 'increment-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
+        $cacheStore = new CacheStore(Cache::store('incrementless'), 'increment-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
 
         $cacheStore->flushTable();
 
-        self::assertSame('post-bump', $cacheStore->get(self::HASH));
+        self::assertSame('post-bump', $cacheStore->fetch(self::HASH));
     }
 
     /**
@@ -565,7 +528,7 @@ final class CacheStoreTest extends IntegrationTestCase
         Cache::extend('seedable', fn (): Repository => new Repository($strictStore));
         Config::set('cache.stores.seedable', ['driver' => 'seedable']);
 
-        $cacheStore = new CacheStore('seedable', 'seed-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
+        $cacheStore = new CacheStore(Cache::store('seedable'), 'seed-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
 
         $cacheStore->flushTable();
 
@@ -585,9 +548,61 @@ final class CacheStoreTest extends IntegrationTestCase
         Cache::extend('seedable-static', fn (): Repository => new Repository($strictStore));
         Config::set('cache.stores.seedable-static', ['driver' => 'seedable-static']);
 
-        CacheStore::invalidateTable('seedable-static', 'seed-table', true);
+        CacheStore::invalidateTable('seedable-static', 'seed-table', registryEnabled: true);
 
         self::assertSame(1, Cache::store('seedable-static')->get('repositories:repository-cache-version:seed-table'));
+    }
+
+    /**
+     * Test that a persistently failing version increment (both the initial
+     * call and the post-seed retry fail, as on a genuine store outage) is
+     * logged at error level from the instance flush path, so a process other
+     * than the writer can discover that its invalidation was never persisted.
+     *
+     * @return void
+     */
+    public function testFlushTableLogsErrorWhenVersionIncrementPersistentlyFails(): void
+    {
+        $store = \Mockery::mock(Store::class)->shouldIgnoreMissing();
+        $store->shouldReceive('increment')->andReturn(false);
+
+        Cache::extend('persistently-failing', fn (): Repository => new Repository($store));
+        Config::set('cache.stores.persistently-failing', ['driver' => 'persistently-failing']);
+
+        $cacheStore = new CacheStore(Cache::store('persistently-failing'), 'failing-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
+
+        Log::shouldReceive('error')
+            ->once()
+            ->with('Table version increment failed after seed retry', \Mockery::on(
+                static fn (array $context): bool => $context['table'] === 'failing-table',
+            ));
+
+        $cacheStore->flushTable();
+    }
+
+    /**
+     * Test that a persistently failing version increment is logged at error
+     * level from the static invalidateTable() path, mirroring the instance
+     * flush path's observability.
+     *
+     * @return void
+     */
+    public function testInvalidateTableLogsErrorWhenVersionIncrementPersistentlyFails(): void
+    {
+        $store = \Mockery::mock(Store::class)->shouldIgnoreMissing();
+        $store->shouldReceive('increment')->andReturn(false);
+
+        Cache::extend('persistently-failing-static', fn (): Repository => new Repository($store));
+        Config::set('cache.stores.persistently-failing-static', ['driver' => 'persistently-failing-static']);
+
+        Log::shouldReceive('error')
+            ->once()
+            ->with('Table version increment failed after seed retry', \Mockery::on(
+                static fn (array $context): bool => $context['store'] === 'persistently-failing-static'
+                    && $context['table']                              === 'failing-table',
+            ));
+
+        CacheStore::invalidateTable('persistently-failing-static', 'failing-table', registryEnabled: true);
     }
 
     /**

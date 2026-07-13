@@ -7,7 +7,6 @@ namespace SineMacula\Repositories\Concerns;
 use Illuminate\Contracts\Cache\Repository as CacheContract;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Cache;
 use SineMacula\Repositories\Contracts\CacheInvalidator;
 use SineMacula\Repositories\Enums\CacheKeys;
 
@@ -24,12 +23,11 @@ use SineMacula\Repositories\Enums\CacheKeys;
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
+ *
+ * @internal
  */
 final class ReferenceCache implements CacheInvalidator
 {
-    /** @var \Illuminate\Contracts\Cache\Repository The underlying cache store instance. */
-    private readonly CacheContract $store;
-
     /** @var string The resolved cache key for the whole-table snapshot. */
     private readonly string $cacheKey;
 
@@ -45,7 +43,7 @@ final class ReferenceCache implements CacheInvalidator
     /**
      * Create a new reference cache instance.
      *
-     * @param  string  $cacheStore
+     * @param  \Illuminate\Contracts\Cache\Repository  $store
      * @param  string  $table
      * @param  int  $ttl
      * @param  \SineMacula\Repositories\Concerns\CacheSizeGuard  $sizeGuard
@@ -53,10 +51,10 @@ final class ReferenceCache implements CacheInvalidator
      */
     public function __construct(
 
-        /** The name of the cache store to use. */
-        private readonly string $cacheStore,
+        /** The underlying cache store instance. */
+        private readonly CacheContract $store,
 
-        /** The database table the snapshot belongs to. */
+        /** The cache key prefix scoping the snapshot, qualified by the caller with the connection identity so two connections sharing a table name never share a snapshot. */
         private readonly string $table,
 
         /** The time-to-live, in seconds, for cached snapshots. */
@@ -65,7 +63,6 @@ final class ReferenceCache implements CacheInvalidator
         /** The guard that limits the size of cached snapshots. */
         private readonly CacheSizeGuard $sizeGuard,
     ) {
-        $this->store    = Cache::store($this->cacheStore);
         $this->cacheKey = CacheKeys::REPOSITORY_CACHE->resolveKey([$this->table]);
         $this->metaKey  = CacheKeys::REPOSITORY_CACHE_META->resolveKey([$this->table]);
     }

@@ -162,6 +162,20 @@ served until the TTL expires or the next write flushes it. The staleness window 
 non-taggable stores the generational version is captured before the database read, so a late store lands under the
 old version and is never served.
 
+#### Non-taggable store considerations
+
+The generational version scheme depends on the version key outliving every entry it scopes, so a few things are
+worth knowing before picking a non-taggable store:
+
+- **Eviction risk.** Under memory pressure an LRU store (e.g. Redis or Memcached without tags) can evict the version
+  key like any other entry, resetting the counter to zero and un-orphaning entries that were meant to stay
+  invalidated. Use a non-evicting store (or a dedicated one) for the cache store when relying on this scheme.
+- **Shared across connections.** The version key is scoped by table alone, not by connection: a write on one
+  connection bumps the same counter another connection's per-query keys embed, so it invalidates that connection's
+  cache too. This is a coherence trade-off rather than a correctness bug - orphaned entries still expire by TTL.
+- **Database driver.** Each version bump is a single locking increment transaction against one row, plus an extra
+  round trip the first time the key is seeded. Prefer a taggable store for tables with a high write volume.
+
 ### Testing Utilities
 
 The package exports test utilities under the `SineMacula\Repositories\Testing` namespace for downstream packages that

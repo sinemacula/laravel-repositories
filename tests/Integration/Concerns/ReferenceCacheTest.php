@@ -6,12 +6,12 @@ namespace Tests\Integration\Concerns;
 
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Repositories\Concerns\CacheSizeGuard;
 use SineMacula\Repositories\Concerns\ReferenceCache;
 use Tests\Integration\IntegrationTestCase;
-use Tests\Support\Concerns\InteractsWithNonPublicMembers;
 use Tests\Support\Models\Tag;
 
 /**
@@ -25,8 +25,6 @@ use Tests\Support\Models\Tag;
 #[CoversClass(ReferenceCache::class)]
 final class ReferenceCacheTest extends IntegrationTestCase
 {
-    use InteractsWithNonPublicMembers;
-
     /** @var string The resolved reference metadata cache key for the tags table. */
     private const string META_KEY = 'repositories:repository-cache-meta:tags';
 
@@ -48,7 +46,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
         Tag::create(['name' => 'php']);
         Tag::create(['name' => 'laravel']);
 
-        $this->referenceCache = new ReferenceCache('array', 'tags', 3600, new CacheSizeGuard(null, null));
+        $this->referenceCache = new ReferenceCache(Cache::store('array'), 'tags', 3600, new CacheSizeGuard(null, null));
     }
 
     /**
@@ -120,23 +118,39 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that loading the snapshot builds a key index for O(1) lookups, keyed
-     * by the model's primary key rather than collection position.
+     * Test that a fresh instance sharing the same backing store remembers an
+     * already-cached snapshot without re-querying the database, proving the
+     * cache-hit path memoises and indexes the stored snapshot rather than
+     * only the freshly-loaded one.
      *
      * @return void
      */
-    public function testBuildsAKeyIndexForTheMemoisedSnapshot(): void
+    public function testAllRemembersAnExistingCachedSnapshotWithoutRequeryingDatabase(): void
     {
         $this->referenceCache->all(new Tag);
 
-        $index = $this->getProperty($this->referenceCache, 'index');
+        $fresh = new ReferenceCache(Cache::store('array'), 'tags', 3600, new CacheSizeGuard(null, null));
 
-        self::assertInstanceOf(Collection::class, $index);
+        DB::enableQueryLog();
 
-        $tag = $index->get(1);
+        $result = $fresh->all(new Tag);
+
+        self::assertCount(2, $result);
+        self::assertCount(0, DB::getQueryLog());
+
+        DB::disableQueryLog();
+
+        // The remembered snapshot must also be indexed by key, not merely
+        // memoised, so a subsequent find() resolves without a query too.
+        DB::enableQueryLog();
+
+        $tag = $fresh->find(new Tag, 1);
 
         self::assertInstanceOf(Tag::class, $tag);
         self::assertSame('php', $tag->getAttribute('name'));
+        self::assertCount(0, DB::getQueryLog());
+
+        DB::disableQueryLog();
     }
 
     /**
@@ -147,7 +161,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
      */
     public function testFindResolvesFromAnOverLargeTableWithoutAKeyIndex(): void
     {
-        $reference = new ReferenceCache('array', 'tags', 3600, new CacheSizeGuard(1, null));
+        $reference = new ReferenceCache(Cache::store('array'), 'tags', 3600, new CacheSizeGuard(1, null));
 
         $tag = $reference->find(new Tag, 1);
 
@@ -164,7 +178,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
      */
     public function testDoesNotCacheTableExceedingSizeGuard(): void
     {
-        $reference = new ReferenceCache('array', 'tags', 3600, new CacheSizeGuard(1, null));
+        $reference = new ReferenceCache(Cache::store('array'), 'tags', 3600, new CacheSizeGuard(1, null));
 
         DB::enableQueryLog();
 
@@ -257,6 +271,27 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
+     * Test that two reference caches whose table identifier is qualified with
+     * a distinct connection identity (as bootCacheable() composes it) never
+     * share a snapshot, even though the underlying table name is the same -
+     * closing the cross-connection disclosure a bare table-name key would
+     * otherwise allow.
+     *
+     * @return void
+     */
+    public function testDistinctConnectionsYieldDistinctReferenceSnapshotKeys(): void
+    {
+        $connectionA = new ReferenceCache(Cache::store('array'), 'tags:mysql:tenant_a', 3600, new CacheSizeGuard(null, null));
+        $connectionB = new ReferenceCache(Cache::store('array'), 'tags:pgsql:tenant_b', 3600, new CacheSizeGuard(null, null));
+
+        $connectionA->all(new Tag);
+
+        self::assertTrue(Cache::store('array')->has('repositories:repository-cache:tags:mysql:tenant_a'));
+        self::assertFalse(Cache::store('array')->has('repositories:repository-cache:tags:pgsql:tenant_b'));
+        self::assertFalse($connectionB->getStatus()->isPopulated());
+    }
+
+    /**
      * Test that loading the table records the populated_at timestamp in the
      * reference metadata.
      *
@@ -313,7 +348,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
      */
     public function testFlushedIndexIsNotServedAfterSizeGuardTransition(): void
     {
-        $guarded = new ReferenceCache('array', 'tags', 3600, new CacheSizeGuard(2, null));
+        $guarded = new ReferenceCache(Cache::store('array'), 'tags', 3600, new CacheSizeGuard(2, null));
 
         $guarded->all(new Tag);
         $guarded->flushTable();
