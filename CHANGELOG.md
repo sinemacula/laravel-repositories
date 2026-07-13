@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [2.1.0](https://github.com/sinemacula/laravel-repositories/compare/v2.0.2...v2.1.0) (2026-07-13)
+
+
+### Features
+
+* add opt-in per-query repository cache ([#35](https://github.com/sinemacula/laravel-repositories/issues/35)) ([b3b40f0](https://github.com/sinemacula/laravel-repositories/commit/b3b40f09b5d55d106c13ca6dad8424171eda6911))
+
 ## [2.0.0] - 2026-03-05
 
 ### Added
