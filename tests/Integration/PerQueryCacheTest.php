@@ -422,6 +422,71 @@ final class PerQueryCacheTest extends IntegrationTestCase
     }
 
     /**
+     * Test that createQuietly invalidates the cache when it inserts a new row.
+     *
+     * @return void
+     */
+    public function testCreateQuietlyInvalidatesCacheOnInsert(): void
+    {
+        $repository = $this->makeRepository(CacheableTagRepository::class);
+
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        $repository->createQuietly(['name' => 'vue']); // @phpstan-ignore staticMethod.dynamicCall
+
+        DB::enableQueryLog();
+
+        $result = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(1, DB::getQueryLog());
+        self::assertCount(3, $result);
+    }
+
+    /**
+     * Test that forceCreateQuietly invalidates the cache when it inserts a
+     * new row.
+     *
+     * @return void
+     */
+    public function testForceCreateQuietlyInvalidatesCacheOnInsert(): void
+    {
+        $repository = $this->makeRepository(CacheableTagRepository::class);
+
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        $repository->forceCreateQuietly(['name' => 'vue']); // @phpstan-ignore staticMethod.dynamicCall
+
+        DB::enableQueryLog();
+
+        $result = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(1, DB::getQueryLog());
+        self::assertCount(3, $result);
+    }
+
+    /**
+     * Test that incrementOrCreate invalidates the cache when it creates a new
+     * row.
+     *
+     * @return void
+     */
+    public function testIncrementOrCreateInvalidatesCacheOnInsert(): void
+    {
+        $repository = $this->makeRepository(CacheableTagRepository::class);
+
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        $repository->incrementOrCreate(['name' => 'vue']); // @phpstan-ignore staticMethod.dynamicCall
+
+        DB::enableQueryLog();
+
+        $result = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(1, DB::getQueryLog());
+        self::assertCount(3, $result);
+    }
+
+    /**
      * Test that a mass touch() invalidates the cache.
      *
      * @return void

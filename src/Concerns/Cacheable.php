@@ -43,10 +43,11 @@ trait Cacheable
 
     /** @var array<int, string> Write verbs that invalidate the whole-table cache after execution. */
     private const array WRITE_VERBS = [
-        'create', 'forceCreate', 'firstOrCreate', 'createOrFirst', 'updateOrCreate', 'updateOrInsert',
-        'update', 'updateFrom', 'delete', 'forceDelete', 'save', 'insert', 'insertGetId',
-        'insertOrIgnore', 'insertUsing', 'insertOrIgnoreUsing', 'upsert', 'increment',
-        'incrementEach', 'decrement', 'decrementEach', 'restore', 'touch', 'truncate',
+        'create', 'createQuietly', 'forceCreate', 'forceCreateQuietly', 'firstOrCreate', 'createOrFirst',
+        'updateOrCreate', 'updateOrInsert', 'update', 'updateFrom', 'delete', 'forceDelete', 'save',
+        'insert', 'insertGetId', 'insertOrIgnore', 'insertUsing', 'insertOrIgnoreUsing', 'upsert',
+        'increment', 'incrementEach', 'incrementOrCreate', 'decrement', 'decrementEach', 'restore',
+        'touch', 'truncate',
     ];
 
     /** @var \SineMacula\Repositories\Concerns\CacheStore The per-query cache store collaborator. */
@@ -260,7 +261,10 @@ trait Cacheable
      *
      * Consumes the one-shot criteria flags exactly as a normal query pipeline
      * would, so a skipCriteria()/useCriteria() intended for this read cannot
-     * leak onto a later, unrelated query.
+     * leak onto a later, unrelated query. The flags are only consumed on the
+     * branches that actually serve the snapshot: an unsupported find() id
+     * falls back to the real query pipeline instead, which must see the
+     * flags untouched so parent::__call() can consume them itself.
      *
      * @param  string  $method
      * @param  array<int, mixed>  $arguments
@@ -273,20 +277,30 @@ trait Cacheable
     {
         $model = $this->getModel();
 
+        if ($method === 'find') {
+
+            $id = $this->referenceId($arguments);
+
+            if ($id === null) {
+
+                Log::debug('Reference cache bypassed for unsupported find argument', [
+                    'method'    => $method,
+                    'arguments' => $arguments,
+                ]);
+
+                return parent::__call($method, $arguments);
+            }
+
+            $this->skipCriteria     = false;
+            $this->forceUseCriteria = false;
+
+            return parent::resetAndReturn($this->referenceCache->find($model, $id));
+        }
+
         $this->skipCriteria     = false;
         $this->forceUseCriteria = false;
 
-        if ($method !== 'find') {
-            return parent::resetAndReturn($this->referenceCache->all($model));
-        }
-
-        $id = $this->referenceId($arguments);
-
-        if ($id === null) {
-            return parent::__call($method, $arguments);
-        }
-
-        return parent::resetAndReturn($this->referenceCache->find($model, $id));
+        return parent::resetAndReturn($this->referenceCache->all($model));
     }
 
     /**
@@ -305,24 +319,15 @@ trait Cacheable
      * which case a reference read must execute a real query rather than serve
      * the unfiltered whole-table snapshot.
      *
-     * Mirrors the applyCriteria() precedence: scopes always apply, skipped
-     * criteria never apply, transient criteria always apply, and persistent
-     * criteria apply unless disabled without an overriding useCriteria().
+     * Scopes are Cacheable's own concern; the criteria precedence itself is
+     * owned by ManagesCriteria::hasPendingComposition() so applyCriteria()
+     * and this check can never silently diverge.
      *
      * @return bool
      */
     private function hasActiveComposition(): bool
     {
-        if ($this->scopes !== []) {
-            return true;
-        }
-
-        if ($this->skipCriteria) {
-            return false;
-        }
-
-        return $this->transientCriteria->isNotEmpty()
-            || (($this->forceUseCriteria || !$this->disableCriteria) && $this->persistentCriteria->isNotEmpty());
+        return $this->scopes !== [] || $this->hasPendingComposition();
     }
 
     /**
