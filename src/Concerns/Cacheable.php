@@ -10,6 +10,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 use SineMacula\Repositories\Contracts\CacheInvalidator;
+use SineMacula\Repositories\Exceptions\UnfingerprintableQueryException;
 
 /**
  * Provides opt-in transparent caching for repositories.
@@ -222,7 +223,12 @@ trait Cacheable
 
             try {
                 $hash = QueryFingerprint::for($query, $method, $arguments);
-            } catch (\Exception) {
+            } catch (UnfingerprintableQueryException $exception) {
+                Log::debug('Query fingerprinting unavailable; executing read uncached', [
+                    'method'    => $method,
+                    'exception' => $exception,
+                ]);
+
                 return parent::resetAndReturn(\Closure::fromCallable([$query, $method])(...$arguments));
             }
 

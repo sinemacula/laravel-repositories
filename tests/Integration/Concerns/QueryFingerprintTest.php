@@ -5,15 +5,19 @@ declare(strict_types = 1);
 namespace Tests\Integration\Concerns;
 
 use Carbon\Carbon;
+use Illuminate\Container\Container;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Repositories\Concerns\QueryFingerprint;
+use SineMacula\Repositories\Exceptions\UnfingerprintableQueryException;
 use Tests\Integration\IntegrationTestCase;
 use Tests\Support\Closures\AlignedConstraintA;
 use Tests\Support\Closures\AlignedConstraintB;
+use Tests\Support\Closures\BoundConstraint;
 use Tests\Support\Enums\Status;
 use Tests\Support\Models\Tag;
+use Tests\Support\Models\TagAlias;
 
 /**
  * Tests for the QueryFingerprint helper.
@@ -24,6 +28,7 @@ use Tests\Support\Models\Tag;
  * @internal
  */
 #[CoversClass(QueryFingerprint::class)]
+#[CoversClass(UnfingerprintableQueryException::class)]
 final class QueryFingerprintTest extends IntegrationTestCase
 {
     /** @var string A representative moment used for date-bound fingerprints. */
@@ -111,16 +116,19 @@ final class QueryFingerprintTest extends IntegrationTestCase
     }
 
     /**
-     * Test that an enum binding yields a stable fingerprint.
+     * Test that a backed enum passed as a verb argument yields a distinct
+     * fingerprint per case, proving the enum normalisation branch is actually
+     * reached (Laravel scalarises enum bindings before they ever reach the
+     * fingerprint, so the binding path alone cannot exercise it).
      *
      * @return void
      */
-    public function testEnumBindingYieldsStableFingerprint(): void
+    public function testEnumArgumentYieldsDistinctFingerprintPerCase(): void
     {
-        $first  = QueryFingerprint::for(Tag::query()->where('name', Status::ACTIVE->value));
-        $second = QueryFingerprint::for(Tag::query()->where('name', Status::ACTIVE));
+        $active   = QueryFingerprint::for(Tag::query(), 'find', [Status::ACTIVE]);
+        $inactive = QueryFingerprint::for(Tag::query(), 'find', [Status::INACTIVE]);
 
-        self::assertSame($first, $second);
+        self::assertNotSame($active, $inactive);
     }
 
     /**
@@ -307,7 +315,7 @@ final class QueryFingerprintTest extends IntegrationTestCase
      */
     public function testClosureArgumentsCannotBeFingerprinted(): void
     {
-        $this->expectException(\Exception::class);
+        $this->expectException(UnfingerprintableQueryException::class);
 
         QueryFingerprint::for(Tag::query(), 'firstWhere', [static function ($query): void {
             $query->where('name', 'php');
@@ -393,5 +401,75 @@ final class QueryFingerprintTest extends IntegrationTestCase
         $second = QueryFingerprint::for(Tag::query()->with(['related' => AlignedConstraintB::make()]));
 
         self::assertNotSame($first, $second);
+    }
+
+    /**
+     * Test that two models sharing a table yield distinct fingerprints, so a
+     * cache entry populated for one model is never served to the other.
+     *
+     * @return void
+     */
+    public function testDifferingModelClassOnSameTableYieldsDistinctFingerprint(): void
+    {
+        $tag      = QueryFingerprint::for(Tag::query());
+        $tagAlias = QueryFingerprint::for(TagAlias::query());
+
+        self::assertNotSame($tag, $tagAlias);
+    }
+
+    /**
+     * Test that two eager-load constraint closures produced from the same
+     * definition site but bound to instances with different state yield
+     * distinct fingerprints.
+     *
+     * @return void
+     */
+    public function testEagerLoadConstraintBoundInstanceStateYieldsDistinctFingerprints(): void
+    {
+        $php     = QueryFingerprint::for(Tag::query()->with(['related' => (new BoundConstraint('php'))->make()]));
+        $laravel = QueryFingerprint::for(Tag::query()->with(['related' => (new BoundConstraint('laravel'))->make()]));
+
+        self::assertNotSame($php, $laravel);
+    }
+
+    /**
+     * Test that fingerprinting the same closure instance twice yields a
+     * stable fingerprint, covering the per-request memoisation of the
+     * closure's reflected and serialised state.
+     *
+     * @return void
+     */
+    public function testSameClosureInstanceYieldsStableFingerprintAcrossCalls(): void
+    {
+        $constraint = static function ($query): void {
+            $query->where('active', true);
+        };
+
+        $first  = QueryFingerprint::for(Tag::query()->with(['related' => $constraint]));
+        $second = QueryFingerprint::for(Tag::query()->with(['related' => $constraint]));
+
+        self::assertSame($first, $second);
+    }
+
+    /**
+     * Test that a closure's definition-site path still fingerprints when no
+     * Laravel application is bound, falling back gracefully rather than
+     * failing the read.
+     *
+     * @return void
+     */
+    public function testDefinitionPathFallsBackGracefullyWithoutABoundApplication(): void
+    {
+        $container = Container::getInstance();
+
+        Container::setInstance(new Container);
+
+        try {
+            $fingerprint = QueryFingerprint::for(Tag::query()->with(['related' => AlignedConstraintA::make()]));
+        } finally {
+            Container::setInstance($container);
+        }
+
+        self::assertIsString($fingerprint);
     }
 }

@@ -9,9 +9,11 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\CoversTrait;
 use SineMacula\Repositories\Concerns\Cacheable;
+use SineMacula\Repositories\Exceptions\UnfingerprintableQueryException;
 use Tests\Support\Criteria\NamedTagsCriterion;
 use Tests\Support\Models\Tag;
 use Tests\Support\Repositories\CacheableTagRepository;
@@ -372,6 +374,30 @@ final class PerQueryCacheTest extends IntegrationTestCase
         self::assertInstanceOf(Tag::class, $laravel);
         self::assertSame('php', $php->getAttribute('name'));
         self::assertSame('laravel', $laravel->getAttribute('name'));
+    }
+
+    /**
+     * Test that a read whose arguments cannot be fingerprinted logs the
+     * uncached fallback at debug level, so a permanently-uncacheable shape is
+     * observable.
+     *
+     * @return void
+     */
+    public function testUnfingerprintableReadLogsFallbackAtDebugLevel(): void
+    {
+        $repository = $this->makeRepository(CacheableTagRepository::class);
+
+        Log::shouldReceive('debug')
+            ->once()
+            ->with('Query fingerprinting unavailable; executing read uncached', \Mockery::on(
+                static fn (array $context): bool => $context['method'] === 'firstWhere'
+                    && $context['exception'] instanceof UnfingerprintableQueryException,
+            ));
+
+        // @phpstan-ignore staticMethod.dynamicCall
+        $repository->firstWhere(static function ($query): void {
+            $query->where('name', 'php');
+        });
     }
 
     /**
