@@ -126,6 +126,11 @@ true` to opt into whole-table reference mode: the table is loaded once, cached a
 repository instance, and indexed by primary key, so `get`, `all`, and `find` resolve without touching the database.
 Other read verbs skip the cache entirely in this mode.
 
+The snapshot always represents the unfiltered table, so reference reads only serve requests with no repository-level
+composition pending: when criteria or scopes are active, `get`, `all`, and `find` execute a real (uncached) query so a
+filtered read is never answered with the whole table. Eloquent global scopes (such as soft deletes) are part of the
+snapshot query and always apply.
+
 #### Cache configuration
 
 Every option may be overridden per repository via a property:
@@ -143,6 +148,19 @@ Every option may be overridden per repository via a property:
 
 Using a dedicated cache store (`REPOSITORY_CACHE_STORE`) is recommended so application-wide flushes of the default
 store never evict repository caches, and vice versa.
+
+#### Consistency notes
+
+The per-query fingerprint folds in the connection name and database name, so multi-connection applications are
+isolated automatically. Reference-mode snapshot keys, however, default to the table name alone: when two connections
+expose the same table name (e.g. per-tenant databases), set a distinct `$cacheKeyPrefix` per repository so the
+snapshots cannot collide.
+
+Like any look-aside cache, a read that misses, queries the database, and stores its result can interleave with a
+concurrent write on taggable stores and in reference mode: the freshly stored entry may predate the write, and is
+served until the TTL expires or the next write flushes it. The staleness window is bounded and self-healing; on
+non-taggable stores the generational version is captured before the database read, so a late store lands under the
+old version and is never served.
 
 ### Testing Utilities
 

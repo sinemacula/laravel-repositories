@@ -124,11 +124,36 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      */
     public function __call(string $method, array $arguments): mixed
     {
-        $query           = $this->prepareQueryBuilder();
-        $callable        = \Closure::fromCallable([$query, $method]);
-        $forwardedResult = $callable(...$arguments);
+        try {
 
-        return $this->resetAndReturn($forwardedResult);
+            $query    = $this->prepareQueryBuilder();
+            $callable = \Closure::fromCallable([$query, $method]);
+
+            return $this->resetAndReturn($callable(...$arguments));
+
+        } catch (\Throwable $exception) {
+            $this->resetAfterFailure();
+
+            throw $exception;
+        }
+    }
+
+    /**
+     * Retrieve all models for the repository.
+     *
+     * Delegates to the get() pipeline so criteria, scopes, and any caching
+     * concern apply exactly as they would for get(); neither Eloquent builder
+     * exposes an all() method, so the verb cannot be forwarded.
+     *
+     * @param  mixed  ...$arguments
+     * @return mixed
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     */
+    public function all(mixed ...$arguments): mixed
+    {
+        return $this->__call('get', array_values($arguments));
     }
 
     /**
@@ -310,8 +335,11 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * - $scopes is an empty array
      * - $model holds a resolved Model instance
      *
-     * It is safe to call pushCriteria(), addScope(), getModel(), and any public
-     * method during boot().
+     * It is safe to call pushCriteria(), addScope(), getModel(), and the other
+     * base repository methods during boot(). Methods provided by bootable
+     * concerns (such as the cache operations added by Cacheable) are not yet
+     * available: concern collaborators initialise after boot(), via
+     * bootConcerns().
      *
      * @api-stable
      *
@@ -386,6 +414,32 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
         $this->resetModel();
 
         return $queryResult;
+    }
+
+    /**
+     * Reset transient state after a failed forwarded call so the next query
+     * starts from a clean builder instead of re-applying criteria and scopes
+     * onto the dirty one.
+     *
+     * Model re-resolution failures are deliberately not rethrown here: the
+     * original exception is the one propagating to the caller, and nulling the
+     * model guarantees the next prepareQueryBuilder() rebuilds it (surfacing
+     * any resolution failure at that point).
+     *
+     * @return void
+     *
+     * @internal cleanup step in the magic method forwarding pipeline
+     */
+    protected function resetAfterFailure(): void
+    {
+        $this->resetTransientCriteria();
+        $this->resetScopes();
+
+        try {
+            $this->resetModel();
+        } catch (\Throwable) {
+            $this->model = null;
+        }
     }
 
     /**

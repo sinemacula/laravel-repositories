@@ -5,6 +5,7 @@ declare(strict_types = 1);
 namespace Tests\Integration;
 
 use Illuminate\Contracts\Database\Eloquent\Builder as BuilderContract;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -344,6 +345,37 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
         $repository->resetScopes();
 
         self::assertSame(0, $repository->scopesCount());
+    }
+
+    /**
+     * Test that a forwarded call which throws leaves no dirty builder or scope
+     * state behind, so the next query composes from a clean slate instead of
+     * inheriting the failed call's constraints.
+     *
+     * @return void
+     */
+    public function testFailedForwardedCallLeavesTransientStateClean(): void
+    {
+        $this->seedUsers();
+
+        $repository = $this->repository();
+
+        $repository
+            ->withCriteria(new NamedUsersCriterion('Bob'))
+            ->addScope(static function (BuilderContract $query): void {
+                $query->where('active', false);
+            });
+
+        try {
+            $repository->findOrFail(999); // @phpstan-ignore staticMethod.dynamicCall
+            self::fail('Expected the forwarded findOrFail() to throw.');
+        } catch (ModelNotFoundException) {
+            // The dirty builder and scopes must not survive the failure.
+        }
+
+        $result = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(3, $result);
     }
 
     /**

@@ -290,4 +290,39 @@ final class ReferenceCacheTest extends IntegrationTestCase
         self::assertArrayHasKey('invalidated_at', $meta);
         self::assertSame(now()->timestamp, $meta['invalidated_at']);
     }
+
+    /**
+     * Test that find() with an array of ids returns the matching models from
+     * the snapshot.
+     *
+     * @return void
+     */
+    public function testFindWithArrayOfIdsReturnsMatchingModels(): void
+    {
+        $found = $this->referenceCache->find(new Tag, [1, 2, 999]);
+
+        self::assertInstanceOf(Collection::class, $found);
+        self::assertCount(2, $found);
+    }
+
+    /**
+     * Test that a flush drops the key index, so a subsequent load that trips
+     * the size guard can never serve stale index entries through find().
+     *
+     * @return void
+     */
+    public function testFlushedIndexIsNotServedAfterSizeGuardTransition(): void
+    {
+        $guarded = new ReferenceCache('array', 'tags', 3600, new CacheSizeGuard(2, null));
+
+        $guarded->all(new Tag);
+        $guarded->flushTable();
+
+        Tag::create(['name' => 'vue']);
+
+        $found = $guarded->find(new Tag, 3);
+
+        self::assertInstanceOf(Tag::class, $found);
+        self::assertSame('vue', $found->getAttribute('name'));
+    }
 }

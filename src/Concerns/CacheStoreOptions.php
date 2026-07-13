@@ -34,7 +34,7 @@ final readonly class CacheStoreOptions
         /** The guard that enforces the per-store cache size limit. */
         public CacheSizeGuard $sizeGuard,
 
-        /** Whether cache keys are tracked in the flush registry. */
+        /** Whether non-taggable stores bump the table version on flush. */
         public bool $registryEnabled,
 
         /** The lifetime, in seconds, for cached negative lookups. */

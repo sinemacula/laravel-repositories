@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace SineMacula\Repositories\Concerns;
 
+use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Config;
@@ -37,13 +38,14 @@ use SineMacula\Repositories\Contracts\CacheInvalidator;
 trait Cacheable
 {
     /** @var array<int, string> Read verbs whose results are served from the per-query cache. */
-    private const array CACHEABLE_READS = ['get', 'all', 'find', 'first', 'firstWhere', 'firstOrFail', 'findOrFail', 'sole', 'value', 'pluck'];
+    private const array CACHEABLE_READS = ['get', 'find', 'first', 'firstWhere', 'firstOrFail', 'findOrFail', 'sole', 'value', 'pluck'];
 
     /** @var array<int, string> Write verbs that invalidate the whole-table cache after execution. */
     private const array WRITE_VERBS = [
-        'create', 'forceCreate', 'firstOrCreate', 'updateOrCreate', 'updateOrInsert',
-        'update', 'delete', 'forceDelete', 'save', 'insert', 'insertGetId',
-        'upsert', 'increment', 'decrement', 'restore',
+        'create', 'forceCreate', 'firstOrCreate', 'createOrFirst', 'updateOrCreate', 'updateOrInsert',
+        'update', 'updateFrom', 'delete', 'forceDelete', 'save', 'insert', 'insertGetId',
+        'insertOrIgnore', 'insertUsing', 'insertOrIgnoreUsing', 'upsert', 'increment',
+        'incrementEach', 'decrement', 'decrementEach', 'restore', 'touch', 'truncate',
     ];
 
     /** @var \SineMacula\Repositories\Concerns\CacheStore The per-query cache store collaborator. */
@@ -156,7 +158,7 @@ trait Cacheable
         }
 
         if ($this->cacheReferenceMode) {
-            return $this->isReferenceRead($method)
+            return $this->isReferenceRead($method) && !$this->hasActiveComposition()
                 ? $this->resolveReferenceRead($method, $arguments)
                 : parent::__call($method, $arguments);
         }
@@ -178,6 +180,10 @@ trait Cacheable
      */
     private function forwardAndFlush(string $method, array $arguments): mixed
     {
+        // A pending withoutCache() applies to the next read; consume it here so
+        // it cannot leak past the write onto an unrelated later read.
+        $this->bypassCache = false;
+
         $result = parent::__call($method, $arguments);
 
         try {
@@ -195,6 +201,12 @@ trait Cacheable
     /**
      * Resolve a cacheable read via pre-execution interception.
      *
+     * The cache entry is resolved with a single fetch: an absent entry, a
+     * negative-cache marker, and a cached value are distinguished in one round
+     * trip, so an entry expiring mid-read can never be mistaken for a negative
+     * hit. Reads whose arguments cannot be fingerprinted (e.g. closures)
+     * execute uncached rather than risk colliding with another query's entry.
+     *
      * @param  string  $method
      * @param  array<int, mixed>  $arguments
      * @return mixed
@@ -204,26 +216,45 @@ trait Cacheable
      */
     private function resolveCachedRead(string $method, array $arguments): mixed
     {
-        $query = $this->prepareQueryBuilder();
-        $hash  = QueryFingerprint::for($query, $method, $arguments);
+        try {
 
-        if ($this->cacheStore->has($hash)) {
-            return parent::resetAndReturn($this->cacheStore->get($hash));
+            $query = $this->prepareQueryBuilder();
+
+            try {
+                $hash = QueryFingerprint::for($query, $method, $arguments);
+            } catch (\Exception) {
+                return parent::resetAndReturn(\Closure::fromCallable([$query, $method])(...$arguments));
+            }
+
+            $cached = $this->cacheStore->fetch($hash);
+
+            if ($cached !== null) {
+                return parent::resetAndReturn($cached instanceof CacheMiss ? null : $cached);
+            }
+
+            $result = \Closure::fromCallable([$query, $method])(...$arguments);
+
+            if ($result !== null) {
+                $this->cacheStore->put($hash, $result, $this->rowCount($result));
+            } else {
+                $this->cacheStore->putMiss($hash);
+            }
+
+            return parent::resetAndReturn($result);
+
+        } catch (\Throwable $exception) {
+            $this->resetAfterFailure();
+
+            throw $exception;
         }
-
-        $result = \Closure::fromCallable([$query, $method])(...$arguments);
-
-        if ($result !== null) {
-            $this->cacheStore->put($hash, $result, $this->rowCount($result));
-        } else {
-            $this->cacheStore->putMiss($hash);
-        }
-
-        return parent::resetAndReturn($result);
     }
 
     /**
      * Resolve a read from the whole-table reference cache.
+     *
+     * Consumes the one-shot criteria flags exactly as a normal query pipeline
+     * would, so a skipCriteria()/useCriteria() intended for this read cannot
+     * leak onto a later, unrelated query.
      *
      * @param  string  $method
      * @param  array<int, mixed>  $arguments
@@ -236,11 +267,20 @@ trait Cacheable
     {
         $model = $this->getModel();
 
-        $result = $method === 'find'
-            ? $this->referenceCache->find($model, $this->referenceId($arguments))
-            : $this->referenceCache->all($model);
+        $this->skipCriteria     = false;
+        $this->forceUseCriteria = false;
 
-        return parent::resetAndReturn($result);
+        if ($method !== 'find') {
+            return parent::resetAndReturn($this->referenceCache->all($model));
+        }
+
+        $id = $this->referenceId($arguments);
+
+        if ($id === null) {
+            return parent::__call($method, $arguments);
+        }
+
+        return parent::resetAndReturn($this->referenceCache->find($model, $id));
     }
 
     /**
@@ -251,20 +291,56 @@ trait Cacheable
      */
     private function isReferenceRead(string $method): bool
     {
-        return in_array($method, ['get', 'all', 'find'], true);
+        return in_array($method, ['get', 'find'], true);
+    }
+
+    /**
+     * Determine whether repository-level query composition is pending, in
+     * which case a reference read must execute a real query rather than serve
+     * the unfiltered whole-table snapshot.
+     *
+     * Mirrors the applyCriteria() precedence: scopes always apply, skipped
+     * criteria never apply, transient criteria always apply, and persistent
+     * criteria apply unless disabled without an overriding useCriteria().
+     *
+     * @return bool
+     */
+    private function hasActiveComposition(): bool
+    {
+        if ($this->scopes !== []) {
+            return true;
+        }
+
+        if ($this->skipCriteria) {
+            return false;
+        }
+
+        return $this->transientCriteria->isNotEmpty()
+            || (($this->forceUseCriteria || !$this->disableCriteria) && $this->persistentCriteria->isNotEmpty());
     }
 
     /**
      * Resolve the primary key argument for a reference-mode find().
      *
+     * Returns null when the argument is not a supported key shape, signalling
+     * the caller to fall back to a real query rather than coerce the value.
+     *
      * @param  array<int, mixed>  $arguments
-     * @return int|string
+     * @return array<int, int|string>|int|string|null
      */
-    private function referenceId(array $arguments): int|string
+    private function referenceId(array $arguments): array|int|string|null
     {
         $id = $arguments[0] ?? 0;
 
-        return is_int($id) || is_string($id) ? $id : (string) $id; // @phpstan-ignore cast.string
+        if ($id instanceof Arrayable) {
+            $id = $id->toArray();
+        }
+
+        if (is_array($id)) {
+            return array_values(array_filter($id, static fn (mixed $key): bool => is_int($key) || is_string($key)));
+        }
+
+        return is_int($id) || is_string($id) ? $id : null;
     }
 
     /**

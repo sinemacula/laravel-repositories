@@ -12,6 +12,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use PHPUnit\Framework\Attributes\CoversClass;
+use SineMacula\Repositories\Concerns\CacheMiss;
 use SineMacula\Repositories\Concerns\CacheSizeGuard;
 use SineMacula\Repositories\Concerns\CacheStore;
 use SineMacula\Repositories\Concerns\CacheStoreOptions;
@@ -548,5 +549,101 @@ final class CacheStoreTest extends IntegrationTestCase
         $cacheStore->flushTable();
 
         self::assertSame('post-bump', $cacheStore->get(self::HASH));
+    }
+
+    /**
+     * Test that a version bump seeds the version key when the store cannot
+     * increment a missing entry, so invalidation still takes effect for other
+     * instances instead of silently degrading to TTL expiry.
+     *
+     * @return void
+     */
+    public function testFlushSeedsVersionKeyWhenIncrementCannotCreateIt(): void
+    {
+        $strictStore = $this->strictIncrementStore();
+
+        Cache::extend('seedable', fn (): Repository => new Repository($strictStore));
+        Config::set('cache.stores.seedable', ['driver' => 'seedable']);
+
+        $cacheStore = new CacheStore('seedable', 'seed-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
+
+        $cacheStore->flushTable();
+
+        self::assertSame(1, $cacheStore->getStore()->get('repositories:repository-cache-version:seed-table'));
+    }
+
+    /**
+     * Test that the static table invalidation seeds the version key when the
+     * store cannot increment a missing entry.
+     *
+     * @return void
+     */
+    public function testInvalidateTableSeedsVersionKeyWhenIncrementCannotCreateIt(): void
+    {
+        $strictStore = $this->strictIncrementStore();
+
+        Cache::extend('seedable-static', fn (): Repository => new Repository($strictStore));
+        Config::set('cache.stores.seedable-static', ['driver' => 'seedable-static']);
+
+        CacheStore::invalidateTable('seedable-static', 'seed-table', true);
+
+        self::assertSame(1, Cache::store('seedable-static')->get('repositories:repository-cache-version:seed-table'));
+    }
+
+    /**
+     * Test that fetch() distinguishes an absent entry, a negative-cache
+     * marker, and a cached value in a single lookup.
+     *
+     * @return void
+     */
+    public function testFetchDistinguishesAbsentNegativeAndCachedEntries(): void
+    {
+        self::assertNull($this->cacheStore->fetch(self::HASH));
+
+        $this->cacheStore->putMiss(self::HASH);
+
+        self::assertInstanceOf(CacheMiss::class, $this->cacheStore->fetch(self::HASH));
+
+        $this->cacheStore->put(self::HASH, 'value', 1);
+
+        self::assertSame('value', $this->cacheStore->fetch(self::HASH));
+    }
+
+    /**
+     * Build a non-taggable store stub whose increment() fails on missing keys,
+     * mirroring the database driver's behaviour.
+     *
+     * @return \Illuminate\Contracts\Cache\Store
+     */
+    private function strictIncrementStore(): Store
+    {
+        /** @var array<string, array<string, int>|int> $storage */
+        $storage = [];
+
+        $store = \Mockery::mock(Store::class);
+
+        $store->shouldReceive('increment')->andReturnUsing(static function (string $key, int $value = 1) use (&$storage): bool|int {
+            $current = $storage[$key] ?? null;
+
+            if (!is_int($current)) {
+                return false;
+            }
+
+            $storage[$key] = $current + $value;
+
+            return $storage[$key];
+        });
+
+        $store->shouldReceive('get')->andReturnUsing(static function (string $key) use (&$storage): array|int|null {
+            return $storage[$key] ?? null;
+        });
+
+        $store->shouldReceive('put', 'forever')->andReturnUsing(static function (string $key, array|int $value) use (&$storage): bool {
+            $storage[$key] = $value;
+
+            return true;
+        });
+
+        return $store;
     }
 }

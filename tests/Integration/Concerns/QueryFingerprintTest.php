@@ -6,9 +6,12 @@ namespace Tests\Integration\Concerns;
 
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Repositories\Concerns\QueryFingerprint;
 use Tests\Integration\IntegrationTestCase;
+use Tests\Support\Closures\AlignedConstraintA;
+use Tests\Support\Closures\AlignedConstraintB;
 use Tests\Support\Enums\Status;
 use Tests\Support\Models\Tag;
 
@@ -273,5 +276,122 @@ final class QueryFingerprintTest extends IntegrationTestCase
         $alternative = QueryFingerprint::for((new Tag)->setConnection('alternative')->newQuery());
 
         self::assertNotSame($default, $alternative);
+    }
+
+    /**
+     * Test that the connection name is folded into the fingerprint, so two
+     * connections sharing a database name never share a cache entry.
+     *
+     * @return void
+     */
+    public function testDifferingConnectionNameYieldsDistinctFingerprint(): void
+    {
+        Config::set('database.connections.testing_two', [
+            'driver'   => 'sqlite',
+            'database' => ':memory:',
+            'prefix'   => '',
+        ]);
+
+        $default     = QueryFingerprint::for(Tag::query());
+        $alternative = QueryFingerprint::for((new Tag)->setConnection('testing_two')->newQuery());
+
+        self::assertNotSame($default, $alternative);
+    }
+
+    /**
+     * Test that closure arguments cannot be fingerprinted: two distinct
+     * closures have no stable representation, so fingerprinting must refuse
+     * rather than let them collide on one cache key.
+     *
+     * @return void
+     */
+    public function testClosureArgumentsCannotBeFingerprinted(): void
+    {
+        $this->expectException(\Exception::class);
+
+        QueryFingerprint::for(Tag::query(), 'firstWhere', [static function ($query): void {
+            $query->where('name', 'php');
+        }]);
+    }
+
+    /**
+     * Test that raw expression arguments yield distinct fingerprints rather
+     * than collapsing to an identical empty representation.
+     *
+     * @return void
+     */
+    public function testExpressionArgumentsYieldDistinctFingerprints(): void
+    {
+        $count = QueryFingerprint::for(Tag::query(), 'get', [[DB::raw('count(*) as aggregate')]]);
+        $sum   = QueryFingerprint::for(Tag::query(), 'get', [[DB::raw('sum(id) as aggregate')]]);
+
+        self::assertNotSame($count, $sum);
+    }
+
+    /**
+     * Test that eager loads sharing a relation name but carrying different
+     * constraint closures yield distinct fingerprints.
+     *
+     * @return void
+     */
+    public function testEagerLoadConstraintsYieldDistinctFingerprints(): void
+    {
+        $active = QueryFingerprint::for(Tag::query()->with(['related' => static function ($query): void {
+            $query->where('active', true);
+        }]));
+
+        $inactive = QueryFingerprint::for(Tag::query()->with(['related' => static function ($query): void {
+            $query->where('active', false);
+        }]));
+
+        self::assertNotSame($active, $inactive);
+    }
+
+    /**
+     * Test that an eager-load constraint defined at one site but capturing
+     * different values yields distinct fingerprints.
+     *
+     * @return void
+     */
+    public function testEagerLoadConstraintCapturesYieldDistinctFingerprints(): void
+    {
+        $fingerprints = [];
+
+        foreach (['php', 'laravel'] as $name) {
+            $fingerprints[] = QueryFingerprint::for(Tag::query()->with(['related' => static function ($query) use ($name): void {
+                $query->where('name', $name);
+            }]));
+        }
+
+        self::assertNotSame($fingerprints[0], $fingerprints[1]);
+    }
+
+    /**
+     * Test that unconstrained eager loads keep a stable fingerprint across
+     * separately built queries.
+     *
+     * @return void
+     */
+    public function testUnconstrainedEagerLoadsYieldStableFingerprint(): void
+    {
+        $first  = QueryFingerprint::for(Tag::query()->with('related'));
+        $second = QueryFingerprint::for(Tag::query()->with('related'));
+
+        self::assertSame($first, $second);
+    }
+
+    /**
+     * Test that eager-load constraints defined in different files on the same
+     * line with identical captures yield distinct fingerprints, proving the
+     * defining file is part of a constraint's identity.
+     *
+     * @return void
+     */
+    public function testEagerLoadConstraintFilesYieldDistinctFingerprints(): void
+    {
+        $first  = QueryFingerprint::for(Tag::query()->with(['related' => AlignedConstraintA::make()]));
+        $second = QueryFingerprint::for(Tag::query()->with(['related' => AlignedConstraintB::make()]));
+
+        self::assertNotSame($first, $second);
     }
 }

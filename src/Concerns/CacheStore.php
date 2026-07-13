@@ -104,7 +104,7 @@ final class CacheStore implements CacheInvalidator
             return;
         }
 
-        $store->increment(self::versionKeyFor($table));
+        self::incrementVersion($store, self::versionKeyFor($table));
     }
 
     /**
@@ -118,9 +118,27 @@ final class CacheStore implements CacheInvalidator
      */
     public function get(string $hash): mixed
     {
-        $value = $this->scopedStore()->get($this->keyFor($hash));
+        $value = $this->fetch($hash);
 
         return $value instanceof CacheMiss ? null : $value;
+    }
+
+    /**
+     * Get the raw cached entry for the given query fingerprint in a single
+     * round trip.
+     *
+     * Unlike get(), the negative-cache marker is returned as-is, so a caller
+     * can distinguish an absent entry (null), a negative hit (CacheMiss), and
+     * a cached value without a separate has() check - and without the window
+     * where an entry expiring between the two calls masquerades as a negative
+     * hit.
+     *
+     * @param  string  $hash
+     * @return mixed
+     */
+    public function fetch(string $hash): mixed
+    {
+        return $this->scopedStore()->get($this->keyFor($hash));
     }
 
     /**
@@ -290,9 +308,35 @@ final class CacheStore implements CacheInvalidator
      */
     private function bumpVersion(): void
     {
-        $bumped = $this->store->increment($this->versionKey);
+        $bumped = self::incrementVersion($this->store, $this->versionKey);
 
         $this->version = is_int($bumped) ? $bumped : $this->tableVersion() + 1;
+    }
+
+    /**
+     * Atomically increment a table's generational version, seeding the key
+     * when the store cannot increment a missing entry.
+     *
+     * Some stores (e.g. the database driver) return false instead of creating
+     * the key on increment, which would silently reduce every version bump to
+     * a no-op; add() seeds the key atomically so concurrent writers converge
+     * on a single counter before retrying the increment.
+     *
+     * @param  \Illuminate\Contracts\Cache\Repository  $store
+     * @param  string  $versionKey
+     * @return bool|int
+     */
+    private static function incrementVersion(CacheContract $store, string $versionKey): bool|int
+    {
+        $bumped = $store->increment($versionKey);
+
+        if (is_int($bumped)) {
+            return $bumped;
+        }
+
+        $store->add($versionKey, 0);
+
+        return $store->increment($versionKey);
     }
 
     /**

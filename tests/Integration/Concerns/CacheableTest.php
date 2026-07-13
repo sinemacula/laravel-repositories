@@ -18,6 +18,7 @@ use SineMacula\Repositories\Concerns\CacheStore;
 use SineMacula\Repositories\Concerns\CacheStoreOptions;
 use Tests\Integration\IntegrationTestCase;
 use Tests\Support\Concerns\InteractsWithNonPublicMembers;
+use Tests\Support\Criteria\NamedTagsCriterion;
 use Tests\Support\Models\Tag;
 use Tests\Support\Repositories\CacheableTagRepository;
 use Tests\Support\Repositories\CustomPrefixCacheableTagRepository;
@@ -550,7 +551,8 @@ final class CacheableTest extends IntegrationTestCase
         self::assertSame(5, $referenceId->invoke($this->repository, [5, 99]));
         self::assertSame('php', $referenceId->invoke($this->repository, ['php']));
         self::assertSame(0, $referenceId->invoke($this->repository, []));
-        self::assertSame('1.5', $referenceId->invoke($this->repository, [1.5]));
+        self::assertSame([1, 'two'], $referenceId->invoke($this->repository, [[1, 3.5, 'two']]));
+        self::assertNull($referenceId->invoke($this->repository, [1.5]));
     }
 
     /**
@@ -741,7 +743,7 @@ final class CacheableTest extends IntegrationTestCase
 
         DB::enableQueryLog();
 
-        $all        = $repository->all(); // @phpstan-ignore method.notFound
+        $all        = $repository->all();
         $found      = $repository->find(1); // @phpstan-ignore staticMethod.dynamicCall
         $collection = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
 
@@ -751,6 +753,136 @@ final class CacheableTest extends IntegrationTestCase
         self::assertInstanceOf(Tag::class, $found);
         self::assertSame('php', $found->getAttribute('name'));
         self::assertInstanceOf(Collection::class, $collection);
+
+        DB::disableQueryLog();
+    }
+
+    /**
+     * Test that non-reference verbs in reference mode execute through the
+     * normal query pipeline rather than being served the whole-table snapshot.
+     *
+     * @return void
+     */
+    public function testReferenceModeServesNonReferenceVerbsThroughTheQueryPipeline(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+
+        $first = $repository->first(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertInstanceOf(Tag::class, $first);
+    }
+
+    /**
+     * Test that a reference read consumes the one-shot criteria flags exactly
+     * as a normal query pipeline would.
+     *
+     * @return void
+     */
+    public function testReferenceModeConsumesOneShotCriteriaFlags(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+
+        $repository->skipCriteria();
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertFalse($this->getProperty($repository, 'skipCriteria'));
+
+        $repository->useCriteria();
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertFalse($this->getProperty($repository, 'forceUseCriteria'));
+    }
+
+    /**
+     * Test that transient criteria force a real filtered query in reference
+     * mode instead of the unfiltered snapshot.
+     *
+     * @return void
+     */
+    public function testReferenceModeExecutesRealQueryForTransientCriteria(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+
+        $filtered = $repository->withCriteria(new NamedTagsCriterion('php'))->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(1, $filtered);
+    }
+
+    /**
+     * Test that active persistent criteria force a real filtered query in
+     * reference mode instead of the unfiltered snapshot.
+     *
+     * @return void
+     */
+    public function testReferenceModeExecutesRealQueryForPersistentCriteria(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+
+        $repository->pushCriteria(new NamedTagsCriterion('php'));
+
+        $filtered = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(1, $filtered);
+    }
+
+    /**
+     * Test that skipped criteria leave reference reads on the snapshot path,
+     * executing no query once the snapshot is warm.
+     *
+     * @return void
+     */
+    public function testReferenceModeServesSnapshotWhenCriteriaAreSkipped(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        $repository->pushCriteria(new NamedTagsCriterion('php'));
+        $repository->skipCriteria();
+
+        DB::enableQueryLog();
+
+        $unfiltered = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(0, DB::getQueryLog());
+        self::assertCount(2, $unfiltered);
+
+        DB::disableQueryLog();
+    }
+
+    /**
+     * Test that disabled persistent criteria leave reference reads on the
+     * snapshot path, executing no query once the snapshot is warm.
+     *
+     * @return void
+     */
+    public function testReferenceModeServesSnapshotWhenCriteriaAreDisabled(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        $repository->pushCriteria(new NamedTagsCriterion('php'));
+        $repository->disableCriteria();
+
+        DB::enableQueryLog();
+
+        $unfiltered = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(0, DB::getQueryLog());
+        self::assertCount(2, $unfiltered);
 
         DB::disableQueryLog();
     }
