@@ -16,10 +16,10 @@ use SineMacula\Repositories\Exceptions\UnfingerprintableQueryException;
  * The fingerprint folds in the connection identity, the model class, the
  * compiled SQL, the normalised bindings, the read verb and its arguments, and
  * the eager loads - including each constraint closure's definition site,
- * captures, and bound instance state - since all of these are invisible to
- * the compiled base SQL yet still distinguish one read from another. Values
- * with no stable representation (e.g. closures passed as verb arguments)
- * cannot be fingerprinted and cause fingerprinting to fail.
+ * captures, and bound instance state - since all of these are invisible to the
+ * compiled base SQL yet still distinguish one read from another. Values with no
+ * stable representation (e.g. closures passed as verb arguments) cannot be
+ * fingerprinted and cause fingerprinting to fail.
  *
  * The digest is produced with xxh128: a fast, non-cryptographic 128-bit hash.
  * Accidental collisions are negligible at this width, but it offers no
@@ -140,13 +140,13 @@ final class QueryFingerprint
      * Unconstrained eager loads compile to an empty closure defined inside the
      * framework, so they share one stable identity; user-supplied constraints
      * are identified by where they are defined, what they capture, and the
-     * state of a bound $this, keeping the fingerprint stable across requests
-     * on the same codebase while still distinguishing constraints that differ
-     * only by that instance state.
+     * state of a bound $this, keeping the fingerprint stable across requests on
+     * the same codebase while still distinguishing constraints that differ only
+     * by that instance state.
      *
-     * The result is memoised per closure instance for the life of the
-     * request; the fingerprint reflects capture state at first evaluation of
-     * that closure instance.
+     * The result is memoised per closure instance for the life of the request;
+     * the fingerprint reflects capture state at first evaluation of that
+     * closure instance.
      *
      * @param  \Closure  $constraint
      *
@@ -195,8 +195,8 @@ final class QueryFingerprint
      *
      * Atomic-release deployments unpack each release into a fresh, timestamped
      * directory, so the absolute path to an unchanged file differs between
-     * deploys; stripping the application base path keeps the fingerprint
-     * stable while still distinguishing files that differ beyond that prefix.
+     * deploys; stripping the application base path keeps the fingerprint stable
+     * while still distinguishing files that differ beyond that prefix.
      *
      * @param  false|string  $path
      * @return string

@@ -122,8 +122,8 @@ final class ReferenceCacheTest extends IntegrationTestCase
     /**
      * Test that a fresh instance sharing the same backing store remembers an
      * already-cached snapshot without re-querying the database, proving the
-     * cache-hit path memoises and indexes the stored snapshot rather than
-     * only the freshly-loaded one.
+     * cache-hit path memoises and indexes the stored snapshot rather than only
+     * the freshly-loaded one.
      *
      * @return void
      */
@@ -273,11 +273,11 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that two reference caches whose table identifier is qualified with
-     * a distinct connection identity (as bootCacheable() composes it) never
-     * share a snapshot, even though the underlying table name is the same -
-     * closing the cross-connection disclosure a bare table-name key would
-     * otherwise allow.
+     * Test that two reference caches whose table identifier is qualified with a
+     * distinct connection identity (as bootCacheable() composes it) never share
+     * a snapshot, even though the underlying table name is the same - closing
+     * the cross-connection disclosure a bare table-name key would otherwise
+     * allow.
      *
      * @return void
      */

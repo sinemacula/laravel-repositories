@@ -338,12 +338,12 @@ final class QueryFingerprintTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a closure's definition-site file path is normalised relative
-     * to the application base path, so an unchanged file fingerprints
-     * identically across releases regardless of how the base path is
-     * written, while a base path that does not actually prefix the
-     * definition site - or the absence of a bound application altogether -
-     * leaves the path, and therefore the fingerprint, unchanged.
+     * Test that a closure's definition-site file path is normalised relative to
+     * the application base path, so an unchanged file fingerprints identically
+     * across releases regardless of how the base path is written, while a base
+     * path that does not actually prefix the definition site - or the absence
+     * of a bound application altogether - leaves the path, and therefore the
+     * fingerprint, unchanged.
      *
      * @param  \Illuminate\Container\Container  $first
      * @param  \Illuminate\Container\Container  $second
@@ -376,8 +376,8 @@ final class QueryFingerprintTest extends IntegrationTestCase
 
     /**
      * Test that a closure passed as a verb argument cannot be fingerprinted,
-     * since two distinct closures have no stable representation and must
-     * never collide on one cache key.
+     * since two distinct closures have no stable representation and must never
+     * collide on one cache key.
      *
      * @return void
      */
@@ -425,8 +425,8 @@ final class QueryFingerprintTest extends IntegrationTestCase
 
     /**
      * Build a tag query whose only eager load is the aligned constraint
-     * fixture, registered directly so the fingerprinted closure is the
-     * fixture itself rather than a framework-generated wrapper around it.
+     * fixture, registered directly so the fingerprinted closure is the fixture
+     * itself rather than a framework-generated wrapper around it.
      *
      * @return \Illuminate\Contracts\Database\Eloquent\Builder
      */

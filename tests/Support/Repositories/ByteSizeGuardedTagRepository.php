@@ -9,8 +9,8 @@ use SineMacula\Repositories\Repository;
 use Tests\Support\Models\Tag;
 
 /**
- * Fixture cacheable tag repository with a byte-size guard ceiling too small
- * for any real result to pass.
+ * Fixture cacheable tag repository with a byte-size guard ceiling too small for
+ * any real result to pass.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.

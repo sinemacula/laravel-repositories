@@ -88,8 +88,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
     /**
      * State 3: D=false, S=false, F=true, T=empty.
      *
-     * Persistent criteria applied. $forceUseCriteria is redundant when
-     * criteria are not disabled.
+     * Persistent criteria applied. $forceUseCriteria is redundant when criteria
+     * are not disabled.
      *
      * @return void
      */
@@ -107,8 +107,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
     /**
      * State 4: D=false, S=false, F=true, T=present.
      *
-     * Both persistent and transient criteria applied. This is the typical
-     * state after calling withCriteria().
+     * Both persistent and transient criteria applied. This is the typical state
+     * after calling withCriteria().
      *
      * @return void
      */

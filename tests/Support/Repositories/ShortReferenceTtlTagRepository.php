@@ -9,8 +9,8 @@ use SineMacula\Repositories\Repository;
 use Tests\Support\Models\Tag;
 
 /**
- * Fixture cacheable tag repository operating in whole-table reference mode
- * with a short reference-mode TTL.
+ * Fixture cacheable tag repository operating in whole-table reference mode with
+ * a short reference-mode TTL.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.

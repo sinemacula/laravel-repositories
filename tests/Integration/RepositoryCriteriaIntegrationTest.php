@@ -15,8 +15,8 @@ use Tests\Support\Criteria\NamedUsersCriterion;
 use Tests\Support\Repositories\TestUserRepository;
 
 /**
- * Integration tests for repository persistent, transient, and one-shot
- * criteria management.
+ * Integration tests for repository persistent, transient, and one-shot criteria
+ * management.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.

@@ -240,8 +240,8 @@ final class PerQueryCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that reads whose arguments contain closures execute uncached, so
-     * two distinct closures can never be served each other's results.
+     * Test that reads whose arguments contain closures execute uncached, so two
+     * distinct closures can never be served each other's results.
      *
      * @return void
      */
@@ -293,8 +293,8 @@ final class PerQueryCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that reference mode executes a real filtered query when criteria
-     * are active instead of serving the unfiltered snapshot.
+     * Test that reference mode executes a real filtered query when criteria are
+     * active instead of serving the unfiltered snapshot.
      *
      * @return void
      */

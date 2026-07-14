@@ -9,9 +9,9 @@ namespace SineMacula\Repositories\Concerns;
  * repository.
  *
  * Concerns such as Cacheable need boot-time setup but cannot override boot()
- * without colliding with a subclass boot() override, so the repository
- * invokes their dedicated boot hooks after boot() has run instead. This lets
- * a single repository safely use more than one bootable concern.
+ * without colliding with a subclass boot() override, so the repository invokes
+ * their dedicated boot hooks after boot() has run instead. This lets a single
+ * repository safely use more than one bootable concern.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.

@@ -121,8 +121,8 @@ trait Cacheable
      * Boot the cacheable concern.
      *
      * Invoked by Repository::bootConcerns() rather than overriding boot()
-     * directly, so the concern can coexist with other bootable concerns
-     * without a fatal trait collision.
+     * directly, so the concern can coexist with other bootable concerns without
+     * a fatal trait collision.
      *
      * @return void
      *
@@ -279,9 +279,9 @@ trait Cacheable
      * Consumes the one-shot criteria flags exactly as a normal query pipeline
      * would, so a skipCriteria()/useCriteria() intended for this read cannot
      * leak onto a later, unrelated query. The flags are only consumed on the
-     * branches that actually serve the snapshot: an unsupported find() id
-     * falls back to the real query pipeline instead, which must see the
-     * flags untouched so parent::__call() can consume them itself.
+     * branches that actually serve the snapshot: an unsupported find() id falls
+     * back to the real query pipeline instead, which must see the flags
+     * untouched so parent::__call() can consume them itself.
      *
      * @param  string  $method
      * @param  array<int, mixed>  $arguments
@@ -332,13 +332,13 @@ trait Cacheable
     }
 
     /**
-     * Determine whether repository-level query composition is pending, in
-     * which case a reference read must execute a real query rather than serve
-     * the unfiltered whole-table snapshot.
+     * Determine whether repository-level query composition is pending, in which
+     * case a reference read must execute a real query rather than serve the
+     * unfiltered whole-table snapshot.
      *
      * Scopes are Cacheable's own concern; the criteria precedence itself is
-     * owned by ManagesCriteria::hasPendingComposition() so applyCriteria()
-     * and this check can never silently diverge.
+     * owned by ManagesCriteria::hasPendingComposition() so applyCriteria() and
+     * this check can never silently diverge.
      *
      * @return bool
      */

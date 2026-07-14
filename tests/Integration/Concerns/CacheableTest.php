@@ -533,8 +533,8 @@ final class CacheableTest extends IntegrationTestCase
 
     /**
      * Test that a cached read which throws leaves no dirty builder or scope
-     * state behind, so the next cached read composes from a clean slate
-     * instead of inheriting the failed call's constraints.
+     * state behind, so the next cached read composes from a clean slate instead
+     * of inheriting the failed call's constraints.
      *
      * @return void
      */
@@ -585,8 +585,8 @@ final class CacheableTest extends IntegrationTestCase
 
     /**
      * Test that a scalar value() result is cached regardless of the size
-     * guard's row ceiling, proving a non-collection, non-model result counts
-     * as zero rows.
+     * guard's row ceiling, proving a non-collection, non-model result counts as
+     * zero rows.
      *
      * @return void
      */
@@ -608,10 +608,9 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a reference-mode find() with a mixed-type array of ids
-     * resolves only the entries whose id is a supported int or string shape,
-     * silently dropping any other value rather than including or crashing on
-     * it.
+     * Test that a reference-mode find() with a mixed-type array of ids resolves
+     * only the entries whose id is a supported int or string shape, silently
+     * dropping any other value rather than including or crashing on it.
      *
      * @return void
      */
@@ -870,9 +869,9 @@ final class CacheableTest extends IntegrationTestCase
 
     /**
      * Test that a one-shot skipCriteria() is still honoured when a
-     * reference-mode find() falls back to a real query because the id
-     * argument is an unsupported shape, and that the flag does not leak onto
-     * a later, unrelated read.
+     * reference-mode find() falls back to a real query because the id argument
+     * is an unsupported shape, and that the flag does not leak onto a later,
+     * unrelated read.
      *
      * @return void
      */
@@ -900,8 +899,8 @@ final class CacheableTest extends IntegrationTestCase
     /**
      * Test that a one-shot useCriteria() still forces disabled persistent
      * criteria on when a reference-mode find() falls back to a real query
-     * because the id argument is an unsupported shape, and that the force
-     * does not leak onto a later, unrelated read.
+     * because the id argument is an unsupported shape, and that the force does
+     * not leak onto a later, unrelated read.
      *
      * @return void
      */
@@ -928,8 +927,8 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a read whose reference-mode id argument is an unsupported
-     * shape logs the real-query fallback at debug level.
+     * Test that a read whose reference-mode id argument is an unsupported shape
+     * logs the real-query fallback at debug level.
      *
      * @return void
      */
@@ -1045,9 +1044,9 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a repository's reference-mode TTL override is honoured, so
-     * the snapshot expires at the configured duration rather than the
-     * packaged default.
+     * Test that a repository's reference-mode TTL override is honoured, so the
+     * snapshot expires at the configured duration rather than the packaged
+     * default.
      *
      * @return void
      */
@@ -1156,8 +1155,8 @@ final class CacheableTest extends IntegrationTestCase
     /**
      * Test that the reference-mode snapshot cache key is composed from the
      * exact prefix, connection name, and database name in that order, so
-     * dropping or reordering any component of that composition is observable
-     * as a missing key.
+     * dropping or reordering any component of that composition is observable as
+     * a missing key.
      *
      * @return void
      */
@@ -1211,8 +1210,8 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that rowCount() returns the exact row count for each result shape:
-     * a collection's item count, a single model as exactly one row, and every
+     * Test that rowCount() returns the exact row count for each result shape: a
+     * collection's item count, a single model as exactly one row, and every
      * other value (including null) as zero rows.
      *
      * @return void

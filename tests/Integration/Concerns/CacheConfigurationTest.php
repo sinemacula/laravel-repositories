@@ -146,8 +146,7 @@ final class CacheConfigurationTest extends IntegrationTestCase
     /**
      * Test that a repository-level override takes exact precedence over the
      * packaged default even though the default is itself a non-null value,
-     * proving the override is read first rather than merely coalesced with
-     * it.
+     * proving the override is read first rather than merely coalesced with it.
      *
      * @return void
      */
@@ -161,8 +160,8 @@ final class CacheConfigurationTest extends IntegrationTestCase
 
     /**
      * Test that the packaged byte-size default is applied at its exact
-     * boundary, so a result serializing to precisely the ceiling is allowed
-     * and one byte over is rejected.
+     * boundary, so a result serializing to precisely the ceiling is allowed and
+     * one byte over is rejected.
      *
      * @return void
      */
@@ -193,8 +192,8 @@ final class CacheConfigurationTest extends IntegrationTestCase
     }
 
     /**
-     * Build a string whose serialized representation is exactly the given
-     * byte length.
+     * Build a string whose serialized representation is exactly the given byte
+     * length.
      *
      * @param  int  $bytes
      * @return string
