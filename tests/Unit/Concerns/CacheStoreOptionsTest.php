@@ -21,8 +21,8 @@ use SineMacula\Repositories\Concerns\CacheStoreOptions;
 final class CacheStoreOptionsTest extends TestCase
 {
     /**
-     * Test that the constructor assigns each option to its matching
-     * readonly property, unchanged.
+     * Test that the constructor assigns each option to its matching readonly
+     * property, unchanged.
      *
      * @return void
      */

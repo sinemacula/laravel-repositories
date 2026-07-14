@@ -10,8 +10,8 @@ use Illuminate\Support\ServiceProvider;
  * Repository service provider.
  *
  * Merges the package configuration and offers it for publishing. The provider
- * registers no bindings of its own: repositories are resolved directly from
- * the container and the cache collaborators are constructed at boot by the
+ * registers no bindings of its own: repositories are resolved directly from the
+ * container and the cache collaborators are constructed at boot by the
  * Cacheable concern.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>

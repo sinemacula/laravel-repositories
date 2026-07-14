@@ -8,8 +8,8 @@ use Illuminate\Contracts\Database\Eloquent\Builder;
 
 /**
  * Fixture producing an eager-load constraint closure bound to an instance, so
- * tests can prove that two closures from the same definition site but
- * differing bound-instance state never share a fingerprint.
+ * tests can prove that two closures from the same definition site but differing
+ * bound-instance state never share a fingerprint.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.

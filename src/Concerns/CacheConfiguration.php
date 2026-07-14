@@ -8,12 +8,12 @@ use Illuminate\Support\Facades\Config;
 
 /**
  * Resolves the tuning configuration for a cacheable repository from its
- * overridable property values and the package configuration, in that
- * precedence order.
+ * overridable property values and the package configuration, in that precedence
+ * order.
  *
  * Constructed once per repository instance in bootCacheable(), from the
- * already-extracted overridable property values, so CacheStoreOptions is
- * always built from named values rather than a positional parameter list.
+ * already-extracted overridable property values, so CacheStoreOptions is always
+ * built from named values rather than a positional parameter list.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -51,8 +51,8 @@ final class CacheConfiguration
     ) {}
 
     /**
-     * Resolve the cache configuration from a repository's overridable
-     * property values and the package configuration.
+     * Resolve the cache configuration from a repository's overridable property
+     * values and the package configuration.
      *
      * @param  array<string, bool|int|string|null>  $overrides
      * @param  string  $table

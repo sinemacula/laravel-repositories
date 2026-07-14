@@ -262,14 +262,14 @@ trait ManagesCriteria
     }
 
     /**
-     * Determine whether the registered criteria would change the next query
-     * if applyCriteria() ran now.
+     * Determine whether the registered criteria would change the next query if
+     * applyCriteria() ran now.
      *
      * Mirrors applyCriteria()'s own precedence exactly, without consuming any
-     * of the one-shot flags, so a caller can decide how to serve the next
-     * read before committing to executing it. This is the single owner of
-     * that precedence; collaborators must delegate here rather than
-     * re-deriving it from the underlying criteria state.
+     * of the one-shot flags, so a caller can decide how to serve the next read
+     * before committing to executing it. This is the single owner of that
+     * precedence; collaborators must delegate here rather than re-deriving it
+     * from the underlying criteria state.
      *
      * @return bool
      */

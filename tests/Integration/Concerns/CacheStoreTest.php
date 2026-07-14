@@ -560,10 +560,10 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a persistently failing version increment (both the initial
-     * call and the post-seed retry fail, as on a genuine store outage) is
-     * logged at error level from the instance flush path, so a process other
-     * than the writer can discover that its invalidation was never persisted.
+     * Test that a persistently failing version increment (both the initial call
+     * and the post-seed retry fail, as on a genuine store outage) is logged at
+     * error level from the instance flush path, so a process other than the
+     * writer can discover that its invalidation was never persisted.
      *
      * @return void
      */
@@ -613,8 +613,8 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that fetch() distinguishes an absent entry, a negative-cache
-     * marker, and a cached value in a single lookup.
+     * Test that fetch() distinguishes an absent entry, a negative-cache marker,
+     * and a cached value in a single lookup.
      *
      * @return void
      */

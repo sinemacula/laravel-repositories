@@ -265,8 +265,8 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
 
     /**
      * Verify a secondary model re-resolution failure during failure cleanup is
-     * logged and swallowed, leaving the model null while the original
-     * exception still propagates to the caller.
+     * logged and swallowed, leaving the model null while the original exception
+     * still propagates to the caller.
      *
      * @return void
      */

@@ -17,8 +17,8 @@ use Tests\Support\Repositories\DatabaseStoreTagRepository;
 use Tests\Support\Repositories\FileStoreTagRepository;
 
 /**
- * Integration tests for per-query repository cache invalidation on write
- * verbs, against a real database.
+ * Integration tests for per-query repository cache invalidation on write verbs,
+ * against a real database.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -206,8 +206,8 @@ final class PerQueryCacheInvalidationTest extends IntegrationTestCase
     }
 
     /**
-     * Test that forceCreateQuietly invalidates the cache when it inserts a
-     * new row.
+     * Test that forceCreateQuietly invalidates the cache when it inserts a new
+     * row.
      *
      * @return void
      */

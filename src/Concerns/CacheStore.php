@@ -123,11 +123,10 @@ final class CacheStore implements CacheInvalidator
      * Get the raw cached entry for the given query fingerprint in a single
      * round trip.
      *
-     * The negative-cache marker is returned as-is, so a caller can
-     * distinguish an absent entry (null), a negative hit (CacheMiss), and a
-     * cached value without a separate has() check - and without the window
-     * where an entry expiring between the two calls masquerades as a negative
-     * hit.
+     * The negative-cache marker is returned as-is, so a caller can distinguish
+     * an absent entry (null), a negative hit (CacheMiss), and a cached value
+     * without a separate has() check - and without the window where an entry
+     * expiring between the two calls masquerades as a negative hit.
      *
      * @param  string  $hash
      * @return mixed
@@ -138,8 +137,7 @@ final class CacheStore implements CacheInvalidator
     }
 
     /**
-     * Store the given value for a query fingerprint, subject to the size
-     * guard.
+     * Store the given value for a query fingerprint, subject to the size guard.
      *
      * @param  string  $hash
      * @param  mixed  $value
@@ -220,15 +218,15 @@ final class CacheStore implements CacheInvalidator
     }
 
     /**
-     * Atomically increment a table's generational version, seeding the key
-     * when the store cannot increment a missing entry.
+     * Atomically increment a table's generational version, seeding the key when
+     * the store cannot increment a missing entry.
      *
      * Some stores (e.g. the database driver) return false instead of creating
-     * the key on increment, which would silently reduce every version bump to
-     * a no-op; add() seeds the key atomically so concurrent writers converge
-     * on a single counter before retrying the increment. Returns null when the
-     * increment still fails after the seed retry - a store outage rather than
-     * a missing key - so the caller can surface the failure instead of masking
+     * the key on increment, which would silently reduce every version bump to a
+     * no-op; add() seeds the key atomically so concurrent writers converge on a
+     * single counter before retrying the increment. Returns null when the
+     * increment still fails after the seed retry - a store outage rather than a
+     * missing key - so the caller can surface the failure instead of masking
      * it.
      *
      * @param  \Illuminate\Contracts\Cache\Repository  $store
@@ -327,9 +325,9 @@ final class CacheStore implements CacheInvalidator
      * Bump the table's generational version, orphaning every existing per-query
      * key for the table in a single atomic write.
      *
-     * Falls back to a local, unpersisted bump when the store cannot persist
-     * the increment, so this instance still stops serving pre-flush entries;
-     * the failure is logged since other processes never observe it.
+     * Falls back to a local, unpersisted bump when the store cannot persist the
+     * increment, so this instance still stops serving pre-flush entries; the
+     * failure is logged since other processes never observe it.
      *
      * @return void
      */
