@@ -9,7 +9,9 @@ use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
+use SineMacula\Repositories\Concerns\BootsConcerns;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
+use SineMacula\Repositories\Concerns\ResetsTransientState;
 use SineMacula\Repositories\Contracts\RepositoryCriteriaInterface;
 use SineMacula\Repositories\Contracts\RepositoryInterface;
 use SineMacula\Repositories\Exceptions\RepositoryException;
@@ -31,7 +33,7 @@ use SineMacula\Repositories\Exceptions\RepositoryException;
 abstract class Repository implements RepositoryCriteriaInterface, RepositoryInterface
 {
     /** @use \SineMacula\Repositories\Concerns\ManagesCriteria<TModel> */
-    use ManagesCriteria;
+    use BootsConcerns, ManagesCriteria, ResetsTransientState;
 
     /** @var \Illuminate\Contracts\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Model|null The resolved model or active query builder. */
     protected Builder|Model|null $model = null;
@@ -70,6 +72,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * Resolve the target model and initialize criteria and scope state.
      *
      * @param  \Illuminate\Contracts\Foundation\Application  $app
+     * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \SineMacula\Repositories\Exceptions\RepositoryException
@@ -119,16 +122,40 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * @param  array<int, mixed>  $arguments
      * @return mixed
      *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     * @throws \Throwable
      */
     public function __call(string $method, array $arguments): mixed
     {
-        $query           = $this->prepareQueryBuilder();
-        $callable        = \Closure::fromCallable([$query, $method]);
-        $forwardedResult = $callable(...$arguments);
+        try {
 
-        return $this->resetAndReturn($forwardedResult);
+            $query    = $this->prepareQueryBuilder();
+            $callable = \Closure::fromCallable([$query, $method]);
+
+            return $this->resetAndReturn($callable(...$arguments));
+        } catch (\Throwable $exception) {
+
+            $this->resetAfterFailure();
+
+            throw $exception;
+        }
+    }
+
+    /**
+     * Retrieve all models for the repository.
+     *
+     * Delegates to the get() pipeline so criteria, scopes, and any caching
+     * concern apply exactly as they would for get(); neither Eloquent builder
+     * exposes an all() method, so the verb cannot be forwarded.
+     *
+     * @param  mixed  ...$arguments
+     * @return mixed
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     */
+    public function all(mixed ...$arguments): mixed
+    {
+        return $this->__call('get', array_values($arguments));
     }
 
     /**
@@ -310,8 +337,11 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * - $scopes is an empty array
      * - $model holds a resolved Model instance
      *
-     * It is safe to call pushCriteria(), addScope(), getModel(), and any public
-     * method during boot().
+     * It is safe to call pushCriteria(), addScope(), getModel(), and the other
+     * base repository methods during boot(). Methods provided by bootable
+     * concerns (such as the cache operations added by Cacheable) are not yet
+     * available: concern collaborators initialise after boot(), via
+     * bootConcerns().
      *
      * @api-stable
      *
@@ -386,29 +416,5 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
         $this->resetModel();
 
         return $queryResult;
-    }
-
-    /**
-     * Boot each used concern that exposes a boot{Concern} hook.
-     *
-     * Concerns such as Cacheable need boot-time setup but cannot override
-     * boot() without colliding with a subclass boot() override, so the base
-     * repository invokes their dedicated boot hooks after boot() has run. This
-     * lets a single repository safely use more than one bootable concern.
-     *
-     * @return void
-     */
-    private function bootConcerns(): void
-    {
-        foreach (class_uses_recursive(static::class) as $concern) {
-
-            $method = 'boot' . class_basename($concern);
-
-            if (!method_exists($this, $method)) {
-                continue;
-            }
-
-            $this->{$method}(); // @phpstan-ignore method.dynamicName
-        }
     }
 }

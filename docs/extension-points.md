@@ -234,7 +234,9 @@ begins:
 | 7    | `boot()`                                | Subclass initialization hook. All state from steps 1-6 is available.                                                                     |
 
 Subclasses overriding `boot()` can safely assume all state from steps 1-6 is initialized. It is safe to call
-`pushCriteria()`, `addScope()`, `getModel()`, and any public method during `boot()`.
+`pushCriteria()`, `addScope()`, `getModel()`, and the other base repository methods during `boot()`. Methods provided
+by bootable concerns (such as the cache operations added by `Cacheable`) are not yet available: concern collaborators
+initialise after `boot()`, via `bootConcerns()`.
 
 ## Versioning Commitment
 

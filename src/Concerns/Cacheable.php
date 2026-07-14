@@ -4,11 +4,13 @@ declare(strict_types = 1);
 
 namespace SineMacula\Repositories\Concerns;
 
+use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use SineMacula\Repositories\Contracts\CacheInvalidator;
+use SineMacula\Repositories\Exceptions\UnfingerprintableQueryException;
 
 /**
  * Provides opt-in transparent caching for repositories.
@@ -30,6 +32,7 @@ use SineMacula\Repositories\Contracts\CacheInvalidator;
  *   - `protected int $cacheReferenceTtl` - reference-mode cache duration
  *   - `protected ?int $cacheNegativeTtl` - null/miss cache duration
  *   - `protected bool $cacheReferenceTable = true` - opt into whole-table mode
+ *   - `protected bool $cacheRegistryEnabled = true` - non-taggable version bump
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -37,13 +40,15 @@ use SineMacula\Repositories\Contracts\CacheInvalidator;
 trait Cacheable
 {
     /** @var array<int, string> Read verbs whose results are served from the per-query cache. */
-    private const array CACHEABLE_READS = ['get', 'all', 'find', 'first', 'firstWhere', 'firstOrFail', 'findOrFail', 'sole', 'value', 'pluck'];
+    private const array CACHEABLE_READS = ['get', 'find', 'first', 'firstWhere', 'firstOrFail', 'findOrFail', 'sole', 'value', 'pluck'];
 
     /** @var array<int, string> Write verbs that invalidate the whole-table cache after execution. */
     private const array WRITE_VERBS = [
-        'create', 'forceCreate', 'firstOrCreate', 'updateOrCreate', 'updateOrInsert',
-        'update', 'delete', 'forceDelete', 'save', 'insert', 'insertGetId',
-        'upsert', 'increment', 'decrement', 'restore',
+        'create', 'createQuietly', 'forceCreate', 'forceCreateQuietly', 'firstOrCreate', 'createOrFirst',
+        'updateOrCreate', 'updateOrInsert', 'update', 'updateFrom', 'delete', 'forceDelete', 'save',
+        'insert', 'insertGetId', 'insertOrIgnore', 'insertUsing', 'insertOrIgnoreUsing', 'upsert',
+        'increment', 'incrementEach', 'incrementOrCreate', 'decrement', 'decrementEach', 'restore',
+        'touch', 'truncate',
     ];
 
     /** @var \SineMacula\Repositories\Concerns\CacheStore The per-query cache store collaborator. */
@@ -126,17 +131,34 @@ trait Cacheable
      */
     protected function bootCacheable(): void
     {
-        $table = $this->getModel()->getTable();
-        $store = $this->resolveProperty('cacheStoreName') ?? Config::get('repositories.cache.store') ?? Config::get('cache.default');
-        $store = is_string($store) ? $store : 'array';
+        $model = $this->getModel();
+        $table = $model->getTable();
 
-        $prefix = $this->resolveProperty('cacheKeyPrefix') ?? $table;
-        $prefix = is_string($prefix) ? $prefix : $table;
+        $configuration = CacheConfiguration::resolveFor([
+            'cacheStoreName'       => $this->resolveProperty('cacheStoreName'),
+            'cacheKeyPrefix'       => $this->resolveProperty('cacheKeyPrefix'),
+            'cacheReferenceTable'  => $this->resolveProperty('cacheReferenceTable'),
+            'cacheTtl'             => $this->resolveProperty('cacheTtl'),
+            'cacheReferenceTtl'    => $this->resolveProperty('cacheReferenceTtl'),
+            'cacheNegativeTtl'     => $this->resolveProperty('cacheNegativeTtl'),
+            'cacheMaxRows'         => $this->resolveProperty('cacheMaxRows'),
+            'cacheMaxBytes'        => $this->resolveProperty('cacheMaxBytes'),
+            'cacheRegistryEnabled' => $this->resolveProperty('cacheRegistryEnabled'),
+        ], $table);
 
-        $this->cacheReferenceMode = (bool) ($this->resolveProperty('cacheReferenceTable') ?? false);
+        $store = Cache::store($configuration->storeName);
 
-        $this->cacheStore     = new CacheStore($store, $prefix, $this->resolveStoreOptions());
-        $this->referenceCache = new ReferenceCache($store, $prefix, $this->resolveReferenceTtl(), $this->resolveSizeGuard());
+        $this->cacheReferenceMode = $configuration->referenceMode;
+
+        // The reference-mode snapshot key is qualified with the connection
+        // identity (unlike the per-query key, which folds it into the query
+        // fingerprint instead), so two connections exposing the same table
+        // name never share a whole-table snapshot.
+        $connection      = $model->getConnection();
+        $referencePrefix = $configuration->prefix . ':' . $connection->getName() . ':' . $connection->getDatabaseName();
+
+        $this->cacheStore     = new CacheStore($store, $configuration->prefix, $configuration->storeOptions);
+        $this->referenceCache = new ReferenceCache($store, $referencePrefix, $configuration->referenceTtl, $configuration->storeOptions->sizeGuard);
     }
 
     /**
@@ -156,7 +178,7 @@ trait Cacheable
         }
 
         if ($this->cacheReferenceMode) {
-            return $this->isReferenceRead($method)
+            return $this->isReferenceRead($method) && !$this->hasActiveComposition()
                 ? $this->resolveReferenceRead($method, $arguments)
                 : parent::__call($method, $arguments);
         }
@@ -178,7 +200,11 @@ trait Cacheable
      */
     private function forwardAndFlush(string $method, array $arguments): mixed
     {
-        $result = parent::__call($method, $arguments);
+        // A pending withoutCache() applies to the next read; consume it here so
+        // it cannot leak past the write onto an unrelated later read.
+        $this->bypassCache = false;
+
+        $outcome = parent::__call($method, $arguments);
 
         try {
             $this->activeStore()->flushTable();
@@ -189,41 +215,73 @@ trait Cacheable
             Log::error('Cache flush after write failed', ['exception' => $exception]);
         }
 
-        return $result;
+        return $outcome;
     }
 
     /**
      * Resolve a cacheable read via pre-execution interception.
      *
+     * The cache entry is resolved with a single fetch: an absent entry, a
+     * negative-cache marker, and a cached value are distinguished in one round
+     * trip, so an entry expiring mid-read can never be mistaken for a negative
+     * hit. Reads whose arguments cannot be fingerprinted (e.g. closures)
+     * execute uncached rather than risk colliding with another query's entry.
+     *
      * @param  string  $method
      * @param  array<int, mixed>  $arguments
      * @return mixed
      *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     * @throws \Throwable
      */
     private function resolveCachedRead(string $method, array $arguments): mixed
     {
-        $query = $this->prepareQueryBuilder();
-        $hash  = QueryFingerprint::for($query, $method, $arguments);
+        try {
 
-        if ($this->cacheStore->has($hash)) {
-            return parent::resetAndReturn($this->cacheStore->get($hash));
+            $query = $this->prepareQueryBuilder();
+
+            try {
+                $hash = QueryFingerprint::for($query, $method, $arguments);
+            } catch (UnfingerprintableQueryException $exception) {
+                Log::debug('Query fingerprinting unavailable; executing read uncached', [
+                    'method'    => $method,
+                    'exception' => $exception,
+                ]);
+
+                return parent::resetAndReturn(\Closure::fromCallable([$query, $method])(...$arguments));
+            }
+
+            $cached = $this->cacheStore->fetch($hash);
+
+            if ($cached !== null) {
+                return parent::resetAndReturn($cached instanceof CacheMiss ? null : $cached);
+            }
+
+            $value = \Closure::fromCallable([$query, $method])(...$arguments);
+
+            if ($value !== null) {
+                $this->cacheStore->put($hash, $value, $this->rowCount($value));
+            } else {
+                $this->cacheStore->putMiss($hash);
+            }
+
+            return parent::resetAndReturn($value);
+        } catch (\Throwable $exception) {
+
+            $this->resetAfterFailure();
+
+            throw $exception;
         }
-
-        $result = \Closure::fromCallable([$query, $method])(...$arguments);
-
-        if ($result !== null) {
-            $this->cacheStore->put($hash, $result, $this->rowCount($result));
-        } else {
-            $this->cacheStore->putMiss($hash);
-        }
-
-        return parent::resetAndReturn($result);
     }
 
     /**
      * Resolve a read from the whole-table reference cache.
+     *
+     * Consumes the one-shot criteria flags exactly as a normal query pipeline
+     * would, so a skipCriteria()/useCriteria() intended for this read cannot
+     * leak onto a later, unrelated query. The flags are only consumed on the
+     * branches that actually serve the snapshot: an unsupported find() id
+     * falls back to the real query pipeline instead, which must see the
+     * flags untouched so parent::__call() can consume them itself.
      *
      * @param  string  $method
      * @param  array<int, mixed>  $arguments
@@ -236,11 +294,30 @@ trait Cacheable
     {
         $model = $this->getModel();
 
-        $result = $method === 'find'
-            ? $this->referenceCache->find($model, $this->referenceId($arguments))
-            : $this->referenceCache->all($model);
+        if ($method === 'find') {
 
-        return parent::resetAndReturn($result);
+            $id = $this->referenceId($arguments);
+
+            if ($id === null) {
+
+                Log::debug('Reference cache bypassed for unsupported find argument', [
+                    'method'    => $method,
+                    'arguments' => $arguments,
+                ]);
+
+                return parent::__call($method, $arguments);
+            }
+
+            $this->skipCriteria     = false;
+            $this->forceUseCriteria = false;
+
+            return parent::resetAndReturn($this->referenceCache->find($model, $id));
+        }
+
+        $this->skipCriteria     = false;
+        $this->forceUseCriteria = false;
+
+        return parent::resetAndReturn($this->referenceCache->all($model));
     }
 
     /**
@@ -251,35 +328,62 @@ trait Cacheable
      */
     private function isReferenceRead(string $method): bool
     {
-        return in_array($method, ['get', 'all', 'find'], true);
+        return in_array($method, ['get', 'find'], true);
+    }
+
+    /**
+     * Determine whether repository-level query composition is pending, in
+     * which case a reference read must execute a real query rather than serve
+     * the unfiltered whole-table snapshot.
+     *
+     * Scopes are Cacheable's own concern; the criteria precedence itself is
+     * owned by ManagesCriteria::hasPendingComposition() so applyCriteria()
+     * and this check can never silently diverge.
+     *
+     * @return bool
+     */
+    private function hasActiveComposition(): bool
+    {
+        return $this->scopes !== [] || $this->hasPendingComposition();
     }
 
     /**
      * Resolve the primary key argument for a reference-mode find().
      *
+     * Returns null when the argument is not a supported key shape, signalling
+     * the caller to fall back to a real query rather than coerce the value.
+     *
      * @param  array<int, mixed>  $arguments
-     * @return int|string
+     * @return array<int, int|string>|int|string|null
      */
-    private function referenceId(array $arguments): int|string
+    private function referenceId(array $arguments): array|int|string|null
     {
         $id = $arguments[0] ?? 0;
 
-        return is_int($id) || is_string($id) ? $id : (string) $id; // @phpstan-ignore cast.string
+        if ($id instanceof Arrayable) {
+            $id = $id->toArray();
+        }
+
+        if (is_array($id)) {
+            return array_values(array_filter($id, static fn (mixed $key): bool => is_int($key) || is_string($key)));
+        }
+
+        return is_int($id) || is_string($id) ? $id : null;
     }
 
     /**
      * Count the rows represented by a query result for the size guard.
      *
-     * @param  mixed  $result
+     * @param  mixed  $value
      * @return int
      */
-    private function rowCount(mixed $result): int
+    private function rowCount(mixed $value): int
     {
-        if ($result instanceof Collection) {
-            return $result->count();
+        if ($value instanceof Collection) {
+            return $value->count();
         }
 
-        return $result instanceof Model ? 1 : 0;
+        return $value instanceof Model ? 1 : 0;
     }
 
     /**
@@ -308,71 +412,6 @@ trait Cacheable
     private function activeStore(): CacheInvalidator
     {
         return $this->cacheReferenceMode ? $this->referenceCache : $this->cacheStore;
-    }
-
-    /**
-     * Resolve the configured cache TTL.
-     *
-     * @return int
-     */
-    private function resolveTtl(): int
-    {
-        $ttl = $this->resolveProperty('cacheTtl') ?? Config::get('repositories.cache.ttl', 3600);
-
-        return is_numeric($ttl) ? (int) $ttl : 3600;
-    }
-
-    /**
-     * Resolve the configured reference-mode cache TTL.
-     *
-     * @return int
-     */
-    private function resolveReferenceTtl(): int
-    {
-        $ttl = $this->resolveProperty('cacheReferenceTtl') ?? Config::get('repositories.cache.reference_ttl', 3600);
-
-        return is_numeric($ttl) ? (int) $ttl : 3600;
-    }
-
-    /**
-     * Resolve the configured negative-lookup (null/miss) cache TTL.
-     *
-     * @return int
-     */
-    private function resolveNegativeTtl(): int
-    {
-        $ttl = $this->resolveProperty('cacheNegativeTtl') ?? Config::get('repositories.cache.negative_ttl', 10);
-
-        return is_numeric($ttl) ? (int) $ttl : 10;
-    }
-
-    /**
-     * Resolve the per-query cache store options from properties and config.
-     *
-     * @return \SineMacula\Repositories\Concerns\CacheStoreOptions
-     */
-    private function resolveStoreOptions(): CacheStoreOptions
-    {
-        $registryEnabled = $this->resolveProperty('cacheRegistryEnabled')
-            ?? Config::get('repositories.cache.registry_enabled', true);
-
-        return new CacheStoreOptions($this->resolveTtl(), $this->resolveSizeGuard(), (bool) $registryEnabled, $this->resolveNegativeTtl());
-    }
-
-    /**
-     * Build the size guard from the configured row and byte ceilings.
-     *
-     * @return \SineMacula\Repositories\Concerns\CacheSizeGuard
-     */
-    private function resolveSizeGuard(): CacheSizeGuard
-    {
-        $maxRows  = $this->resolveProperty('cacheMaxRows')  ?? Config::get('repositories.cache.max_rows', 1000);
-        $maxBytes = $this->resolveProperty('cacheMaxBytes') ?? Config::get('repositories.cache.max_bytes', 262144);
-
-        return new CacheSizeGuard(
-            is_numeric($maxRows) ? (int) $maxRows : null,
-            is_numeric($maxBytes) ? (int) $maxBytes : null,
-        );
     }
 
     /**

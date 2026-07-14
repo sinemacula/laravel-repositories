@@ -5,15 +5,28 @@ declare(strict_types = 1);
 namespace Tests\Integration\Concerns;
 
 use Carbon\Carbon;
+use Illuminate\Container\Container;
+use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Config;
+use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Repositories\Concerns\QueryFingerprint;
+use SineMacula\Repositories\Exceptions\UnfingerprintableQueryException;
 use Tests\Integration\IntegrationTestCase;
+use Tests\Support\Closures\AlignedConstraintA;
+use Tests\Support\Closures\AlignedConstraintB;
+use Tests\Support\Closures\BoundConstraint;
 use Tests\Support\Enums\Status;
 use Tests\Support\Models\Tag;
+use Tests\Support\Models\TagAlias;
 
 /**
- * Tests for the QueryFingerprint helper.
+ * Tests for the QueryFingerprint helper's query, binding, eager-load, and
+ * closure-identity folding.
+ *
+ * Distinct and stable comparisons are grouped behind data providers so each
+ * fingerprinting concern stays covered without one method per scenario.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -21,257 +34,407 @@ use Tests\Support\Models\Tag;
  * @internal
  */
 #[CoversClass(QueryFingerprint::class)]
+#[CoversClass(UnfingerprintableQueryException::class)]
 final class QueryFingerprintTest extends IntegrationTestCase
 {
     /** @var string A representative moment used for date-bound fingerprints. */
     private const string MOMENT = '2026-01-01 00:00:00';
 
     /**
-     * Test that an identical query yields a stable fingerprint.
-     *
-     * @return void
+     * @return iterable<string, array{\Closure(): string, \Closure(): string}>
      */
-    public function testIdenticalQueriesYieldStableFingerprint(): void
+    public static function distinctFingerprintProvider(): iterable
     {
-        $first  = QueryFingerprint::for(Tag::query()->where('name', 'php'));
-        $second = QueryFingerprint::for(Tag::query()->where('name', 'php'));
+        $captureFingerprint = static fn (string $name): string => QueryFingerprint::for(Tag::query()->with(['related' => static function ($query) use ($name): void {
+            $query->where('name', $name);
+        }]));
 
-        self::assertSame($first, $second);
+        $internalConstraint = strlen(...);
+
+        yield 'differing SQL' => [
+            fn (): string => QueryFingerprint::for(Tag::query()),
+            fn (): string => QueryFingerprint::for(Tag::query()->where('name', 'php')),
+        ];
+
+        yield 'differing bindings' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->where('id', 1)),
+            fn (): string => QueryFingerprint::for(Tag::query()->where('id', 2)),
+        ];
+
+        yield 'same bindings, differing SQL' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->where('name', 'php')),
+            fn (): string => QueryFingerprint::for(Tag::query()->where('name', '!=', 'php')),
+        ];
+
+        yield 'distinct Carbon bindings' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->where('created_at', '>', Carbon::parse(self::MOMENT))),
+            fn (): string => QueryFingerprint::for(Tag::query()->where('created_at', '>', Carbon::parse('2026-07-01 00:00:00'))),
+        ];
+
+        yield 'enum argument yields distinct fingerprint per case' => [
+            fn (): string => QueryFingerprint::for(Tag::query(), 'find', [Status::ACTIVE]),
+            fn (): string => QueryFingerprint::for(Tag::query(), 'find', [Status::INACTIVE]),
+        ];
+
+        yield 'differing read verb' => [
+            fn (): string => QueryFingerprint::for(Tag::query(), 'value', ['name']),
+            fn (): string => QueryFingerprint::for(Tag::query(), 'get'),
+        ];
+
+        yield 'differing read verb with identical arguments' => [
+            fn (): string => QueryFingerprint::for(Tag::query(), 'first'),
+            fn (): string => QueryFingerprint::for(Tag::query(), 'get'),
+        ];
+
+        yield 'differing arguments' => [
+            fn (): string => QueryFingerprint::for(Tag::query(), 'find', [1]),
+            fn (): string => QueryFingerprint::for(Tag::query(), 'find', [2]),
+        ];
+
+        yield 'differing column list' => [
+            fn (): string => QueryFingerprint::for(Tag::query(), 'get', [['id', 'name']]),
+            fn (): string => QueryFingerprint::for(Tag::query(), 'get', [['id', 'email']]),
+        ];
+
+        yield 'non-JSON-encodable bindings' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->where('name', "\xB1\x31")),
+            fn (): string => QueryFingerprint::for(Tag::query()->where('name', "\xB2\x32")),
+        ];
+
+        yield 'differing connection database' => [
+            function (): string {
+                Config::set('database.connections.alternative', [
+                    'driver'   => 'sqlite',
+                    'database' => sys_get_temp_dir() . '/laravel-repositories-fingerprint-alt.sqlite',
+                    'prefix'   => '',
+                ]);
+
+                return QueryFingerprint::for(Tag::query());
+            },
+            function (): string {
+                Config::set('database.connections.alternative', [
+                    'driver'   => 'sqlite',
+                    'database' => sys_get_temp_dir() . '/laravel-repositories-fingerprint-alt.sqlite',
+                    'prefix'   => '',
+                ]);
+
+                return QueryFingerprint::for((new Tag)->setConnection('alternative')->newQuery());
+            },
+        ];
+
+        yield 'differing connection name' => [
+            function (): string {
+                Config::set('database.connections.testing_two', [
+                    'driver'   => 'sqlite',
+                    'database' => ':memory:',
+                    'prefix'   => '',
+                ]);
+
+                return QueryFingerprint::for(Tag::query());
+            },
+            function (): string {
+                Config::set('database.connections.testing_two', [
+                    'driver'   => 'sqlite',
+                    'database' => ':memory:',
+                    'prefix'   => '',
+                ]);
+
+                return QueryFingerprint::for((new Tag)->setConnection('testing_two')->newQuery());
+            },
+        ];
+
+        yield 'expression arguments' => [
+            fn (): string => QueryFingerprint::for(Tag::query(), 'get', [[DB::raw('count(*) as aggregate')]]),
+            fn (): string => QueryFingerprint::for(Tag::query(), 'get', [[DB::raw('sum(id) as aggregate')]]),
+        ];
+
+        yield 'differing model class on same table' => [
+            fn (): string => QueryFingerprint::for(Tag::query()),
+            fn (): string => QueryFingerprint::for(TagAlias::query()),
+        ];
+
+        yield 'eager load presence' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->with('posts'), 'get'),
+            fn (): string => QueryFingerprint::for(Tag::query(), 'get'),
+        ];
+
+        yield 'eager-load constraints with differing bodies' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => static function ($query): void {
+                $query->where('active', true);
+            }])),
+            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => static function ($query): void {
+                $query->where('active', false);
+            }])),
+        ];
+
+        yield 'eager-load constraints with differing captures' => [
+            fn (): string => $captureFingerprint('php'),
+            fn (): string => $captureFingerprint('laravel'),
+        ];
+
+        yield 'eager-load constraints defined in different files on the same line' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => AlignedConstraintA::make()])),
+            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => AlignedConstraintB::make()])),
+        ];
+
+        yield 'eager-load constraints bound to instances with differing state' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => (new BoundConstraint('php'))->make()])),
+            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => (new BoundConstraint('laravel'))->make()])),
+        ];
+
+        yield 'internal function constraint differs from an unconstrained read' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => $internalConstraint])),
+            fn (): string => QueryFingerprint::for(Tag::query()),
+        ];
     }
 
     /**
-     * Test that differing SQL yields a distinct fingerprint.
+     * Test that fingerprinting scenarios which must never collide - differing
+     * SQL, bindings, verbs, arguments, connections, models, or eager-load
+     * identity - each yield a distinct fingerprint.
      *
+     * @param  \Closure(): string  $first
+     * @param  \Closure(): string  $second
      * @return void
      */
-    public function testDifferingSqlYieldsDistinctFingerprint(): void
+    #[DataProvider('distinctFingerprintProvider')]
+    public function testDistinctScenariosYieldDistinctFingerprints(\Closure $first, \Closure $second): void
     {
-        $unfiltered = QueryFingerprint::for(Tag::query());
-        $filtered   = QueryFingerprint::for(Tag::query()->where('name', 'php'));
-
-        self::assertNotSame($unfiltered, $filtered);
+        self::assertNotSame($first(), $second());
     }
 
     /**
-     * Test that differing bindings yield a distinct fingerprint.
-     *
-     * @return void
+     * @return iterable<string, array{\Closure(): string, \Closure(): string}>
      */
-    public function testDifferingBindingsYieldDistinctFingerprint(): void
+    public static function stableFingerprintProvider(): iterable
     {
-        $one = QueryFingerprint::for(Tag::query()->where('id', 1));
-        $two = QueryFingerprint::for(Tag::query()->where('id', 2));
+        $sharedConstraint = static function ($query): void {
+            $query->where('active', true);
+        };
 
-        self::assertNotSame($one, $two);
+        $internalConstraint = strlen(...);
+
+        yield 'identical queries' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->where('name', 'php')),
+            fn (): string => QueryFingerprint::for(Tag::query()->where('name', 'php')),
+        ];
+
+        yield 'Carbon binding stability' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->where('created_at', '>', Carbon::parse(self::MOMENT))),
+            fn (): string => QueryFingerprint::for(Tag::query()->where('created_at', '>', Carbon::parse(self::MOMENT))),
+        ];
+
+        yield 'enum raw value matches its backing case' => [
+            fn (): string => QueryFingerprint::for(Tag::query(), 'find', [Status::ACTIVE->value]),
+            fn (): string => QueryFingerprint::for(Tag::query(), 'find', [Status::ACTIVE]),
+        ];
+
+        yield 'identical verb and arguments' => [
+            fn (): string => QueryFingerprint::for(Tag::query(), 'find', [1]),
+            fn (): string => QueryFingerprint::for(Tag::query(), 'find', [1]),
+        ];
+
+        yield 'DateTime matches its ATOM string representation' => [
+            function (): string {
+                $moment = new \DateTimeImmutable('2026-01-01 12:00:00', new \DateTimeZone('UTC'));
+
+                return QueryFingerprint::for(Tag::query()->where('created_at', $moment));
+            },
+            function (): string {
+                $moment = new \DateTimeImmutable('2026-01-01 12:00:00', new \DateTimeZone('UTC'));
+
+                return QueryFingerprint::for(Tag::query()->where('created_at', $moment->format(\DateTimeInterface::ATOM)));
+            },
+        ];
+
+        yield 'eager load registration order does not affect the fingerprint' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->with(['posts', 'articles']), 'get'),
+            fn (): string => QueryFingerprint::for(Tag::query()->with(['articles', 'posts']), 'get'),
+        ];
+
+        yield 'unconstrained eager loads fingerprint stably' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->with('related')),
+            fn (): string => QueryFingerprint::for(Tag::query()->with('related')),
+        ];
+
+        yield 'the same closure instance fingerprints stably across calls' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => $sharedConstraint])),
+            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => $sharedConstraint])),
+        ];
+
+        yield 'an internal function constraint fingerprints stably across calls' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => $internalConstraint])),
+            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => $internalConstraint])),
+        ];
+
+        $mutableCapture       = new \stdClass;
+        $mutableCapture->name = 'first capture';
+
+        $memoisedConstraint = static function ($query) use ($mutableCapture): void {
+            $query->where('name', $mutableCapture->name);
+        };
+
+        yield 'a closure fingerprint is memoised against its first captured state' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => $memoisedConstraint])),
+            function () use ($mutableCapture, $memoisedConstraint): string {
+                $mutableCapture->name = 'second capture';
+
+                return QueryFingerprint::for(Tag::query()->with(['related' => $memoisedConstraint]));
+            },
+        ];
     }
 
     /**
-     * Test that two queries with identical bindings but differing SQL yield
-     * distinct fingerprints, proving the compiled SQL is part of the digest
-     * independently of the bindings.
+     * Test that fingerprinting scenarios which must always collide - repeat
+     * reads, equivalent bindings, reordered eager loads, or the same closure
+     * fingerprinted more than once - each yield a stable fingerprint.
      *
+     * @param  \Closure(): string  $first
+     * @param  \Closure(): string  $second
      * @return void
      */
-    public function testSameBindingsDifferentSqlYieldDistinctFingerprint(): void
+    #[DataProvider('stableFingerprintProvider')]
+    public function testStableScenariosYieldSameFingerprint(\Closure $first, \Closure $second): void
     {
-        $equals    = QueryFingerprint::for(Tag::query()->where('name', 'php'));
-        $notEquals = QueryFingerprint::for(Tag::query()->where('name', '!=', 'php'));
-
-        self::assertNotSame($equals, $notEquals);
+        self::assertSame($first(), $second());
     }
 
     /**
-     * Test that a Carbon binding produces a stable fingerprint across
-     * equivalent instances.
-     *
-     * @return void
+     * @return iterable<string, array{\Illuminate\Container\Container, \Illuminate\Container\Container, bool}>
      */
-    public function testCarbonBindingProducesStableFingerprint(): void
+    public static function definitionPathNormalisationProvider(): iterable
     {
-        $first  = QueryFingerprint::for(Tag::query()->where('created_at', '>', Carbon::parse(self::MOMENT)));
-        $second = QueryFingerprint::for(Tag::query()->where('created_at', '>', Carbon::parse(self::MOMENT)));
+        $fixtureDirectory = dirname((string) realpath(dirname(__DIR__, 2) . '/Support/Closures/AlignedConstraintA.php'));
 
-        self::assertSame($first, $second);
+        yield 'a doubled trailing separator on the base path collapses to none' => [
+            self::containerWithBasePath($fixtureDirectory),
+            self::containerWithBasePath($fixtureDirectory . '//'),
+            true,
+        ];
+
+        yield 'a single trailing separator on the base path behaves like none at all' => [
+            self::containerWithBasePath($fixtureDirectory),
+            self::containerWithBasePath($fixtureDirectory . \DIRECTORY_SEPARATOR),
+            true,
+        ];
+
+        yield 'a base path that is not a prefix of the definition site leaves it unchanged' => [
+            self::containerWithBasePath($fixtureDirectory),
+            self::containerWithBasePath('/definitely-not-a-real-application-base-path'),
+            false,
+        ];
+
+        yield 'an empty base path strips only a leading separator, not the definition directory' => [
+            self::containerWithBasePath($fixtureDirectory),
+            self::containerWithBasePath(''),
+            false,
+        ];
+
+        yield 'no bound application behaves like a base path that is not a prefix' => [
+            new Container,
+            self::containerWithBasePath('/definitely-not-a-real-application-base-path'),
+            true,
+        ];
     }
 
     /**
-     * Test that distinct Carbon bindings yield distinct fingerprints.
+     * Test that a closure's definition-site file path is normalised relative
+     * to the application base path, so an unchanged file fingerprints
+     * identically across releases regardless of how the base path is
+     * written, while a base path that does not actually prefix the
+     * definition site - or the absence of a bound application altogether -
+     * leaves the path, and therefore the fingerprint, unchanged.
      *
+     * @param  \Illuminate\Container\Container  $first
+     * @param  \Illuminate\Container\Container  $second
+     * @param  bool  $expectSameFingerprint
      * @return void
      */
-    public function testDistinctCarbonBindingsYieldDistinctFingerprints(): void
+    #[DataProvider('definitionPathNormalisationProvider')]
+    public function testDefinitionPathIsNormalisedRelativeToTheApplicationBasePath(Container $first, Container $second, bool $expectSameFingerprint): void
     {
-        $january = QueryFingerprint::for(Tag::query()->where('created_at', '>', Carbon::parse(self::MOMENT)));
-        $july    = QueryFingerprint::for(Tag::query()->where('created_at', '>', Carbon::parse('2026-07-01 00:00:00')));
+        $previous = Container::getInstance();
 
-        self::assertNotSame($january, $july);
+        try {
+            Container::setInstance($first);
+
+            $firstFingerprint = QueryFingerprint::for(self::queryConstrainedByAlignedConstraintA());
+
+            Container::setInstance($second);
+
+            $secondFingerprint = QueryFingerprint::for(self::queryConstrainedByAlignedConstraintA());
+        } finally {
+            Container::setInstance($previous);
+        }
+
+        if ($expectSameFingerprint) {
+            self::assertSame($firstFingerprint, $secondFingerprint);
+        } else {
+            self::assertNotSame($firstFingerprint, $secondFingerprint);
+        }
     }
 
     /**
-     * Test that an enum binding yields a stable fingerprint.
+     * Test that a closure passed as a verb argument cannot be fingerprinted,
+     * since two distinct closures have no stable representation and must
+     * never collide on one cache key.
      *
      * @return void
      */
-    public function testEnumBindingYieldsStableFingerprint(): void
+    public function testClosureArgumentsCannotBeFingerprinted(): void
     {
-        $first  = QueryFingerprint::for(Tag::query()->where('name', Status::ACTIVE->value));
-        $second = QueryFingerprint::for(Tag::query()->where('name', Status::ACTIVE));
+        $this->expectException(UnfingerprintableQueryException::class);
+        $this->expectExceptionMessage('Unable to fingerprint the given query.');
 
-        self::assertSame($first, $second);
+        QueryFingerprint::for(Tag::query(), 'firstWhere', [static function ($query): void {
+            $query->where('name', 'php');
+        }]);
     }
 
     /**
-     * Test that the read verb is folded into the fingerprint, so two reads on
-     * an identical base builder (e.g. value() vs get()) do not collide.
+     * Build a container that reports a fixed value for its base path, so
+     * closure definition-path normalisation can be exercised against a known
+     * prefix without a bound Laravel application.
      *
-     * @return void
+     * @param  string  $path
+     * @return \Illuminate\Container\Container
      */
-    public function testDifferingReadVerbYieldsDistinctFingerprint(): void
+    private static function containerWithBasePath(string $path): Container
     {
-        $value = QueryFingerprint::for(Tag::query(), 'value', ['name']);
-        $get   = QueryFingerprint::for(Tag::query(), 'get');
+        return new class ($path) extends Container {
+            /**
+             * @param  string  $path
+             * @return void
+             */
+            public function __construct(
 
-        self::assertNotSame($value, $get);
+                /** The value returned for every base path lookup. */
+                private readonly string $path,
+            ) {}
+
+            /**
+             * @param  string  $path
+             * @return string
+             */
+            public function basePath(string $path = ''): string
+            {
+                return $this->path;
+            }
+        };
     }
 
     /**
-     * Test that the read verb alone discriminates the fingerprint, so two reads
-     * with identical arguments but a different verb (e.g. first() vs get()) do
-     * not collide.
+     * Build a tag query whose only eager load is the aligned constraint
+     * fixture, registered directly so the fingerprinted closure is the
+     * fixture itself rather than a framework-generated wrapper around it.
      *
-     * @return void
+     * @return \Illuminate\Contracts\Database\Eloquent\Builder
      */
-    public function testDifferingReadVerbWithIdenticalArgumentsYieldsDistinctFingerprint(): void
+    private static function queryConstrainedByAlignedConstraintA(): Builder
     {
-        $first = QueryFingerprint::for(Tag::query(), 'first');
-        $get   = QueryFingerprint::for(Tag::query(), 'get');
+        $query = Tag::query();
+        $query->setEagerLoads(['related' => AlignedConstraintA::make()]);
 
-        self::assertNotSame($first, $get);
-    }
-
-    /**
-     * Test that the read verb arguments are folded into the fingerprint, so
-     * find(1) and find(2) on an identical base builder do not collide - the
-     * by-id read whose constraint is applied at execution time.
-     *
-     * @return void
-     */
-    public function testDifferingArgumentsYieldDistinctFingerprint(): void
-    {
-        $one = QueryFingerprint::for(Tag::query(), 'find', [1]);
-        $two = QueryFingerprint::for(Tag::query(), 'find', [2]);
-
-        self::assertNotSame($one, $two);
-    }
-
-    /**
-     * Test that a differing column projection (the array argument to get())
-     * yields a distinct fingerprint, so get(['id','name']) does not collide
-     * with get(['id','email']).
-     *
-     * @return void
-     */
-    public function testDifferingColumnListYieldsDistinctFingerprint(): void
-    {
-        $name  = QueryFingerprint::for(Tag::query(), 'get', [['id', 'name']]);
-        $email = QueryFingerprint::for(Tag::query(), 'get', [['id', 'email']]);
-
-        self::assertNotSame($name, $email);
-    }
-
-    /**
-     * Test that an identical verb and arguments on an identical base builder
-     * yield a stable fingerprint, so a repeat read still hits the cache.
-     *
-     * @return void
-     */
-    public function testIdenticalVerbAndArgumentsYieldStableFingerprint(): void
-    {
-        $first  = QueryFingerprint::for(Tag::query(), 'find', [1]);
-        $second = QueryFingerprint::for(Tag::query(), 'find', [1]);
-
-        self::assertSame($first, $second);
-    }
-
-    /**
-     * Test that the registered eager loads are folded into the fingerprint, so
-     * with('posts')->get() does not collide with a plain get() (the eager loads
-     * are invisible to the compiled base SQL).
-     *
-     * @return void
-     */
-    public function testDifferingEagerLoadsYieldDistinctFingerprint(): void
-    {
-        $eager = QueryFingerprint::for(Tag::query()->with('posts'), 'get');
-        $plain = QueryFingerprint::for(Tag::query(), 'get');
-
-        self::assertNotSame($eager, $plain);
-    }
-
-    /**
-     * Test that the eager load ordering does not affect the fingerprint, so two
-     * reads requesting the same relations in a different order still share a
-     * cache entry.
-     *
-     * @return void
-     */
-    public function testEagerLoadOrderIsIgnored(): void
-    {
-        $first  = QueryFingerprint::for(Tag::query()->with('posts')->with('articles'), 'get');
-        $second = QueryFingerprint::for(Tag::query()->with('articles')->with('posts'), 'get');
-
-        self::assertSame($first, $second);
-    }
-
-    /**
-     * Test that a DateTime binding is normalised to its ATOM representation, so
-     * a query bound with a DateTime and one bound with the equivalent ATOM
-     * string resolve to the same fingerprint.
-     *
-     * @return void
-     */
-    public function testDateTimeBindingMatchesItsAtomStringRepresentation(): void
-    {
-        $moment = new \DateTimeImmutable('2026-01-01 12:00:00', new \DateTimeZone('UTC'));
-
-        $object = QueryFingerprint::for(Tag::query()->where('created_at', $moment));
-        $string = QueryFingerprint::for(Tag::query()->where('created_at', $moment->format(\DateTimeInterface::ATOM)));
-
-        self::assertSame($object, $string);
-    }
-
-    /**
-     * Test that bindings which cannot be JSON-encoded (e.g. invalid UTF-8) fall
-     * back to a stable serialised representation that still distinguishes
-     * distinct values.
-     *
-     * @return void
-     */
-    public function testNonJsonEncodableBindingsYieldDistinctFingerprints(): void
-    {
-        $one = QueryFingerprint::for(Tag::query()->where('name', "\xB1\x31"));
-        $two = QueryFingerprint::for(Tag::query()->where('name', "\xB2\x32"));
-
-        self::assertNotSame($one, $two);
-    }
-
-    /**
-     * Test that the connection's database name is folded into the fingerprint,
-     * so identical SQL against different databases never shares a cache entry.
-     *
-     * @return void
-     */
-    public function testDifferingConnectionDatabaseYieldsDistinctFingerprint(): void
-    {
-        Config::set('database.connections.alternative', [
-            'driver'   => 'sqlite',
-            'database' => sys_get_temp_dir() . '/laravel-repositories-fingerprint-alt.sqlite',
-            'prefix'   => '',
-        ]);
-
-        $default     = QueryFingerprint::for(Tag::query());
-        $alternative = QueryFingerprint::for((new Tag)->setConnection('alternative')->newQuery());
-
-        self::assertNotSame($default, $alternative);
+        return $query;
     }
 }

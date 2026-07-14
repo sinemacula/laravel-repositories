@@ -4,20 +4,25 @@ declare(strict_types = 1);
 
 namespace Tests\Integration;
 
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use PHPUnit\Framework\Attributes\CoversTrait;
 use SineMacula\Repositories\Concerns\Cacheable;
+use SineMacula\Repositories\Exceptions\UnfingerprintableQueryException;
+use Tests\Support\Criteria\NamedTagsCriterion;
 use Tests\Support\Models\Tag;
 use Tests\Support\Repositories\CacheableTagRepository;
 use Tests\Support\Repositories\CustomStoreCacheableTagRepository;
-use Tests\Support\Repositories\FileStoreTagRepository;
 use Tests\Support\Repositories\ReferenceTableTagRepository;
 use Tests\Support\Repositories\SizeGuardedTagRepository;
 
 /**
  * Integration tests for per-query repository caching against a real database.
+ *
+ * Cache-invalidation-on-write scenarios live in PerQueryCacheInvalidationTest.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -131,26 +136,6 @@ final class PerQueryCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a write invalidation forces a fresh query on the next read.
-     *
-     * @return void
-     */
-    public function testWriteInvalidationForcesFreshQuery(): void
-    {
-        $repository = $this->makeRepository(CacheableTagRepository::class);
-
-        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-        $repository->create(['name' => 'vue']); // @phpstan-ignore staticMethod.dynamicCall
-
-        DB::enableQueryLog();
-
-        $result = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-
-        self::assertCount(1, DB::getQueryLog());
-        self::assertCount(3, $result);
-    }
-
-    /**
      * Test that reference mode loads the whole table once for mixed reads.
      *
      * @return void
@@ -161,97 +146,11 @@ final class PerQueryCacheTest extends IntegrationTestCase
 
         DB::enableQueryLog();
 
-        $repository->all(); // @phpstan-ignore method.notFound
+        $repository->all();
         $repository->find(1); // @phpstan-ignore staticMethod.dynamicCall
         $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
 
         self::assertCount(1, DB::getQueryLog());
-    }
-
-    /**
-     * Test that a non-taggable file store invalidates per-query entries via the
-     * registry on a write.
-     *
-     * @return void
-     */
-    public function testFileStoreInvalidatesViaRegistryOnWrite(): void
-    {
-        $repository = $this->makeRepository(FileStoreTagRepository::class);
-
-        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-        $repository->create(['name' => 'vue']); // @phpstan-ignore staticMethod.dynamicCall
-
-        DB::enableQueryLog();
-
-        $result = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-
-        self::assertCount(1, DB::getQueryLog());
-        self::assertCount(3, $result);
-    }
-
-    /**
-     * Test that, with the registry disabled, a non-taggable file store keeps
-     * serving the stale entry after a write (TTL-only staleness).
-     *
-     * @return void
-     */
-    public function testFileStoreWithRegistryDisabledServesStaleEntry(): void
-    {
-        Config::set('repositories.cache.registry_enabled', false);
-
-        $repository = $this->makeRepository(FileStoreTagRepository::class);
-
-        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-        $repository->create(['name' => 'vue']); // @phpstan-ignore staticMethod.dynamicCall
-
-        DB::enableQueryLog();
-
-        $result = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-
-        self::assertCount(0, DB::getQueryLog());
-        self::assertCount(2, $result);
-    }
-
-    /**
-     * Test that firstOrCreate invalidates the cache when it inserts a new row.
-     *
-     * @return void
-     */
-    public function testFirstOrCreateInvalidatesCacheOnInsert(): void
-    {
-        $repository = $this->makeRepository(CacheableTagRepository::class);
-
-        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-
-        $repository->firstOrCreate(['name' => 'vue']); // @phpstan-ignore staticMethod.dynamicCall
-
-        DB::enableQueryLog();
-
-        $result = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-
-        self::assertCount(1, DB::getQueryLog());
-        self::assertCount(3, $result);
-    }
-
-    /**
-     * Test that updateOrCreate invalidates the cache when it upserts a row.
-     *
-     * @return void
-     */
-    public function testUpdateOrCreateInvalidatesCache(): void
-    {
-        $repository = $this->makeRepository(CacheableTagRepository::class);
-
-        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-
-        $repository->updateOrCreate(['name' => 'php'], ['name' => 'php8']); // @phpstan-ignore staticMethod.dynamicCall
-
-        DB::enableQueryLog();
-
-        $result = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-
-        self::assertCount(1, DB::getQueryLog());
-        self::assertSame('php8', $result->firstWhere('name', 'php8')?->getAttribute('name'));
     }
 
     /**
@@ -317,6 +216,139 @@ final class PerQueryCacheTest extends IntegrationTestCase
 
         self::assertCount(0, DB::getQueryLog());
         self::assertTrue($repository->getCacheStatus()->isPopulated());
+    }
+
+    /**
+     * Test that all() resolves through the cached get() pipeline in per-query
+     * mode.
+     *
+     * @return void
+     */
+    public function testAllServesAndCachesInPerQueryMode(): void
+    {
+        $repository = $this->makeRepository(CacheableTagRepository::class);
+
+        $first = $repository->all();
+
+        DB::enableQueryLog();
+
+        $second = $repository->all();
+
+        self::assertCount(0, DB::getQueryLog());
+        self::assertCount(2, $first);
+        self::assertCount(2, $second);
+    }
+
+    /**
+     * Test that reads whose arguments contain closures execute uncached, so
+     * two distinct closures can never be served each other's results.
+     *
+     * @return void
+     */
+    public function testDistinctClosureArgumentsExecuteUncachedReads(): void
+    {
+        $repository = $this->makeRepository(CacheableTagRepository::class);
+
+        // @phpstan-ignore staticMethod.dynamicCall
+        $php = $repository->firstWhere(static function ($query): void {
+            $query->where('name', 'php');
+        });
+
+        DB::enableQueryLog();
+
+        // @phpstan-ignore staticMethod.dynamicCall
+        $laravel = $repository->firstWhere(static function ($query): void {
+            $query->where('name', 'laravel');
+        });
+
+        self::assertCount(1, DB::getQueryLog());
+        self::assertInstanceOf(Tag::class, $php);
+        self::assertInstanceOf(Tag::class, $laravel);
+        self::assertSame('php', $php->getAttribute('name'));
+        self::assertSame('laravel', $laravel->getAttribute('name'));
+    }
+
+    /**
+     * Test that a read whose arguments cannot be fingerprinted logs the
+     * uncached fallback at debug level, so a permanently-uncacheable shape is
+     * observable.
+     *
+     * @return void
+     */
+    public function testUnfingerprintableReadLogsFallbackAtDebugLevel(): void
+    {
+        $repository = $this->makeRepository(CacheableTagRepository::class);
+
+        Log::shouldReceive('debug')
+            ->once()
+            ->with('Query fingerprinting unavailable; executing read uncached', \Mockery::on(
+                static fn (array $context): bool => $context['method'] === 'firstWhere'
+                    && $context['exception'] instanceof UnfingerprintableQueryException,
+            ));
+
+        // @phpstan-ignore staticMethod.dynamicCall
+        $repository->firstWhere(static function ($query): void {
+            $query->where('name', 'php');
+        });
+    }
+
+    /**
+     * Test that reference mode executes a real filtered query when criteria
+     * are active instead of serving the unfiltered snapshot.
+     *
+     * @return void
+     */
+    public function testReferenceModeExecutesRealQueryWhenCriteriaAreActive(): void
+    {
+        $repository = $this->makeRepository(ReferenceTableTagRepository::class);
+
+        $filtered = $repository->withCriteria(new NamedTagsCriterion('php'))->get(); // @phpstan-ignore staticMethod.dynamicCall
+        $first    = $filtered->first();
+
+        self::assertCount(1, $filtered);
+        self::assertInstanceOf(Tag::class, $first);
+        self::assertSame('php', $first->getAttribute('name'));
+
+        $unfiltered = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(2, $unfiltered);
+    }
+
+    /**
+     * Test that reference mode honours scopes by executing a real query.
+     *
+     * @return void
+     */
+    public function testReferenceModeExecutesRealQueryWhenScopesAreActive(): void
+    {
+        $repository = $this->makeRepository(ReferenceTableTagRepository::class);
+
+        // @phpstan-ignore staticMethod.dynamicCall
+        $scoped = $repository->addScope(static function ($query): void {
+            $query->where('name', 'laravel');
+        })->get();
+
+        $first = $scoped->first();
+
+        self::assertCount(1, $scoped);
+        self::assertInstanceOf(Tag::class, $first);
+        self::assertSame('laravel', $first->getAttribute('name'));
+    }
+
+    /**
+     * Test that a reference-mode find() with an array of ids returns the
+     * matching models, mirroring Eloquent's find() contract.
+     *
+     * @return void
+     */
+    public function testReferenceModeFindWithArrayOfIdsReturnsMatchingModels(): void
+    {
+        $repository = $this->makeRepository(ReferenceTableTagRepository::class);
+
+        $found = $repository->find([1, 2]); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertInstanceOf(Collection::class, $found);
+        self::assertCount(2, $found);
     }
 
     /**

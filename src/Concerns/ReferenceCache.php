@@ -7,7 +7,6 @@ namespace SineMacula\Repositories\Concerns;
 use Illuminate\Contracts\Cache\Repository as CacheContract;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Cache;
 use SineMacula\Repositories\Contracts\CacheInvalidator;
 use SineMacula\Repositories\Enums\CacheKeys;
 
@@ -24,12 +23,11 @@ use SineMacula\Repositories\Enums\CacheKeys;
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
+ *
+ * @internal
  */
 final class ReferenceCache implements CacheInvalidator
 {
-    /** @var \Illuminate\Contracts\Cache\Repository The underlying cache store instance. */
-    private readonly CacheContract $store;
-
     /** @var string The resolved cache key for the whole-table snapshot. */
     private readonly string $cacheKey;
 
@@ -45,7 +43,7 @@ final class ReferenceCache implements CacheInvalidator
     /**
      * Create a new reference cache instance.
      *
-     * @param  string  $cacheStore
+     * @param  \Illuminate\Contracts\Cache\Repository  $store
      * @param  string  $table
      * @param  int  $ttl
      * @param  \SineMacula\Repositories\Concerns\CacheSizeGuard  $sizeGuard
@@ -53,10 +51,10 @@ final class ReferenceCache implements CacheInvalidator
      */
     public function __construct(
 
-        /** The name of the cache store to use. */
-        private readonly string $cacheStore,
+        /** The underlying cache store instance. */
+        private readonly CacheContract $store,
 
-        /** The database table the snapshot belongs to. */
+        /** The cache key prefix scoping the snapshot, qualified by the caller with the connection identity so two connections sharing a table name never share a snapshot. */
         private readonly string $table,
 
         /** The time-to-live, in seconds, for cached snapshots. */
@@ -65,7 +63,6 @@ final class ReferenceCache implements CacheInvalidator
         /** The guard that limits the size of cached snapshots. */
         private readonly CacheSizeGuard $sizeGuard,
     ) {
-        $this->store    = Cache::store($this->cacheStore);
         $this->cacheKey = CacheKeys::REPOSITORY_CACHE->resolveKey([$this->table]);
         $this->metaKey  = CacheKeys::REPOSITORY_CACHE_META->resolveKey([$this->table]);
     }
@@ -90,15 +87,23 @@ final class ReferenceCache implements CacheInvalidator
     }
 
     /**
-     * Find a single record by its key value from the whole-table snapshot.
+     * Find one or many records by key value from the whole-table snapshot.
+     *
+     * Mirrors Eloquent's find() contract: a scalar key resolves to a single
+     * model or null, while an array of keys resolves to a collection of the
+     * matching models.
      *
      * @param  \Illuminate\Database\Eloquent\Model  $model
-     * @param  int|string  $id
-     * @return \Illuminate\Database\Eloquent\Model|null
+     * @param  array<int, int|string>|int|string  $id
+     * @return \Illuminate\Database\Eloquent\Model|\Illuminate\Support\Collection<int, \Illuminate\Database\Eloquent\Model>|null
      */
-    public function find(Model $model, int|string $id): ?Model
+    public function find(Model $model, array|int|string $id): Collection|Model|null
     {
         $rows = $this->all($model);
+
+        if (is_array($id)) {
+            return $rows->whereIn($model->getKeyName(), $id)->values();
+        }
 
         // Over-large tables are not memoised, so there is no key index; fall
         // back to scanning the freshly-queried collection.
@@ -118,9 +123,11 @@ final class ReferenceCache implements CacheInvalidator
     #[\Override]
     public function flushTable(): void
     {
-        // Clearing the memo is sufficient: the key index is derived from it and
-        // is rebuilt by the next load, so it is never read while stale.
-        $this->memo = null;
+        // The index must be cleared alongside the memo: a subsequent load that
+        // trips the size guard skips remember(), so a surviving index would be
+        // served stale by find().
+        $this->memo  = null;
+        $this->index = null;
 
         $this->store->forget($this->cacheKey);
         $this->store->put($this->metaKey, ['invalidated_at' => now()->timestamp], $this->ttl);
@@ -164,8 +171,13 @@ final class ReferenceCache implements CacheInvalidator
 
         // Skip caching a table over the size guard: reference mode on an
         // unexpectedly large table falls back to querying each read rather
-        // than holding (or memoising) a huge serialized snapshot.
+        // than holding (or memoising) a huge serialized snapshot. Any earlier
+        // memo state is dropped so no stale index can outlive the snapshot.
         if (!$this->sizeGuard->allows($rows, $rows->count())) {
+
+            $this->memo  = null;
+            $this->index = null;
+
             return $rows;
         }
 

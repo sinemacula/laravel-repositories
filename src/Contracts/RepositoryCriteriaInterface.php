@@ -7,7 +7,9 @@ namespace SineMacula\Repositories\Contracts;
 use Illuminate\Support\Collection;
 
 /**
- * Repository criteria interface.
+ * Declares the criteria lifecycle contract a repository must expose: register
+ * criteria (persistently or for the next query only), remove them, inspect
+ * what is currently active, and toggle their application at runtime.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -24,6 +26,10 @@ interface RepositoryCriteriaInterface
      * This method allows you to specify criteria that are applied once to the
      * next operation involving data retrieval or manipulation and then
      * automatically discarded.
+     *
+     * Each call replaces any transient criteria from a previous withCriteria()
+     * call rather than appending to them; pass an array to apply several
+     * criteria to the next query.
      *
      * @param  array<int, TCriterion>|TCriterion  $criteria
      * @return static

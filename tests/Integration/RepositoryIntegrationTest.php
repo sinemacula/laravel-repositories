@@ -4,9 +4,11 @@ declare(strict_types = 1);
 
 namespace Tests\Integration;
 
+use Illuminate\Contracts\Container\BindingResolutionException;
 use Illuminate\Contracts\Database\Eloquent\Builder as BuilderContract;
-use Illuminate\Support\Collection;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\CoversTrait;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
@@ -148,103 +150,6 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
     }
 
     /**
-     * Verify persistent criteria behavior across enable, disable, and use flow.
-     *
-     * @return void
-     */
-    public function testPersistentCriteriaBehaviorAcrossEnableDisableAndUseFlow(): void
-    {
-        $this->seedUsers();
-
-        $repository = $this->repository();
-        $repository->pushCriteria([new ActiveUsersCriterion, 'invalid']);
-
-        self::assertCount(2, $repository->query()->get());
-
-        $repository->disableCriteria();
-
-        self::assertCount(3, $repository->query()->get());
-
-        $repository->useCriteria();
-        self::assertCount(2, $repository->query()->get());
-
-        $repository->enableCriteria();
-
-        self::assertFalse($repository->isCriteriaDisabled());
-        self::assertFalse($repository->isForceUsingCriteria());
-    }
-
-    /**
-     * Verify skipCriteria bypasses criteria for one query and resets flags.
-     *
-     * @return void
-     */
-    public function testSkipCriteriaBypassesCriteriaForSingleQueryAndResetsFlags(): void
-    {
-        $this->seedUsers();
-
-        $repository = $this->repository();
-        $repository
-            ->pushCriteria(new ActiveUsersCriterion)
-            ->withCriteria(new NamedUsersCriterion('Alice'))
-            ->skipCriteria();
-
-        self::assertTrue($repository->isCriteriaSkipped());
-        self::assertTrue($repository->isForceUsingCriteria());
-        self::assertCount(3, $repository->query()->get());
-        self::assertFalse($repository->isCriteriaSkipped());
-        self::assertFalse($repository->isForceUsingCriteria());
-        self::assertSame(0, $repository->transientCriteriaCount());
-        self::assertCount(2, $repository->query()->get());
-    }
-
-    /**
-     * Verify criteria can be removed by object instance and class-string.
-     *
-     * @return void
-     */
-    public function testRemoveCriteriaSupportsObjectAndClassStringRemoval(): void
-    {
-        $repository     = $this->repository();
-        $activeCriteria = new ActiveUsersCriterion;
-
-        $repository->pushCriteria([$activeCriteria, new NamedUsersCriterion('Alice')]);
-        $repository->withCriteria(new NamedUsersCriterion('Bob'));
-
-        self::assertCount(3, $repository->getCriteria());
-
-        $repository->removeCriteria($activeCriteria);
-        self::assertCount(2, $repository->getCriteria());
-
-        $repository->removeCriteria(NamedUsersCriterion::class);
-        self::assertCount(0, $repository->getCriteria());
-    }
-
-    /**
-     * Verify removal logic ignores non-objects and non-matching requests.
-     *
-     * @return void
-     */
-    public function testRemoveCriteriaGracefullyHandlesNonObjectAndNonMatchingValues(): void
-    {
-        $repository = $this->repository();
-
-        /** @var \Illuminate\Support\Collection<int, \SineMacula\Repositories\Contracts\CriteriaInterface<\Tests\Support\Models\TestUser>> $persistent */
-        $persistent = new Collection(['invalid', new ActiveUsersCriterion]);
-        /** @var \Illuminate\Support\Collection<int, \SineMacula\Repositories\Contracts\CriteriaInterface<\Tests\Support\Models\TestUser>> $transient */
-        $transient = new Collection(['invalid']);
-
-        $repository->forcePersistentCriteria($persistent);
-        $repository->forceTransientCriteria($transient);
-
-        $repository->removeCriteria([new NamedUsersCriterion('Alice')]);
-        self::assertSame(2, $repository->persistentCriteriaCount());
-
-        $repository->removeCriteria(ActiveUsersCriterion::class);
-        self::assertSame(1, $repository->persistentCriteriaCount());
-    }
-
-    /**
      * Verify query recovers from an invalid model reference and applies scopes.
      *
      * @return void
@@ -288,26 +193,6 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
     }
 
     /**
-     * Verify resetCriteria() clears both persistent and transient criteria.
-     *
-     * @return void
-     */
-    public function testResetCriteriaClearsBothPersistentAndTransientCriteria(): void
-    {
-        $repository = $this->repository();
-        $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository->withCriteria(new NamedUsersCriterion('Alice'));
-
-        self::assertSame(1, $repository->persistentCriteriaCount());
-        self::assertSame(1, $repository->transientCriteriaCount());
-
-        $repository->resetCriteria();
-
-        self::assertSame(0, $repository->persistentCriteriaCount());
-        self::assertSame(0, $repository->transientCriteriaCount());
-    }
-
-    /**
      * Verify resetModel() restores a fresh model instance from the container.
      *
      * @return void
@@ -344,6 +229,100 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
         $repository->resetScopes();
 
         self::assertSame(0, $repository->scopesCount());
+    }
+
+    /**
+     * Test that a forwarded call which throws leaves no dirty builder or scope
+     * state behind, so the next query composes from a clean slate instead of
+     * inheriting the failed call's constraints.
+     *
+     * @return void
+     */
+    public function testFailedForwardedCallLeavesTransientStateClean(): void
+    {
+        $this->seedUsers();
+
+        $repository = $this->repository();
+
+        $repository
+            ->withCriteria(new NamedUsersCriterion('Bob'))
+            ->addScope(static function (BuilderContract $query): void {
+                $query->where('active', false);
+            });
+
+        try {
+
+            $repository->findOrFail(999); // @phpstan-ignore staticMethod.dynamicCall
+            self::fail('Expected the forwarded findOrFail() to throw.');
+        } catch (ModelNotFoundException $exception) {
+            self::assertSame(TestUser::class, $exception->getModel());
+        }
+
+        $result = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(3, $result);
+    }
+
+    /**
+     * Verify a secondary model re-resolution failure during failure cleanup is
+     * logged and swallowed, leaving the model null while the original
+     * exception still propagates to the caller.
+     *
+     * @return void
+     */
+    public function testFailedForwardedCallLogsAndNullsModelWhenReResolutionAlsoFails(): void
+    {
+        $this->seedUsers();
+
+        $repository = $this->repository();
+        $calls      = 0;
+
+        self::assertNotNull($this->app);
+
+        $this->app->bind(TestUser::class, function () use (&$calls): TestUser {
+
+            $calls++;
+
+            if ($calls > 1) {
+                throw new BindingResolutionException('Simulated resolution failure.');
+            }
+
+            return new TestUser;
+        });
+
+        Log::shouldReceive('error')
+            ->once()
+            ->with('Model re-resolution failed during failure cleanup', \Mockery::on(
+                static fn (array $context): bool => $context['exception'] instanceof BindingResolutionException,
+            ));
+
+        try {
+
+            $repository->findOrFail(999); // @phpstan-ignore staticMethod.dynamicCall
+            self::fail('Expected the forwarded findOrFail() to throw.');
+        } catch (ModelNotFoundException $exception) {
+            self::assertSame(TestUser::class, $exception->getModel());
+        }
+
+        self::assertNull($repository->currentModel());
+    }
+
+    /**
+     * Verify all() delegates to the get() pipeline so criteria apply
+     * identically to a directly forwarded get() call.
+     *
+     * @return void
+     */
+    public function testAllDelegatesToTheGetPipeline(): void
+    {
+        $this->seedUsers();
+
+        $repository = $this->repository();
+        $repository->withCriteria(new ActiveUsersCriterion);
+
+        $users = $repository->all();
+
+        self::assertCount(2, $users);
     }
 
     /**

@@ -52,6 +52,10 @@ trait ManagesCriteria
      * next operation involving data retrieval or manipulation and then
      * automatically discarded.
      *
+     * Each call replaces any transient criteria from a previous withCriteria()
+     * call rather than appending to them; pass an array to apply several
+     * criteria to the next query.
+     *
      * @param  array<int, TCriterion>|TCriterion  $criteria
      * @return static
      */
@@ -120,10 +124,10 @@ trait ManagesCriteria
         $criteria = is_array($criteria) ? $criteria : [$criteria];
 
         $this->persistentCriteria = $this->persistentCriteria
-            ->reject(fn ($persisted) => $this->criteriaMatchesRemovalRequest($persisted, $criteria));
+            ->reject(fn (mixed $persisted): bool => $this->criteriaMatchesRemovalRequest($persisted, $criteria));
 
         $this->transientCriteria = $this->transientCriteria
-            ->reject(fn ($transient) => $this->criteriaMatchesRemovalRequest($transient, $criteria));
+            ->reject(fn (mixed $transient): bool => $this->criteriaMatchesRemovalRequest($transient, $criteria));
 
         return $this;
     }
@@ -258,6 +262,28 @@ trait ManagesCriteria
     }
 
     /**
+     * Determine whether the registered criteria would change the next query
+     * if applyCriteria() ran now.
+     *
+     * Mirrors applyCriteria()'s own precedence exactly, without consuming any
+     * of the one-shot flags, so a caller can decide how to serve the next
+     * read before committing to executing it. This is the single owner of
+     * that precedence; collaborators must delegate here rather than
+     * re-deriving it from the underlying criteria state.
+     *
+     * @return bool
+     */
+    protected function hasPendingComposition(): bool
+    {
+        if ($this->skipCriteria) {
+            return false;
+        }
+
+        return $this->transientCriteria->isNotEmpty()
+            || (($this->forceUseCriteria || !$this->disableCriteria) && $this->persistentCriteria->isNotEmpty());
+    }
+
+    /**
      * Sanitize the given array of criteria to ensure they are valid criteria
      * instances.
      *
@@ -266,30 +292,30 @@ trait ManagesCriteria
      */
     private function sanitizeCriteria(array $criteria): array
     {
-        return array_filter($criteria, fn ($criterion) => $criterion instanceof CriteriaInterface);
+        return array_filter($criteria, fn (mixed $criterion): bool => $criterion instanceof CriteriaInterface);
     }
 
     /**
-     * Determine whether a persisted criterion matches the given removal
+     * Determine whether a candidate criterion matches the given removal
      * request.
      *
-     * @param  mixed  $persisted
+     * @param  mixed  $candidate
      * @param  array<int, string|TCriterion>  $criteria
      * @return bool
      *
      * @imperative
      */
-    private function criteriaMatchesRemovalRequest(mixed $persisted, array $criteria): bool
+    private function criteriaMatchesRemovalRequest(mixed $candidate, array $criteria): bool
     {
-        if (!is_object($persisted)) {
+        if (!is_object($candidate)) {
             return false;
         }
 
         foreach ($criteria as $criterion) {
 
             if (
-                (is_object($criterion) && $persisted instanceof $criterion)
-                || (is_string($criterion) && $persisted::class === $criterion)
+                (is_object($criterion) && $candidate instanceof $criterion)
+                || (is_string($criterion) && $candidate::class === $criterion)
             ) {
                 return true;
             }

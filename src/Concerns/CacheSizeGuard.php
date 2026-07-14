@@ -34,18 +34,18 @@ final readonly class CacheSizeGuard
     ) {}
 
     /**
-     * Determine whether the given result may be stored.
+     * Determine whether the given value may be stored.
      *
-     * @param  mixed  $result
+     * @param  mixed  $value
      * @param  int  $rows
      * @return bool
      */
-    public function allows(mixed $result, int $rows): bool
+    public function allows(mixed $value, int $rows): bool
     {
         if ($this->maxRows !== null && $rows > $this->maxRows) {
             return false;
         }
 
-        return !($this->maxBytes !== null && strlen(serialize($result)) > $this->maxBytes);
+        return !($this->maxBytes !== null && strlen(serialize($value)) > $this->maxBytes);
     }
 }

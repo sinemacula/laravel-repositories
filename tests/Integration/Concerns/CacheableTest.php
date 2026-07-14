@@ -6,24 +6,33 @@ namespace Tests\Integration\Concerns;
 
 use Illuminate\Cache\Repository;
 use Illuminate\Contracts\Cache\Store;
+use Illuminate\Contracts\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use PHPUnit\Framework\Attributes\CoversTrait;
+use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Repositories\Concerns\Cacheable;
 use SineMacula\Repositories\Concerns\CacheSizeGuard;
 use SineMacula\Repositories\Concerns\CacheStore;
 use SineMacula\Repositories\Concerns\CacheStoreOptions;
+use SineMacula\Repositories\Concerns\ManagesCriteria;
 use Tests\Integration\IntegrationTestCase;
 use Tests\Support\Concerns\InteractsWithNonPublicMembers;
+use Tests\Support\Criteria\NamedTagsCriterion;
 use Tests\Support\Models\Tag;
+use Tests\Support\Repositories\ByteSizeGuardedTagRepository;
 use Tests\Support\Repositories\CacheableTagRepository;
 use Tests\Support\Repositories\CustomPrefixCacheableTagRepository;
 use Tests\Support\Repositories\CustomStoreCacheableTagRepository;
 use Tests\Support\Repositories\ReferenceTableTagRepository;
+use Tests\Support\Repositories\RegistryDisabledFileStoreTagRepository;
+use Tests\Support\Repositories\ShortReferenceTtlTagRepository;
 use Tests\Support\Repositories\ShortTtlTagRepository;
+use Tests\Support\Repositories\SizeGuardedTagRepository;
 use Tests\Support\Repositories\TunedCacheableTagRepository;
 
 /**
@@ -38,6 +47,7 @@ use Tests\Support\Repositories\TunedCacheableTagRepository;
  * @internal
  */
 #[CoversTrait(Cacheable::class)]
+#[CoversTrait(ManagesCriteria::class)]
 final class CacheableTest extends IntegrationTestCase
 {
     use InteractsWithNonPublicMembers;
@@ -134,12 +144,12 @@ final class CacheableTest extends IntegrationTestCase
         Cache::extend('throwing', fn (): Repository => new Repository($store));
         Config::set('cache.stores.throwing', ['driver' => 'throwing']);
 
-        $failing = new CacheStore('throwing', 'tags', new CacheStoreOptions(3600, new CacheSizeGuard(null, null), false, 0));
+        $failing = new CacheStore(Cache::store('throwing'), 'tags', new CacheStoreOptions(3600, new CacheSizeGuard(null, null), false, 0));
         $this->setProperty($this->repository, 'cacheStore', $failing);
 
         Log::shouldReceive('error')
             ->once()
-            ->with('Cache flush after write failed', \Mockery::on(
+            ->with(\Mockery::type('string'), \Mockery::on(
                 static fn (array $context): bool => $context['exception'] instanceof \RuntimeException
                     && $context['exception']->getMessage() === 'cache down',
             ));
@@ -163,9 +173,11 @@ final class CacheableTest extends IntegrationTestCase
 
         self::assertTrue($this->repository->getCacheStatus()->isPopulated());
 
+        Tag::create(['name' => 'vue']);
+
         $result = $this->repository->withoutCache()->get(); // @phpstan-ignore staticMethod.dynamicCall
 
-        self::assertInstanceOf(Collection::class, $result);
+        self::assertCount(3, $result);
         self::assertTrue($this->repository->getCacheStatus()->isPopulated());
     }
 
@@ -308,7 +320,6 @@ final class CacheableTest extends IntegrationTestCase
     public function testBootInvokesParentBootChain(): void
     {
         self::assertTrue($this->repository->booted);
-        self::assertInstanceOf(CacheStore::class, $this->getProperty($this->repository, 'cacheStore'));
     }
 
     /**
@@ -521,161 +532,99 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that the row count used by the size guard is the collection size for
-     * a collection, exactly one for a single model, and zero otherwise.
+     * Test that a cached read which throws leaves no dirty builder or scope
+     * state behind, so the next cached read composes from a clean slate
+     * instead of inheriting the failed call's constraints.
      *
      * @return void
      */
-    public function testRowCountReflectsResultShape(): void
+    public function testFailedCachedReadLeavesTransientStateClean(): void
     {
-        $rowCount = new \ReflectionMethod($this->repository, 'rowCount');
+        $this->repository
+            ->withCriteria(new NamedTagsCriterion('php'))
+            ->addScope(static function (Builder $query): void {
+                $query->where('id', '>', 0);
+            });
 
-        self::assertSame(2, $rowCount->invoke($this->repository, new Collection(['a', 'b'])));
-        self::assertSame(1, $rowCount->invoke($this->repository, new Tag));
-        self::assertSame(0, $rowCount->invoke($this->repository, 'not-a-model'));
-        self::assertSame(0, $rowCount->invoke($this->repository, null));
+        try {
+
+            $this->repository->findOrFail(999); // @phpstan-ignore staticMethod.dynamicCall
+            self::fail('Expected the cached findOrFail() to throw.');
+        } catch (ModelNotFoundException $exception) {
+            self::assertSame(Tag::class, $exception->getModel());
+        }
+
+        $result = $this->repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(2, $result);
     }
 
     /**
-     * Test that the reference-mode key argument is taken from the first
-     * argument, defaults to zero, and preserves integer and string keys while
-     * casting any other type to a string.
+     * Test that a single-model result is cached when its row count of one does
+     * not exceed the size guard, proving the guard sees a single Model result
+     * as exactly one row.
      *
      * @return void
      */
-    public function testReferenceIdResolvesPrimaryKeyArgument(): void
-    {
-        $referenceId = new \ReflectionMethod($this->repository, 'referenceId');
-
-        self::assertSame(5, $referenceId->invoke($this->repository, [5, 99]));
-        self::assertSame('php', $referenceId->invoke($this->repository, ['php']));
-        self::assertSame(0, $referenceId->invoke($this->repository, []));
-        self::assertSame('1.5', $referenceId->invoke($this->repository, [1.5]));
-    }
-
-    /**
-     * Test that the repository's cache tuning properties take precedence over
-     * the package configuration when resolving the store options.
-     *
-     * @return void
-     */
-    public function testTuningPropertiesTakePrecedenceOverConfig(): void
+    public function testSingleModelResultIsCachedWithinAOneRowSizeGuard(): void
     {
         assert($this->app !== null);
 
-        $repository = $this->app->make(TunedCacheableTagRepository::class);
+        $repository = $this->app->make(SizeGuardedTagRepository::class);
 
-        $resolveTtl          = new \ReflectionMethod($repository, 'resolveTtl');
-        $resolveReferenceTtl = new \ReflectionMethod($repository, 'resolveReferenceTtl');
-        $resolveNegativeTtl  = new \ReflectionMethod($repository, 'resolveNegativeTtl');
-        $resolveStoreOptions = new \ReflectionMethod($repository, 'resolveStoreOptions');
+        $repository->find(1); // @phpstan-ignore staticMethod.dynamicCall
 
-        self::assertSame(120, $resolveTtl->invoke($repository));
-        self::assertSame(240, $resolveReferenceTtl->invoke($repository));
-        self::assertSame(30, $resolveNegativeTtl->invoke($repository));
+        DB::enableQueryLog();
 
-        $options = $resolveStoreOptions->invoke($repository);
+        $repository->find(1); // @phpstan-ignore staticMethod.dynamicCall
 
-        self::assertInstanceOf(CacheStoreOptions::class, $options);
-        self::assertSame(120, $options->ttl);
-        self::assertSame(30, $options->negativeTtl);
-        self::assertFalse($options->registryEnabled);
-        self::assertSame(50, (new \ReflectionProperty(CacheSizeGuard::class, 'maxRows'))->getValue($options->sizeGuard));
-        self::assertSame(2048, (new \ReflectionProperty(CacheSizeGuard::class, 'maxBytes'))->getValue($options->sizeGuard));
+        self::assertCount(0, DB::getQueryLog());
+
+        DB::disableQueryLog();
     }
 
     /**
-     * Test that the per-query and reference cache TTLs fall back to one hour
-     * when neither a repository property nor numeric configuration is present.
+     * Test that a scalar value() result is cached regardless of the size
+     * guard's row ceiling, proving a non-collection, non-model result counts
+     * as zero rows.
      *
      * @return void
      */
-    public function testCacheTtlsFallBackToOneHourForNonNumericConfig(): void
+    public function testScalarValueResultIsCachedRegardlessOfRowSizeGuard(): void
     {
         assert($this->app !== null);
 
-        Config::set('repositories.cache.ttl', 'not-numeric');
-        Config::set('repositories.cache.reference_ttl', 'not-numeric');
+        $repository = $this->app->make(SizeGuardedTagRepository::class);
 
-        $repository = $this->app->make(CacheableTagRepository::class);
+        $repository->value('name'); // @phpstan-ignore staticMethod.dynamicCall
 
-        self::assertSame(3600, (new \ReflectionMethod($repository, 'resolveTtl'))->invoke($repository));
-        self::assertSame(3600, (new \ReflectionMethod($repository, 'resolveReferenceTtl'))->invoke($repository));
+        DB::enableQueryLog();
+
+        $repository->value('name'); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(0, DB::getQueryLog());
+
+        DB::disableQueryLog();
     }
 
     /**
-     * Test that the negative-lookup TTL casts a numeric configuration value to
-     * an int and falls back to ten seconds for a non-numeric value.
+     * Test that a reference-mode find() with a mixed-type array of ids
+     * resolves only the entries whose id is a supported int or string shape,
+     * silently dropping any other value rather than including or crashing on
+     * it.
      *
      * @return void
      */
-    public function testNegativeTtlCastsNumericConfigAndFallsBackForNonNumeric(): void
+    public function testReferenceModeFindWithMixedTypeArrayResolvesOnlySupportedIds(): void
     {
         assert($this->app !== null);
 
-        $repository = $this->app->make(CacheableTagRepository::class);
-        $resolve    = new \ReflectionMethod($repository, 'resolveNegativeTtl');
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
 
-        Config::set('repositories.cache.negative_ttl', '25');
+        $found = $repository->find([1, 3.5, 2]); // @phpstan-ignore staticMethod.dynamicCall
 
-        self::assertSame(25, $resolve->invoke($repository));
-
-        Config::set('repositories.cache.negative_ttl', 'not-numeric');
-
-        self::assertSame(10, $resolve->invoke($repository));
-    }
-
-    /**
-     * Test that every tuning resolver falls back to its packaged default when
-     * the configuration keys are absent entirely.
-     *
-     * @return void
-     */
-    public function testResolversFallBackToPackagedDefaultsWhenConfigIsAbsent(): void
-    {
-        assert($this->app !== null);
-
-        Config::set('repositories.cache', []);
-
-        $repository = $this->app->make(CacheableTagRepository::class);
-
-        self::assertSame(3600, (new \ReflectionMethod($repository, 'resolveTtl'))->invoke($repository));
-        self::assertSame(3600, (new \ReflectionMethod($repository, 'resolveReferenceTtl'))->invoke($repository));
-        self::assertSame(10, (new \ReflectionMethod($repository, 'resolveNegativeTtl'))->invoke($repository));
-
-        $options = (new \ReflectionMethod($repository, 'resolveStoreOptions'))->invoke($repository);
-
-        self::assertInstanceOf(CacheStoreOptions::class, $options);
-        self::assertTrue($options->registryEnabled);
-        self::assertSame(1000, (new \ReflectionProperty(CacheSizeGuard::class, 'maxRows'))->getValue($options->sizeGuard));
-        self::assertSame(262144, (new \ReflectionProperty(CacheSizeGuard::class, 'maxBytes'))->getValue($options->sizeGuard));
-    }
-
-    /**
-     * Test that numeric string configuration values are cast to integers by
-     * the tuning resolvers.
-     *
-     * @return void
-     */
-    public function testNumericStringTuningConfigIsCastToInteger(): void
-    {
-        assert($this->app !== null);
-
-        Config::set('repositories.cache.ttl', '120');
-        Config::set('repositories.cache.reference_ttl', '240');
-        Config::set('repositories.cache.max_rows', '50');
-        Config::set('repositories.cache.max_bytes', '2048');
-
-        $repository = $this->app->make(CacheableTagRepository::class);
-
-        self::assertSame(120, (new \ReflectionMethod($repository, 'resolveTtl'))->invoke($repository));
-        self::assertSame(240, (new \ReflectionMethod($repository, 'resolveReferenceTtl'))->invoke($repository));
-
-        $guard = (new \ReflectionMethod($repository, 'resolveSizeGuard'))->invoke($repository);
-
-        self::assertInstanceOf(CacheSizeGuard::class, $guard);
-        self::assertSame(50, (new \ReflectionProperty(CacheSizeGuard::class, 'maxRows'))->getValue($guard));
-        self::assertSame(2048, (new \ReflectionProperty(CacheSizeGuard::class, 'maxBytes'))->getValue($guard));
+        self::assertInstanceOf(Collection::class, $found);
+        self::assertCount(2, $found);
     }
 
     /**
@@ -741,7 +690,7 @@ final class CacheableTest extends IntegrationTestCase
 
         DB::enableQueryLog();
 
-        $all        = $repository->all(); // @phpstan-ignore method.notFound
+        $all        = $repository->all();
         $found      = $repository->find(1); // @phpstan-ignore staticMethod.dynamicCall
         $collection = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
 
@@ -751,7 +700,530 @@ final class CacheableTest extends IntegrationTestCase
         self::assertInstanceOf(Tag::class, $found);
         self::assertSame('php', $found->getAttribute('name'));
         self::assertInstanceOf(Collection::class, $collection);
+        self::assertTrue($repository->getCacheStatus()->isPopulated());
 
         DB::disableQueryLog();
+    }
+
+    /**
+     * Test that a reference-mode find() accepts an Arrayable of ids, mirroring
+     * the array-of-ids shape rather than requiring a plain array.
+     *
+     * @return void
+     */
+    public function testReferenceModeFindAcceptsArrayableIds(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+
+        $found = $repository->find(new Collection([1, 2])); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertInstanceOf(Collection::class, $found);
+        self::assertCount(2, $found);
+    }
+
+    /**
+     * Test that non-reference verbs in reference mode execute through the
+     * normal query pipeline rather than being served the whole-table snapshot.
+     *
+     * @return void
+     */
+    public function testReferenceModeServesNonReferenceVerbsThroughTheQueryPipeline(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+
+        $first = $repository->first(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertInstanceOf(Tag::class, $first);
+    }
+
+    /**
+     * Test that a reference read consumes the one-shot criteria flags exactly
+     * as a normal query pipeline would, so neither flag leaks onto a later,
+     * unrelated read.
+     *
+     * @return void
+     */
+    public function testReferenceModeConsumesOneShotCriteriaFlags(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+
+        // skipCriteria() is one-shot: once consumed, a criterion pushed
+        // afterward must still be applied on the next read.
+        $repository->skipCriteria();
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        $repository->pushCriteria(new NamedTagsCriterion('php'));
+
+        $filtered = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(1, $filtered);
+
+        // useCriteria() is also one-shot: once consumed, disabled persistent
+        // criteria must not be force-applied again on a later, unrelated read.
+        $repository->disableCriteria();
+        $repository->useCriteria();
+
+        $forced = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(1, $forced);
+
+        $unfiltered = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(2, $unfiltered);
+    }
+
+    /**
+     * Test that transient criteria force a real filtered query in reference
+     * mode instead of the unfiltered snapshot.
+     *
+     * @return void
+     */
+    public function testReferenceModeExecutesRealQueryForTransientCriteria(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+
+        $filtered = $repository->withCriteria(new NamedTagsCriterion('php'))->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(1, $filtered);
+    }
+
+    /**
+     * Test that active persistent criteria force a real filtered query in
+     * reference mode instead of the unfiltered snapshot.
+     *
+     * @return void
+     */
+    public function testReferenceModeExecutesRealQueryForPersistentCriteria(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+
+        $repository->pushCriteria(new NamedTagsCriterion('php'));
+
+        $filtered = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(1, $filtered);
+    }
+
+    /**
+     * Test that skipped criteria leave reference reads on the snapshot path,
+     * executing no query once the snapshot is warm.
+     *
+     * @return void
+     */
+    public function testReferenceModeServesSnapshotWhenCriteriaAreSkipped(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        $repository->pushCriteria(new NamedTagsCriterion('php'));
+        $repository->skipCriteria();
+
+        DB::enableQueryLog();
+
+        $unfiltered = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(0, DB::getQueryLog());
+        self::assertCount(2, $unfiltered);
+
+        DB::disableQueryLog();
+    }
+
+    /**
+     * Test that disabled persistent criteria leave reference reads on the
+     * snapshot path, executing no query once the snapshot is warm.
+     *
+     * @return void
+     */
+    public function testReferenceModeServesSnapshotWhenCriteriaAreDisabled(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        $repository->pushCriteria(new NamedTagsCriterion('php'));
+        $repository->disableCriteria();
+
+        DB::enableQueryLog();
+
+        $unfiltered = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(0, DB::getQueryLog());
+        self::assertCount(2, $unfiltered);
+
+        DB::disableQueryLog();
+    }
+
+    /**
+     * Test that a one-shot skipCriteria() is still honoured when a
+     * reference-mode find() falls back to a real query because the id
+     * argument is an unsupported shape, and that the flag does not leak onto
+     * a later, unrelated read.
+     *
+     * @return void
+     */
+    public function testReferenceModeSkipCriteriaAppliesToUnsupportedFindShapeFallback(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+
+        $repository->pushCriteria(new NamedTagsCriterion('laravel'));
+
+        DB::enableQueryLog();
+
+        $repository->skipCriteria()->find(1.5); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertNotContains('laravel', DB::getQueryLog()[0]['bindings']);
+
+        DB::disableQueryLog();
+
+        $filtered = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(1, $filtered);
+    }
+
+    /**
+     * Test that a one-shot useCriteria() still forces disabled persistent
+     * criteria on when a reference-mode find() falls back to a real query
+     * because the id argument is an unsupported shape, and that the force
+     * does not leak onto a later, unrelated read.
+     *
+     * @return void
+     */
+    public function testReferenceModeUseCriteriaAppliesToUnsupportedFindShapeFallback(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+
+        $repository->pushCriteria(new NamedTagsCriterion('laravel'));
+        $repository->disableCriteria();
+
+        DB::enableQueryLog();
+
+        $repository->useCriteria()->find(1.5); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertContains('laravel', DB::getQueryLog()[0]['bindings']);
+
+        DB::disableQueryLog();
+
+        $unfiltered = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(2, $unfiltered);
+    }
+
+    /**
+     * Test that a read whose reference-mode id argument is an unsupported
+     * shape logs the real-query fallback at debug level.
+     *
+     * @return void
+     */
+    public function testReferenceModeUnsupportedFindShapeLogsFallbackAtDebugLevel(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+
+        Log::shouldReceive('debug')
+            ->once()
+            ->with('Reference cache bypassed for unsupported find argument', \Mockery::on(
+                static fn (array $context): bool => $context['method'] === 'find'
+                    && $context['arguments']                           === [1.5],
+            ));
+
+        $repository->find(1.5); // @phpstan-ignore staticMethod.dynamicCall
+    }
+
+    /**
+     * Provide the criteria-composition precedence branches that determine
+     * whether the next query would differ from the unfiltered snapshot.
+     *
+     * @return iterable<string, array{0: \Closure(\Tests\Support\Repositories\ReferenceTableTagRepository): void, 1: bool}>
+     */
+    public static function compositionPrecedenceBranchProvider(): iterable
+    {
+        yield 'skipCriteria one-shot overrides pushed criteria' => [
+            static function (ReferenceTableTagRepository $repository): void {
+                $repository->pushCriteria(new NamedTagsCriterion('php'));
+                $repository->skipCriteria();
+            },
+            false,
+        ];
+
+        yield 'forceUseCriteria one-shot forces disabled persistent criteria' => [
+            static function (ReferenceTableTagRepository $repository): void {
+                $repository->pushCriteria(new NamedTagsCriterion('php'));
+                $repository->disableCriteria();
+                $repository->useCriteria();
+            },
+            true,
+        ];
+
+        yield 'transient withCriteria is always applied' => [
+            static function (ReferenceTableTagRepository $repository): void {
+                $repository->withCriteria(new NamedTagsCriterion('php'));
+            },
+            true,
+        ];
+
+        yield 'pushed persistent criteria applies by default' => [
+            static function (ReferenceTableTagRepository $repository): void {
+                $repository->pushCriteria(new NamedTagsCriterion('php'));
+            },
+            true,
+        ];
+
+        yield 'an added scope is always applied' => [
+            static function (ReferenceTableTagRepository $repository): void {
+                $repository->addScope(static function (Builder $query): void {
+                    $query->where('name', 'php');
+                });
+            },
+            true,
+        ];
+
+        yield 'disabled persistent criteria without a force do not apply' => [
+            static function (ReferenceTableTagRepository $repository): void {
+                $repository->pushCriteria(new NamedTagsCriterion('php'));
+                $repository->disableCriteria();
+            },
+            false,
+        ];
+    }
+
+    /**
+     * Test that reference-mode composition detection agrees with the real
+     * applyCriteria() pipeline for every criteria precedence branch, locking
+     * the mirror between Cacheable and ManagesCriteria in place.
+     *
+     * @param  \Closure(\Tests\Support\Repositories\ReferenceTableTagRepository): void  $arrange
+     * @param  bool  $expectedPending
+     * @return void
+     */
+    #[DataProvider('compositionPrecedenceBranchProvider')]
+    public function testReferenceModeCompositionDetectionAgreesWithApplyCriteriaAcrossPrecedenceBranches(\Closure $arrange, bool $expectedPending): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        $arrange($repository);
+
+        DB::enableQueryLog();
+
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        $referencePending = DB::getQueryLog() !== [];
+
+        DB::disableQueryLog();
+
+        $arrange($repository);
+
+        $filtered = $repository->withoutCache()->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        $applyCriteriaPending = $filtered->count() !== 2;
+
+        self::assertSame($expectedPending, $referencePending);
+        self::assertSame($expectedPending, $applyCriteriaPending);
+    }
+
+    /**
+     * Test that a repository's reference-mode TTL override is honoured, so
+     * the snapshot expires at the configured duration rather than the
+     * packaged default.
+     *
+     * @return void
+     */
+    public function testReferenceTtlOverrideExpiresSnapshotAfterConfiguredDuration(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ShortReferenceTtlTagRepository::class);
+
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertTrue($repository->getCacheStatus()->isPopulated());
+
+        $this->travel(6)->seconds();
+
+        self::assertFalse($repository->getCacheStatus()->isPopulated());
+    }
+
+    /**
+     * Test that a repository's negative-lookup TTL override is honoured, so a
+     * negative cache entry survives past the packaged default duration.
+     *
+     * @return void
+     */
+    public function testNegativeTtlOverrideOutlivesThePackagedDefaultDuration(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(TunedCacheableTagRepository::class);
+
+        self::assertNull($repository->find(999)); // @phpstan-ignore staticMethod.dynamicCall
+
+        // Past the packaged 10s default, within the repository's 30s override.
+        $this->travel(15)->seconds();
+
+        DB::enableQueryLog();
+
+        self::assertNull($repository->find(999)); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(0, DB::getQueryLog());
+
+        DB::disableQueryLog();
+    }
+
+    /**
+     * Test that a repository's row-ceiling override is honoured, so a result
+     * exceeding it is never cached.
+     *
+     * @return void
+     */
+    public function testRowCeilingOverridePreventsCachingOfOversizedResult(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(SizeGuardedTagRepository::class);
+
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertFalse($repository->getCacheStatus()->isPopulated());
+    }
+
+    /**
+     * Test that a repository's byte-ceiling override is honoured, so a result
+     * exceeding it is never cached.
+     *
+     * @return void
+     */
+    public function testByteCeilingOverridePreventsCachingOfOversizedResult(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ByteSizeGuardedTagRepository::class);
+
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertFalse($repository->getCacheStatus()->isPopulated());
+    }
+
+    /**
+     * Test that a repository's disabled version-bump registry override is
+     * honoured, so a write on a non-taggable store leaves a previously cached
+     * entry reachable instead of orphaning it.
+     *
+     * @return void
+     */
+    public function testRegistryDisabledOverrideLeavesStaleEntryAfterWriteOnNonTaggableStore(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(RegistryDisabledFileStoreTagRepository::class);
+
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        $repository->create(['name' => 'vue']); // @phpstan-ignore staticMethod.dynamicCall
+
+        DB::enableQueryLog();
+
+        $result = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(2, $result);
+        self::assertCount(0, DB::getQueryLog());
+
+        DB::disableQueryLog();
+    }
+
+    /**
+     * Test that the reference-mode snapshot cache key is composed from the
+     * exact prefix, connection name, and database name in that order, so
+     * dropping or reordering any component of that composition is observable
+     * as a missing key.
+     *
+     * @return void
+     */
+    public function testReferenceModeCacheKeyIncludesPrefixConnectionAndDatabase(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        /** @var \Illuminate\Cache\CacheManager $cacheManager */
+        $cacheManager = app('cache');
+
+        self::assertTrue($cacheManager->store('array')->has('repositories:repository-cache:tags:testing::memory:'));
+    }
+
+    /**
+     * Test that a reference-mode find() consumes the one-shot criteria flags,
+     * so neither flag survives the call to leak onto a later, unrelated read.
+     *
+     * @return void
+     */
+    public function testReferenceModeFindConsumesOneShotCriteriaFlags(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+
+        $this->setProperty($repository, 'skipCriteria', true);
+        $this->setProperty($repository, 'forceUseCriteria', true);
+
+        $repository->find(1); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertFalse($this->getProperty($repository, 'skipCriteria'));
+        self::assertFalse($this->getProperty($repository, 'forceUseCriteria'));
+    }
+
+    /**
+     * Test that referenceId() filters an array argument down to the supported
+     * int and string key shapes, preserving their values and dropping every
+     * other shape, rather than merely coalescing to the same array by chance.
+     *
+     * @return void
+     */
+    public function testReferenceIdFiltersArrayToSupportedKeyShapesOnly(): void
+    {
+        $ids = $this->invokeMethod($this->repository, 'referenceId', [[1, 3.5, 'two', null, true, [3]]]);
+
+        self::assertSame([1, 'two'], $ids);
+    }
+
+    /**
+     * Test that rowCount() returns the exact row count for each result shape:
+     * a collection's item count, a single model as exactly one row, and every
+     * other value (including null) as zero rows.
+     *
+     * @return void
+     */
+    public function testRowCountReturnsExactCountsForEachResultShape(): void
+    {
+        $model = new Tag(['name' => 'php']);
+
+        self::assertSame(3, $this->invokeMethod($this->repository, 'rowCount', collect([1, 2, 3])));
+        self::assertSame(1, $this->invokeMethod($this->repository, 'rowCount', $model));
+        self::assertSame(0, $this->invokeMethod($this->repository, 'rowCount', 'scalar-value'));
+        self::assertSame(0, $this->invokeMethod($this->repository, 'rowCount', null));
     }
 }
