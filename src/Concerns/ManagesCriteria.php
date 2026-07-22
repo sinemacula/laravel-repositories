@@ -16,10 +16,9 @@ use SineMacula\Repositories\Contracts\DeclaresRelationshipCounts;
  * transient criteria application with runtime control toggles.
  *
  * Flag precedence:
- * - $skipCriteria overrides all other flags; when true, no criteria
- *   (persistent or transient) are applied. Both $skipCriteria and
- *   $forceUseCriteria are reset after the query, and transient criteria are
- *   cleared.
+ * - $skipCriteria overrides all other flags; when true, no criteria (persistent
+ *   or transient) are applied. Both $skipCriteria and $forceUseCriteria are
+ *   reset after the query, and transient criteria are cleared.
  * - $forceUseCriteria overrides $disableCriteria for persistent criteria,
  *   allowing useCriteria()/withCriteria() to temporarily re-enable criteria
  *   even when globally disabled.

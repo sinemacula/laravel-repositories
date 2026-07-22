@@ -168,11 +168,11 @@ final class QueryFingerprint
         $reflection = new \ReflectionFunction($constraint);
         $boundThis  = $reflection->getClosureThis();
 
-        // The framework combines eager-load constraints into a closure bound
-        // to the query builder itself (not application state); excluded here
-        // both because it carries no identity of its own and because the
-        // builder holds a live, unserializable database connection. A closure
-        // bound to itself would otherwise also recurse forever below.
+        // The framework combines eager-load constraints into a closure bound to
+        // the query builder itself (not application state); excluded here both
+        // because it carries no identity of its own and because the builder
+        // holds a live, unserializable database connection. A closure bound to
+        // itself would otherwise also recurse forever below.
         $identity = $boundThis === null || $boundThis === $constraint || $boundThis instanceof Builder
             ? null
             : self::normaliseCapture($boundThis);
