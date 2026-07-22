@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [3.0.0](https://github.com/sinemacula/laravel-repositories/compare/v2.2.0...v3.0.0) (2026-07-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* support Laravel 13 and drop Laravel 11 ([#57](https://github.com/sinemacula/laravel-repositories/issues/57))
+
+### Features
+
+* support Laravel 13 and drop Laravel 11 ([#57](https://github.com/sinemacula/laravel-repositories/issues/57)) ([ece7147](https://github.com/sinemacula/laravel-repositories/commit/ece714707055ccb57f40a7442cc2a247be22c298))
+
 ## [2.2.0](https://github.com/sinemacula/laravel-repositories/compare/v2.1.0...v2.2.0) (2026-07-14)
 
 
