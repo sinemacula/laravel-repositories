@@ -24,11 +24,7 @@ use SineMacula\Repositories\Contracts\CriteriaInterface;
 final class CriteriaTestHelper
 {
     // phpcs:disable Squiz.Commenting.VariableComment -- @managed-static documents intentional shared state
-    /**
-     * @var \Illuminate\Database\Capsule\Manager|null Shared capsule instance
-     *
-     * @managed-static Memoized in-memory SQLite connection shared across calls.
-     */
+    /** @var \Illuminate\Database\Capsule\Manager|null Memoized in-memory SQLite connection shared across calls. @managed-static */
     private static ?Capsule $capsule = null;
     // phpcs:enable Squiz.Commenting.VariableComment
 

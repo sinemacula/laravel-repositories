@@ -152,8 +152,8 @@ trait Cacheable
 
         // The reference-mode snapshot key is qualified with the connection
         // identity (unlike the per-query key, which folds it into the query
-        // fingerprint instead), so two connections exposing the same table
-        // name never share a whole-table snapshot.
+        // fingerprint instead), so two connections exposing the same table name
+        // never share a whole-table snapshot.
         $connection      = $model->getConnection();
         $referencePrefix = $configuration->prefix . ':' . $connection->getName() . ':' . $connection->getDatabaseName();
 

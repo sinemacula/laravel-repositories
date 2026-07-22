@@ -170,9 +170,9 @@ final class ReferenceCache implements CacheInvalidator
         $rows = $model->newQuery()->get();
 
         // Skip caching a table over the size guard: reference mode on an
-        // unexpectedly large table falls back to querying each read rather
-        // than holding (or memoising) a huge serialized snapshot. Any earlier
-        // memo state is dropped so no stale index can outlive the snapshot.
+        // unexpectedly large table falls back to querying each read rather than
+        // holding (or memoising) a huge serialized snapshot. Any earlier memo
+        // state is dropped so no stale index can outlive the snapshot.
         if (!$this->sizeGuard->allows($rows, $rows->count())) {
 
             $this->memo  = null;

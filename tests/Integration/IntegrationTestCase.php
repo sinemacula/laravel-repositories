@@ -87,10 +87,10 @@ abstract class IntegrationTestCase extends TestCase
             'foreign_key_constraints' => true,
         ]);
 
-        // Isolate the file cache per test so parallel test runs (each mutant
-        // is a separate process during mutation testing) never collide on a
-        // shared cache directory, which otherwise makes TTL/expiry-sensitive
-        // cache assertions flap and the mutation score non-deterministic.
+        // Isolate the file cache per test so parallel test runs (each mutant is
+        // a separate process during mutation testing) never collide on a shared
+        // cache directory, which otherwise makes TTL/expiry-sensitive cache
+        // assertions flap and the mutation score non-deterministic.
         $this->fileCachePath = sys_get_temp_dir() . '/laravel-repositories-test-cache-' . getmypid() . '-' . uniqid('', true);
         $app['config']->set('cache.stores.file.path', $this->fileCachePath);
     }
