@@ -35,6 +35,8 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
      * Verify constructor initialization and boot behavior.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testConstructorInitializesStateAndBootsRepository(): void
     {
@@ -51,6 +53,8 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
      * Verify the base boot() method executes when a child does not override it.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testBaseBootMethodIsExecutedOnConstruction(): void
     {
@@ -65,6 +69,8 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
      * Verify getModel restores a valid model when state is corrupted.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testGetModelRestoresModelWhenInternalReferenceIsInvalid(): void
     {
@@ -80,6 +86,8 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
      * Verify query() and newQuery() return builders and reset transient state.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testQueryAndNewQueryReturnBuildersAndResetTransientState(): void
     {
@@ -102,6 +110,8 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
      * Verify applyCriteria restores the model when its internal state is null.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testQueryRestoresModelWhenInternalModelIsNull(): void
     {
@@ -115,6 +125,8 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
      * Verify __call forwards to the query builder and resets transient state.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testCallForwardsMethodCallsToQueryBuilder(): void
     {
@@ -153,6 +165,8 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
      * Verify query recovers from an invalid model reference and applies scopes.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testQueryRecoversFromInvalidModelAndAppliesScopes(): void
     {
@@ -174,6 +188,8 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
      * Verify resetAndReturn clears transient state and preserves result value.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testResetAndReturnClearsTransientState(): void
     {
@@ -196,6 +212,8 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
      * Verify resetModel() restores a fresh model instance from the container.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testResetModelRestoresFreshModelInstance(): void
     {
@@ -312,6 +330,8 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
      * identically to a directly forwarded get() call.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testAllDelegatesToTheGetPipeline(): void
     {

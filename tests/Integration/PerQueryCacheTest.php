@@ -139,6 +139,8 @@ final class PerQueryCacheTest extends IntegrationTestCase
      * Test that reference mode loads the whole table once for mixed reads.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testReferenceModeLoadsTableOnceForMixedReads(): void
     {
@@ -223,6 +225,8 @@ final class PerQueryCacheTest extends IntegrationTestCase
      * mode.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testAllServesAndCachesInPerQueryMode(): void
     {

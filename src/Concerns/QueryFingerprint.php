@@ -209,7 +209,7 @@ final class QueryFingerprint
 
         try {
             $base = rtrim(base_path(), \DIRECTORY_SEPARATOR);
-        } catch (\Throwable) {
+        } catch (\Throwable) { // @phpstan-ignore catch.neverThrown
             // No bound Laravel application (or the helper is unavailable);
             // fingerprint the path unchanged.
             return $path;

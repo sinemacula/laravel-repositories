@@ -31,6 +31,8 @@ final class RepositoryCriteriaIntegrationTest extends IntegrationTestCase
      * Verify persistent criteria behavior across enable, disable, and use flow.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testPersistentCriteriaBehaviorAcrossEnableDisableAndUseFlow(): void
     {
@@ -58,6 +60,8 @@ final class RepositoryCriteriaIntegrationTest extends IntegrationTestCase
      * Verify skipCriteria bypasses criteria for one query and resets flags.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testSkipCriteriaBypassesCriteriaForSingleQueryAndResetsFlags(): void
     {
