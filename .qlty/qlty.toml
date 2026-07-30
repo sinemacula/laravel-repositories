@@ -87,7 +87,7 @@ name = "osv-scanner"
 name = "php-codesniffer"
 version = "4.0.1"
 mode = "comment"
-package_file = "composer.json"
+package_file = ".qlty/configs/composer.json"
 package_filters = ["slevomat", "dealerdirect", "sinemacula"]
 
 # phpcs 4.x exits 3 on findings; without this qlty treats that as a hard error
@@ -102,7 +102,7 @@ name = "php-cs-fixer"
 # syntax), which qlty's PHP 8.3 runner cannot parse. Bump once the runner ships
 # PHP 8.4.
 version = "3.89.0"
-package_file = "composer.json"
+package_file = ".qlty/configs/composer.json"
 package_filters = ["sinemacula"]
 
 [[plugin]]
