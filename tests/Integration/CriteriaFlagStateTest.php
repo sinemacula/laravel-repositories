@@ -51,6 +51,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
      * Persistent criteria applied. No transient criteria present.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testState01EnabledNoSkipNoForceNoTransient(): void
     {
@@ -68,6 +70,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
      * Both persistent and transient criteria applied.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testState02EnabledNoSkipNoForceWithTransient(): void
     {
@@ -92,6 +96,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
      * are not disabled.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testState03EnabledNoSkipForceNoTransient(): void
     {
@@ -111,6 +117,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
      * after calling withCriteria().
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testState04EnabledNoSkipForceWithTransient(): void
     {
@@ -129,6 +137,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
      * Skip overrides: no criteria applied despite persistent being present.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testState05EnabledSkipNoForceNoTransient(): void
     {
@@ -147,6 +157,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
      * Skip overrides: both persistent and transient are skipped.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testState06EnabledSkipNoForceWithTransient(): void
     {
@@ -170,6 +182,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
      * Skip overrides force: no criteria applied.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testState07EnabledSkipForceNoTransient(): void
     {
@@ -189,6 +203,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
      * Skip overrides everything: all criteria skipped.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testState08EnabledSkipForceWithTransient(): void
     {
@@ -208,6 +224,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
      * Persistent criteria NOT applied (disabled). No transient present.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testState09DisabledNoSkipNoForceNoTransient(): void
     {
@@ -227,6 +245,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
      * Persistent NOT applied, but transient IS applied.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testState10DisabledNoSkipNoForceWithTransientTransientStillApplied(): void
     {
@@ -251,6 +271,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
      * $forceUseCriteria overrides $disableCriteria for persistent criteria.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testState11DisabledNoSkipForceNoTransientForceOverridesDisable(): void
     {
@@ -271,6 +293,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
      * skipped. Both criteria applied.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testState12DisabledNoSkipForceWithTransientBothApplied(): void
     {
@@ -290,6 +314,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
      * Skip overrides: no criteria applied. Disable is redundant.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testState13DisabledSkipNoForceNoTransient(): void
     {
@@ -309,6 +335,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
      * Skip overrides disable and suppresses transient criteria.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testState14DisabledSkipNoForceWithTransientSkipSuppressesAll(): void
     {
@@ -333,6 +361,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
      * Skip overrides both disable and force: no criteria applied.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testState15DisabledSkipForceNoTransientSkipOverridesBoth(): void
     {
@@ -353,6 +383,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
      * All flags active. Skip wins: no criteria applied.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testState16AllFlagsActiveSkipWins(): void
     {
@@ -371,6 +403,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
      * Verify the skip criteria flag resets to false after a query executes.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testSkipCriteriaFlagResetsAfterQuery(): void
     {
@@ -392,6 +426,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
      * executes.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testForceUseCriteriaFlagResetsAfterQuery(): void
     {
@@ -413,6 +449,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
      * Verify the disable criteria flag persists across queries.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testDisableCriteriaPersistsAfterQuery(): void
     {
@@ -432,6 +470,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
      * Verify transient criteria are cleared after each query.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testTransientCriteriaClearedAfterQuery(): void
     {

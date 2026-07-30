@@ -32,6 +32,7 @@ final class RepositoryTest extends TestCase
      * @return void
      *
      * @throws \PHPUnit\Framework\MockObject\Exception
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testMakeModelThrowsWhenResolvedClassIsNotEloquentModel(): void
     {
@@ -56,6 +57,7 @@ final class RepositoryTest extends TestCase
      * @return void
      *
      * @throws \PHPUnit\Framework\MockObject\Exception
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testConstructorBootsConcernsWithDedicatedBootHooks(): void
     {

@@ -35,6 +35,8 @@ final class SupplementaryCapabilityTest extends IntegrationTestCase
      * Verify that eager-loading declarations are collected from criteria.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testEagerLoadingDeclarationsAreCollected(): void
     {
@@ -54,6 +56,8 @@ final class SupplementaryCapabilityTest extends IntegrationTestCase
      * Verify that field selection declarations are collected from criteria.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testFieldSelectionDeclarationsAreCollected(): void
     {
@@ -69,6 +73,8 @@ final class SupplementaryCapabilityTest extends IntegrationTestCase
      * Verify that relationship count declarations are collected from criteria.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testRelationshipCountDeclarationsAreCollected(): void
     {
@@ -87,6 +93,8 @@ final class SupplementaryCapabilityTest extends IntegrationTestCase
      * Verify that metadata is collected from criteria.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testMetadataIsCollectedFromCriteria(): void
     {
@@ -106,6 +114,8 @@ final class SupplementaryCapabilityTest extends IntegrationTestCase
      * declarations.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testCriteriaWithoutSupplementaryContractsContributeNothing(): void
     {
@@ -124,6 +134,8 @@ final class SupplementaryCapabilityTest extends IntegrationTestCase
      * Verify that declarations from multiple criteria are merged.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testDeclarationsFromMultipleCriteriaAreMerged(): void
     {
@@ -146,6 +158,8 @@ final class SupplementaryCapabilityTest extends IntegrationTestCase
      * Verify that collected declarations are cleared on the next query.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testCollectedDeclarationsAreClearedOnNextQuery(): void
     {
@@ -169,6 +183,8 @@ final class SupplementaryCapabilityTest extends IntegrationTestCase
      * Verify that skipped criteria do not contribute declarations.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testSkippedCriteriaDoNotContributeDeclarations(): void
     {
@@ -187,6 +203,8 @@ final class SupplementaryCapabilityTest extends IntegrationTestCase
      * but transient criteria still do.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testDisabledPersistentDoNotContributeButTransientDo(): void
     {
@@ -214,6 +232,8 @@ final class SupplementaryCapabilityTest extends IntegrationTestCase
      * and the ordering produces the correct result.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testTransientCriteriaApplyBeforePersistentCriteria(): void
     {
@@ -243,6 +263,8 @@ final class SupplementaryCapabilityTest extends IntegrationTestCase
      * without modification.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testExistingCriteriaWorkWithoutModification(): void
     {

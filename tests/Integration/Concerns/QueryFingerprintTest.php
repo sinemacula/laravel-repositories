@@ -349,6 +349,8 @@ final class QueryFingerprintTest extends IntegrationTestCase
      * @param  \Illuminate\Container\Container  $second
      * @param  bool  $expectSameFingerprint
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\UnfingerprintableQueryException
      */
     #[DataProvider('definitionPathNormalisationProvider')]
     public function testDefinitionPathIsNormalisedRelativeToTheApplicationBasePath(Container $first, Container $second, bool $expectSameFingerprint): void
@@ -380,6 +382,8 @@ final class QueryFingerprintTest extends IntegrationTestCase
      * collide on one cache key.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\UnfingerprintableQueryException
      */
     public function testClosureArgumentsCannotBeFingerprinted(): void
     {

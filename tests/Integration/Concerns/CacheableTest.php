@@ -680,6 +680,8 @@ final class CacheableTest extends IntegrationTestCase
      * whole-table query rather than the per-query cache.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function testReferenceModeServesMixedReadsFromASingleQuery(): void
     {

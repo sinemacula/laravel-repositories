@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\Config;
  *
  * @internal
  */
-final class CacheConfiguration
+final readonly class CacheConfiguration
 {
     /**
      * Create a new cache configuration instance.
@@ -35,19 +35,19 @@ final class CacheConfiguration
     private function __construct(
 
         /** The resolved Laravel cache store name. */
-        public readonly string $storeName,
+        public string $storeName,
 
         /** The resolved per-query cache key prefix. */
-        public readonly string $prefix,
+        public string $prefix,
 
         /** Whether the repository operates in whole-table reference mode. */
-        public readonly bool $referenceMode,
+        public bool $referenceMode,
 
         /** The resolved reference-mode cache lifetime, in seconds. */
-        public readonly int $referenceTtl,
+        public int $referenceTtl,
 
         /** The resolved per-query cache store options. */
-        public readonly CacheStoreOptions $storeOptions,
+        public CacheStoreOptions $storeOptions,
     ) {}
 
     /**
