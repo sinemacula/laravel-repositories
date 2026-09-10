@@ -38,6 +38,9 @@ final class CacheStoreTest extends IntegrationTestCase
     /** @var string A representative query fingerprint. */
     private const string HASH = 'abc123';
 
+    /** @var string The message carried by a failing cache store. */
+    private const string STORE_FAILURE = 'cache down';
+
     /** @var \SineMacula\Repositories\Concerns\CacheStore The cache store instance under test. */
     private CacheStore $cacheStore;
 
@@ -514,6 +517,72 @@ final class CacheStoreTest extends IntegrationTestCase
         Config::set('cache.stores.incrementless', ['driver' => 'incrementless']);
 
         $cacheStore = new CacheStore(Cache::store('incrementless'), 'increment-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
+
+        $cacheStore->flushTable();
+
+        self::assertSame('post-bump', $cacheStore->fetch(self::HASH));
+    }
+
+    /**
+     * Test that a store which throws on increment takes the same local bump as
+     * one that merely refuses it, so a post-write flush still stops this
+     * instance serving the entries it was meant to drop.
+     *
+     * @return void
+     */
+    public function testVersionBumpFallsBackLocallyWhenTheStoreIncrementThrows(): void
+    {
+        $entries = [
+            'repositories:repository-cache-version:throwing-table'         => 3,
+            'repositories:repository-query:throwing-table:3:' . self::HASH => 'pre-flush',
+            'repositories:repository-query:throwing-table:4:' . self::HASH => 'post-bump',
+        ];
+
+        $store = \Mockery::mock(Store::class)->shouldIgnoreMissing();
+        $store->shouldReceive('increment')->andThrow(new \RuntimeException(self::STORE_FAILURE)); // @phpstan-ignore method.notFound
+        $store->shouldReceive('get')->andReturnUsing(static fn (string $key): mixed => $entries[$key] ?? null); // @phpstan-ignore method.notFound
+
+        Cache::extend('throwing-increment', fn (): Repository => new Repository($store));
+        Config::set('cache.stores.throwing-increment', ['driver' => 'throwing-increment']);
+
+        $cacheStore = new CacheStore(Cache::store('throwing-increment'), 'throwing-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
+
+        // Memoise version 3 before the flush, so the fallback has a generation
+        // to bump rather than starting from zero.
+        self::assertSame('pre-flush', $cacheStore->fetch(self::HASH));
+
+        Log::shouldReceive('error')
+            ->once()
+            ->with('Table version increment failed with a store error', \Mockery::on(
+                static fn (array $context): bool => $context['table'] === 'throwing-table'
+                    && $context['version_key']                        === 'repositories:repository-cache-version:throwing-table'
+                    && $context['exception'] instanceof \RuntimeException,
+            ));
+
+        $cacheStore->flushTable();
+
+        self::assertSame('post-bump', $cacheStore->fetch(self::HASH));
+    }
+
+    /**
+     * Test that the local fallback starts at the first generation when the
+     * store throws before this instance has read a version, so the bumped keys
+     * cannot collide with the generation the flush was meant to orphan.
+     *
+     * @return void
+     */
+    public function testVersionBumpStartsAtTheFirstGenerationWhenNothingWasRead(): void
+    {
+        $entries = ['repositories:repository-query:unread-table:1:' . self::HASH => 'post-bump'];
+
+        $store = \Mockery::mock(Store::class)->shouldIgnoreMissing();
+        $store->shouldReceive('increment')->andThrow(new \RuntimeException(self::STORE_FAILURE)); // @phpstan-ignore method.notFound
+        $store->shouldReceive('get')->andReturnUsing(static fn (string $key): mixed => $entries[$key] ?? null); // @phpstan-ignore method.notFound
+
+        Cache::extend('unread-increment', fn (): Repository => new Repository($store));
+        Config::set('cache.stores.unread-increment', ['driver' => 'unread-increment']);
+
+        $cacheStore = new CacheStore(Cache::store('unread-increment'), 'unread-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
 
         $cacheStore->flushTable();
 

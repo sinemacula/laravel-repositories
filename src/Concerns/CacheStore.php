@@ -227,7 +227,8 @@ final class CacheStore implements CacheInvalidator
      * single counter before retrying the increment. Returns null when the
      * increment still fails after the seed retry - a store outage rather than a
      * missing key - so the caller can surface the failure instead of masking
-     * it.
+     * it. A store implementation is free to throw rather than refuse, so the
+     * caller must handle that too.
      *
      * @param  \Illuminate\Contracts\Cache\Repository  $store
      * @param  string  $versionKey
@@ -327,13 +328,29 @@ final class CacheStore implements CacheInvalidator
      *
      * Falls back to a local, unpersisted bump when the store cannot persist the
      * increment, so this instance still stops serving pre-flush entries; the
-     * failure is logged since other processes never observe it.
+     * failure is logged since other processes never observe it. A store that
+     * throws rather than refusing the increment takes the same fallback, off
+     * the memoised version alone, because the read behind tableVersion() would
+     * hit the same dead store.
      *
      * @return void
      */
     private function bumpVersion(): void
     {
-        $bumped = self::incrementVersion($this->store, $this->versionKey);
+        try {
+            $bumped = self::incrementVersion($this->store, $this->versionKey);
+        } catch (\Throwable $exception) { // @phpstan-ignore catch.neverThrown
+
+            Log::error('Table version increment failed with a store error', [
+                'table'       => $this->table,
+                'version_key' => $this->versionKey,
+                'exception'   => $exception,
+            ]);
+
+            $this->version = ($this->version ?? 0) + 1;
+
+            return;
+        }
 
         if ($bumped !== null) {
 

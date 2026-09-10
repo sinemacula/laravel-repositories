@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace SineMacula\Repositories\Concerns;
 
+use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Contracts\Support\Arrayable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
@@ -81,6 +82,24 @@ trait Cacheable
         }
 
         return $this->resolveRead($method, $arguments);
+    }
+
+    /**
+     * Create a new query with active repository criteria and scopes applied.
+     *
+     * A raw builder is never served from the cache, so a pending withoutCache()
+     * is consumed here rather than left to bypass an unrelated later read.
+     *
+     * @return \Illuminate\Contracts\Database\Eloquent\Builder
+     *
+     * @throws \Throwable
+     */
+    #[\Override]
+    public function query(): Builder
+    {
+        $this->bypassCache = false;
+
+        return parent::query();
     }
 
     /**
