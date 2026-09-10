@@ -20,6 +20,7 @@ use SineMacula\Repositories\Concerns\CacheSizeGuard;
 use SineMacula\Repositories\Concerns\CacheStore;
 use SineMacula\Repositories\Concerns\CacheStoreOptions;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
+use SineMacula\Repositories\Concerns\ReferenceCache;
 use Tests\Integration\IntegrationTestCase;
 use Tests\Support\Concerns\InteractsWithNonPublicMembers;
 use Tests\Support\Criteria\NamedTagsCriterion;
@@ -557,6 +558,49 @@ final class CacheableTest extends IntegrationTestCase
         $result = $this->repository->get(); // @phpstan-ignore staticMethod.dynamicCall
 
         self::assertCount(2, $result);
+    }
+
+    /**
+     * Test that a reference read which throws leaves no queued transient
+     * criteria behind, so the next read serves the whole-table snapshot instead
+     * of silently filtering it.
+     *
+     * @return void
+     */
+    public function testFailedReferenceReadLeavesTransientStateClean(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+
+        // Arrange - a snapshot store whose read blows up (e.g. a cache outage)
+        // after the reference read has consumed the suppressing flags.
+        $store = \Mockery::mock(Store::class)->shouldIgnoreMissing();
+        $store->shouldReceive('get')->andThrow(new \RuntimeException('cache down')); // @phpstan-ignore method.notFound
+
+        Cache::extend('throwing-reference', fn (): Repository => new Repository($store));
+        Config::set('cache.stores.throwing-reference', ['driver' => 'throwing-reference']);
+
+        $this->setProperty($repository, 'referenceCache', new ReferenceCache(Cache::store('throwing-reference'), 'tags', 3600, new CacheSizeGuard(null, null)));
+
+        // skipCriteria() hides the pending criterion from the composition
+        // check, so the read takes the snapshot branch and clears the flag
+        // before the store failure strands the criterion.
+        $repository->withCriteria(new NamedTagsCriterion('php'))->skipCriteria();
+
+        try {
+
+            $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+            self::fail('Expected the reference read to propagate the store failure.');
+        } catch (\RuntimeException $exception) {
+            self::assertSame('cache down', $exception->getMessage());
+        }
+
+        // Act - a working snapshot store, so only leaked state could filter.
+        $this->setProperty($repository, 'referenceCache', new ReferenceCache(Cache::store('array'), 'tags', 3600, new CacheSizeGuard(null, null)));
+
+        // Assert - the whole table, not the stranded criterion's single row.
+        self::assertCount(2, $repository->get()); // @phpstan-ignore staticMethod.dynamicCall
     }
 
     /**

@@ -287,37 +287,44 @@ trait Cacheable
      * @param  array<int, mixed>  $arguments
      * @return mixed
      *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     * @throws \Throwable
      */
     private function resolveReferenceRead(string $method, array $arguments): mixed
     {
-        $model = $this->getModel();
+        try {
 
-        if ($method === 'find') {
+            $model = $this->getModel();
 
-            $id = $this->referenceId($arguments);
+            if ($method === 'find') {
 
-            if ($id === null) {
+                $id = $this->referenceId($arguments);
 
-                Log::debug('Reference cache bypassed for unsupported find argument', [
-                    'method'    => $method,
-                    'arguments' => $arguments,
-                ]);
+                if ($id === null) {
 
-                return parent::__call($method, $arguments);
+                    Log::debug('Reference cache bypassed for unsupported find argument', [
+                        'method'    => $method,
+                        'arguments' => $arguments,
+                    ]);
+
+                    return parent::__call($method, $arguments);
+                }
+
+                $this->skipCriteria     = false;
+                $this->forceUseCriteria = false;
+
+                return parent::resetAndReturn($this->referenceCache->find($model, $id));
             }
 
             $this->skipCriteria     = false;
             $this->forceUseCriteria = false;
 
-            return parent::resetAndReturn($this->referenceCache->find($model, $id));
+            return parent::resetAndReturn($this->referenceCache->all($model));
+        } catch (\Throwable $exception) {
+
+            $this->resetAfterFailure();
+
+            throw $exception;
         }
-
-        $this->skipCriteria     = false;
-        $this->forceUseCriteria = false;
-
-        return parent::resetAndReturn($this->referenceCache->all($model));
     }
 
     /**

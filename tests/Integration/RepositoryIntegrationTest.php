@@ -12,9 +12,12 @@ use Illuminate\Support\Facades\Log;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\CoversTrait;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
+use SineMacula\Repositories\Concerns\ResetsTransientState;
 use SineMacula\Repositories\Repository;
 use Tests\Support\Criteria\ActiveUsersCriterion;
 use Tests\Support\Criteria\NamedUsersCriterion;
+use Tests\Support\Exceptions\CompositionFailure;
+use Tests\Support\Exceptions\ResolutionFailure;
 use Tests\Support\Models\TestUser;
 use Tests\Support\Repositories\PlainTestUserRepository;
 use Tests\Support\Repositories\TestUserRepository;
@@ -29,8 +32,12 @@ use Tests\Support\Repositories\TestUserRepository;
  */
 #[CoversClass(Repository::class)]
 #[CoversTrait(ManagesCriteria::class)]
+#[CoversTrait(ResetsTransientState::class)]
 final class RepositoryIntegrationTest extends IntegrationTestCase
 {
+    /** @var string The message carried by a fixture scope that fails. */
+    private const string SCOPE_FAILURE = 'Scope composition failed.';
+
     /**
      * Verify constructor initialization and boot behavior.
      *
@@ -323,6 +330,135 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
         }
 
         self::assertNull($repository->currentModel());
+    }
+
+    /**
+     * Test that a query() composition which throws leaves no dirty builder or
+     * scope state behind, so the next query composes from a clean slate instead
+     * of inheriting the abandoned composition's constraints.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testFailedQueryCompositionLeavesTransientStateClean(): void
+    {
+        $this->seedUsers();
+
+        $repository = $this->repository();
+
+        $repository
+            ->withCriteria(new NamedUsersCriterion('Bob'))
+            ->addScope(static function (BuilderContract $query): void {
+                $query->where('active', false);
+            })
+            ->addScope(static function (BuilderContract $query): void {
+
+                $query->where('name', 'Bob');
+
+                throw new CompositionFailure(self::SCOPE_FAILURE);
+            });
+
+        try {
+
+            $repository->query();
+            self::fail('Expected the failing scope to propagate out of query().');
+        } catch (CompositionFailure $exception) {
+            self::assertSame(self::SCOPE_FAILURE, $exception->getMessage());
+        }
+
+        self::assertSame(0, $repository->scopesCount());
+        self::assertSame(0, $repository->transientCriteriaCount());
+        self::assertFalse($repository->isCriteriaSkipped());
+        self::assertFalse($repository->isForceUsingCriteria());
+        self::assertInstanceOf(TestUser::class, $repository->currentModel());
+
+        self::assertCount(3, $repository->query()->get());
+    }
+
+    /**
+     * Verify a non-resolution throwable raised during failure cleanup is logged
+     * and swallowed, leaving the model null while the original exception still
+     * propagates to the caller.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testFailedQueryLogsAndNullsModelWhenCleanupThrowsUnexpectedly(): void
+    {
+        $repository = $this->repository();
+        $calls      = 0;
+
+        self::assertNotNull($this->app);
+
+        $this->app->bind(TestUser::class, function () use (&$calls): TestUser {
+
+            $calls++;
+
+            if ($calls > 1) {
+                throw new ResolutionFailure('Unexpected resolution failure.');
+            }
+
+            return new TestUser;
+        });
+
+        $repository->addScope(static function (BuilderContract $query): void {
+
+            $query->where('name', 'Bob');
+
+            throw new CompositionFailure(self::SCOPE_FAILURE);
+        });
+
+        Log::shouldReceive('error')
+            ->once()
+            ->with('Model re-resolution failed during failure cleanup', \Mockery::on(
+                static fn (array $context): bool => $context['exception'] instanceof ResolutionFailure,
+            ));
+
+        try {
+
+            $repository->query();
+            self::fail('Expected the failing scope to propagate out of query().');
+        } catch (CompositionFailure $exception) {
+            self::assertSame(self::SCOPE_FAILURE, $exception->getMessage());
+        }
+
+        self::assertNull($repository->currentModel());
+        self::assertSame(0, $repository->scopesCount());
+    }
+
+    /**
+     * Test that a scope registered by a composition step which then aborts is
+     * consumed by the next query rather than outliving it.
+     *
+     * query() is never entered here, so the scope stays registered on the
+     * instance exactly as a scope registered during boot() does; resetScopes()
+     * is the caller's remedy for discarding it sooner.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testScopeFromAnAbortedCompositionStepIsConsumedByTheNextQuery(): void
+    {
+        $this->seedUsers();
+
+        $repository = $this->repository();
+
+        try {
+
+            $repository->scopeByNameThenAbort('Bob');
+            self::fail('Expected the aborted scope method to throw.');
+        } catch (CompositionFailure $exception) {
+            self::assertSame(TestUserRepository::ABORT_MESSAGE, $exception->getMessage());
+        }
+
+        self::assertSame(1, $repository->scopesCount());
+        self::assertCount(1, $repository->query()->get());
+
+        self::assertSame(0, $repository->scopesCount());
+        self::assertCount(3, $repository->query()->get());
     }
 
     /**

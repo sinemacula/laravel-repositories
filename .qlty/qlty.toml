@@ -85,7 +85,9 @@ name = "osv-scanner"
 
 [[plugin]]
 name = "php-codesniffer"
-version = "4.0.1"
+# 4.0.1 carries a command-injection advisory; 4.0.2 is the first release without
+# it, so a fresh install cannot resolve anything older.
+version = "4.0.4"
 mode = "comment"
 package_file = ".qlty/configs/composer.json"
 package_filters = ["slevomat", "dealerdirect", "sinemacula"]
