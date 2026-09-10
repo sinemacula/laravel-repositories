@@ -228,7 +228,7 @@ begins:
 | 1    | `$app` assigned (constructor promotion) | `$app` holds the Application instance                                                                                                    |
 | 2    | `$persistentCriteria = new Collection`  | Empty persistent criteria collection exists                                                                                              |
 | 3    | `$transientCriteria = new Collection`   | Empty transient criteria collection exists                                                                                               |
-| 4    | `resetCriteria()`                       | All criteria flags reset to defaults (`disableCriteria=false`, `skipCriteria=false`, `forceUseCriteria=false`); both collections cleared |
+| 4    | `resetCriteria()`                       | Both criteria collections cleared; flags at declared defaults (`disableCriteria=false`, `skipCriteria=false`, `forceUseCriteria=false`)  |
 | 5    | `resetScopes()`                         | `$scopes` is an empty array                                                                                                              |
 | 6    | `makeModel()`                           | `$model` holds a resolved Model instance; RepositoryException thrown if model class is invalid                                           |
 | 7    | `boot()`                                | Subclass initialization hook. All state from steps 1-6 is available.                                                                     |

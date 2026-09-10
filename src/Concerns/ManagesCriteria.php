@@ -324,6 +324,29 @@ trait ManagesCriteria
     }
 
     /**
+     * Reset the per-query criteria state to what a completed applyCriteria()
+     * leaves behind.
+     *
+     * The failure path has to consume the one-shot flags and discard the
+     * collected declarations exactly as a successful application does. A
+     * surviving skipCriteria() would silently drop every criterion from the
+     * next, unrelated query, and a surviving forceUseCriteria() would override
+     * a standing disableCriteria().
+     *
+     * @return void
+     *
+     * @internal cleanup step in the query pipeline's failure path
+     */
+    private function resetCriteriaState(): void
+    {
+        $this->resetTransientCriteria();
+        $this->resetCollectedCapabilities();
+
+        $this->skipCriteria     = false;
+        $this->forceUseCriteria = false;
+    }
+
+    /**
      * Clears all transient criteria.
      *
      * @return static

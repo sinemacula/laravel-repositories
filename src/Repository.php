@@ -204,8 +204,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      *
      * @return \Illuminate\Contracts\Database\Eloquent\Builder
      *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     * @throws \Throwable
      */
     #[\Override]
     public function newQuery(): Builder
@@ -216,21 +215,31 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     /**
      * Create a new query with active repository criteria and scopes applied.
      *
+     * Composition state is reset before a failure propagates, so an abandoned
+     * composition can never be re-applied onto the next, unrelated query.
+     *
      * @return \Illuminate\Contracts\Database\Eloquent\Builder
      *
-     * @throws \Illuminate\Contracts\Container\BindingResolutionException
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     * @throws \Throwable
      */
     #[\Override]
     public function query(): Builder
     {
-        $query = $this->prepareQueryBuilder();
+        try {
 
-        $this->resetTransientCriteria();
-        $this->resetScopes();
-        $this->resetModel();
+            $query = $this->prepareQueryBuilder();
 
-        return $query;
+            $this->resetTransientCriteria();
+            $this->resetScopes();
+            $this->resetModel();
+
+            return $query;
+        } catch (\Throwable $exception) {
+
+            $this->resetAfterFailure();
+
+            throw $exception;
+        }
     }
 
     /**
