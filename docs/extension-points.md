@@ -30,7 +30,9 @@ subclass-specific state during repository construction.
   - `$scopes` is an empty array.
   - `$model` holds a resolved Model instance (via `makeModel()`).
   - `$app` holds the Application instance.
-- It is safe to call `pushCriteria()`, `addScope()`, and `getModel()` during `boot()`.
+- It is safe to call `pushCriteria()`, `pushScope()`, and `getModel()` during `boot()`.
+- Register scopes with `pushScope()`, not `addScope()`. `addScope()` composes the next query only, so the first
+  query the instance builds consumes it and no later query carries it.
 
 **Example:**
 
@@ -38,6 +40,26 @@ subclass-specific state during repository construction.
 protected function boot(): void
 {
     $this->pushCriteria(new ActiveRecordsCriterion);
+}
+```
+
+### pushScope() — Stable
+
+**Purpose:** Registers a scope that applies to every query for the life of the instance. The scope counterpart of
+`pushCriteria()`, and the registrar `boot()` needs.
+
+**Signature:** `protected function pushScope(\Closure $scope): static`
+
+**Contract:** A registered scope is never consumed. It survives every query and every `resetScopes()`, and is applied
+before the scopes composing the current query, so a per-query scope can still override an ordering or limit it set.
+
+**Contrast with `addScope()`:** `addScope()` composes the next query only. The first query built from the repository
+applies it and then discards it, which is why a scope added during `boot()` reaches only that first query.
+
+```php
+protected function boot(): void
+{
+    $this->pushScope(static fn (Builder $query) => $query->whereNull('archived_at'));
 }
 ```
 
@@ -56,7 +78,7 @@ should use `query()` to obtain a prepared builder.
 `prepareQueryBuilder()`.
 
 **Why Internal:** Scope application is an internal step in the query composition pipeline. The public API for scopes
-is `addScope()` and `resetScopes()`.
+is `addScope()`, `pushScope()` and `resetScopes()`.
 
 ### resetAndReturn() — Internal
 
@@ -167,6 +189,15 @@ after each query.
 
 **Why Internal:** Managed through `addScope()` and `resetScopes()`. Direct array manipulation bypasses the public API.
 
+### $persistentScopes — Internal
+
+**Type:** `array`
+
+**Purpose:** Stores scopes registered via `pushScope()`. Applied to every query for the life of the instance, before the
+scopes composing the current query, and never consumed by a query or cleared by `resetScopes()`.
+
+**Why Internal:** Managed through `pushScope()`. Direct array manipulation bypasses the public API.
+
 ## Criteria Flag Precedence
 
 The criteria state machine uses four binary flags that interact according to these precedence rules:
@@ -229,12 +260,12 @@ begins:
 | 2    | `$persistentCriteria = new Collection`  | Empty persistent criteria collection exists                                                                                              |
 | 3    | `$transientCriteria = new Collection`   | Empty transient criteria collection exists                                                                                               |
 | 4    | `resetCriteria()`                       | Both criteria collections cleared; flags at declared defaults (`disableCriteria=false`, `skipCriteria=false`, `forceUseCriteria=false`)  |
-| 5    | `resetScopes()`                         | `$scopes` is an empty array                                                                                                              |
+| 5    | `resetScopes()`                         | `$scopes` is an empty array, as is `$persistentScopes`                                                                                   |
 | 6    | `makeModel()`                           | `$model` holds a resolved Model instance; RepositoryException thrown if model class is invalid                                           |
 | 7    | `boot()`                                | Subclass initialization hook. All state from steps 1-6 is available.                                                                     |
 
 Subclasses overriding `boot()` can safely assume all state from steps 1-6 is initialized. It is safe to call
-`pushCriteria()`, `addScope()`, `getModel()`, and the other base repository methods during `boot()`. Methods provided
+`pushCriteria()`, `pushScope()`, `getModel()`, and the other base repository methods during `boot()`. Methods provided
 by bootable concerns (such as the cache operations added by `Cacheable`) are not yet available: concern collaborators
 initialise after `boot()`, via `bootConcerns()`.
 

@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use SineMacula\Repositories\Concerns\BootsConcerns;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
+use SineMacula\Repositories\Concerns\ManagesScopes;
 use SineMacula\Repositories\Concerns\ResetsTransientState;
 use SineMacula\Repositories\Contracts\RepositoryCriteriaInterface;
 use SineMacula\Repositories\Contracts\RepositoryInterface;
@@ -33,7 +34,7 @@ use SineMacula\Repositories\Exceptions\RepositoryException;
 abstract class Repository implements RepositoryCriteriaInterface, RepositoryInterface
 {
     /** @use \SineMacula\Repositories\Concerns\ManagesCriteria<TModel> */
-    use BootsConcerns, ManagesCriteria, ResetsTransientState;
+    use BootsConcerns, ManagesCriteria, ManagesScopes, ResetsTransientState;
 
     /** @var \Illuminate\Contracts\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Model|null The resolved model or active query builder. */
     protected Builder|Model|null $model = null;
@@ -52,9 +53,6 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
 
     /** @var bool Managed via useCriteria(). Resets after each query. */
     protected bool $forceUseCriteria = false;
-
-    /** @var array<int, \Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void> Managed via addScope()/resetScopes(). */
-    protected array $scopes = [];
 
     /** @var array<string, (\Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void)|null> Eager-loading declarations from applied criteria. */
     protected array $collectedEagerLoads = [];
@@ -156,19 +154,6 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     public function all(mixed ...$arguments): mixed
     {
         return $this->__call('get', array_values($arguments));
-    }
-
-    /**
-     * Reset the scopes.
-     *
-     * @return static
-     */
-    #[\Override]
-    public function resetScopes(): static
-    {
-        $this->scopes = [];
-
-        return $this;
     }
 
     /**
@@ -275,20 +260,6 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     }
 
     /**
-     * Add a new scope.
-     *
-     * @param  \Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void  $scope
-     * @return static
-     */
-    #[\Override]
-    public function addScope(\Closure $scope): static
-    {
-        $this->scopes[] = $scope;
-
-        return $this;
-    }
-
-    /**
      * Get the eager-loading declarations collected from the most recent
      * criteria application.
      *
@@ -335,7 +306,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * Boot the repository instance.
      *
      * Override this method to perform subclass initialization such as
-     * registering persistent criteria, adding scopes, or configuring
+     * registering persistent criteria, registering scopes, or configuring
      * subclass-specific state.
      *
      * When this method is called, the following state is guaranteed:
@@ -343,10 +314,14 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * - $persistentCriteria and $transientCriteria are empty Collections
      * - All criteria flags are at their defaults (disabled=false, skip=false,
      *   force=false)
-     * - $scopes is an empty array
+     * - $scopes and $persistentScopes are empty arrays
      * - $model holds a resolved Model instance
      *
-     * It is safe to call pushCriteria(), addScope(), getModel(), and the other
+     * Register scopes here with pushScope(), not addScope(): addScope()
+     * composes the next query only, so the first query an instance builds
+     * consumes it and no later query carries it.
+     *
+     * It is safe to call pushCriteria(), pushScope(), getModel(), and the other
      * base repository methods during boot(). Methods provided by bootable
      * concerns (such as the cache operations added by Cacheable) are not yet
      * available: concern collaborators initialise after boot(), via
@@ -382,29 +357,6 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
         $this->applyScopes();
 
         return $this->model;
-    }
-
-    /**
-     * Apply all accumulated scopes to the model.
-     *
-     * Called after prepareQueryBuilder() has normalized $model to a Builder.
-     *
-     * @return static
-     *
-     * @internal use addScope()/resetScopes() for scope management
-     */
-    protected function applyScopes(): static
-    {
-        if ($this->model instanceof Builder) {
-
-            $builder = $this->model;
-
-            foreach ($this->scopes as $scope) {
-                $scope($builder);
-            }
-        }
-
-        return $this;
     }
 
     /**
