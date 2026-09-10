@@ -56,6 +56,9 @@ final class CacheableTest extends IntegrationTestCase
     /** @var string The resolved per-query metadata cache key for the tags table. */
     private const string META_KEY = 'repositories:repository-cache-meta:tags';
 
+    /** @var string The message carried by a failing cache store. */
+    private const string STORE_FAILURE = 'cache down';
+
     /** @var \Tests\Support\Repositories\CacheableTagRepository The repository under test. */
     private CacheableTagRepository $repository;
 
@@ -140,7 +143,7 @@ final class CacheableTest extends IntegrationTestCase
         // Arrange - a store whose flush write blows up (e.g. a cache outage
         // after the DB mutation has already committed).
         $store = \Mockery::mock(Store::class)->shouldIgnoreMissing();
-        $store->shouldReceive('put')->andThrow(new \RuntimeException('cache down'));
+        $store->shouldReceive('put')->andThrow(new \RuntimeException(self::STORE_FAILURE)); // @phpstan-ignore method.notFound
 
         Cache::extend('throwing', fn (): Repository => new Repository($store));
         Config::set('cache.stores.throwing', ['driver' => 'throwing']);
@@ -152,7 +155,7 @@ final class CacheableTest extends IntegrationTestCase
             ->once()
             ->with(\Mockery::type('string'), \Mockery::on(
                 static fn (array $context): bool => $context['exception'] instanceof \RuntimeException
-                    && $context['exception']->getMessage() === 'cache down',
+                    && $context['exception']->getMessage() === self::STORE_FAILURE,
             ));
 
         // Act - the write commits; the flush throws but must not surface.
@@ -561,6 +564,31 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
+     * Test that building a raw query consumes a pending withoutCache(), so the
+     * bypass cannot carry past the call it was requested for and silently
+     * uncache an unrelated later read.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testQueryConsumesAPendingCacheBypass(): void
+    {
+        $this->repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        $this->repository->withoutCache()->query();
+
+        DB::enableQueryLog();
+
+        $result = $this->repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        DB::disableQueryLog();
+
+        self::assertCount(2, $result);
+        self::assertCount(0, DB::getQueryLog());
+    }
+
+    /**
      * Test that a reference read which throws leaves no queued transient
      * criteria behind, so the next read serves the whole-table snapshot instead
      * of silently filtering it.
@@ -576,7 +604,7 @@ final class CacheableTest extends IntegrationTestCase
         // Arrange - a snapshot store whose read blows up (e.g. a cache outage)
         // after the reference read has consumed the suppressing flags.
         $store = \Mockery::mock(Store::class)->shouldIgnoreMissing();
-        $store->shouldReceive('get')->andThrow(new \RuntimeException('cache down')); // @phpstan-ignore method.notFound
+        $store->shouldReceive('get')->andThrow(new \RuntimeException(self::STORE_FAILURE)); // @phpstan-ignore method.notFound
 
         Cache::extend('throwing-reference', fn (): Repository => new Repository($store));
         Config::set('cache.stores.throwing-reference', ['driver' => 'throwing-reference']);
@@ -593,7 +621,7 @@ final class CacheableTest extends IntegrationTestCase
             $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
             self::fail('Expected the reference read to propagate the store failure.');
         } catch (\RuntimeException $exception) {
-            self::assertSame('cache down', $exception->getMessage());
+            self::assertSame(self::STORE_FAILURE, $exception->getMessage());
         }
 
         // Act - a working snapshot store, so only leaked state could filter.
