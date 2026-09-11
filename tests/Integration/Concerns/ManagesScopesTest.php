@@ -94,12 +94,11 @@ final class ManagesScopesTest extends IntegrationTestCase
     {
         $repository = $this->scopedRepository();
 
-        $sql = $repository
-            ->addScope(static function (BuilderContract $query): void {
-                $query->reorder('id', 'desc'); // @phpstan-ignore staticMethod.dynamicCall
-            })
-            ->query()
-            ->toSql(); // @phpstan-ignore staticMethod.dynamicCall
+        $composed = $repository->addScope(static function (BuilderContract $query): void {
+            $query->reorder('id', 'desc'); // @phpstan-ignore staticMethod.dynamicCall
+        });
+
+        $sql = $composed->query()->toSql(); // @phpstan-ignore staticMethod.dynamicCall
 
         self::assertStringContainsString('order by "id" desc', $sql);
         self::assertStringNotContainsString('"name" asc', $sql);
