@@ -102,7 +102,7 @@ final class ScopedTestUserRepository extends Repository
     protected function boot(): void
     {
         $this->pushScope(static function (Builder $query): void {
-            $query->orderBy('name');
+            $query->orderBy('name'); // @phpstan-ignore staticMethod.dynamicCall
         });
     }
 }

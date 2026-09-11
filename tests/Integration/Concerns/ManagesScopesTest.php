@@ -58,7 +58,7 @@ final class ManagesScopesTest extends IntegrationTestCase
         $repository = $this->scopedRepository();
 
         for ($attempt = 1; $attempt <= 3; $attempt++) {
-            self::assertStringContainsString(self::REGISTERED_ORDER, $repository->query()->toSql());
+            self::assertStringContainsString(self::REGISTERED_ORDER, $repository->query()->toSql()); // @phpstan-ignore staticMethod.dynamicCall
         }
     }
 
@@ -76,7 +76,7 @@ final class ManagesScopesTest extends IntegrationTestCase
 
         $repository->scopeActive()->resetScopes();
 
-        $sql = $repository->query()->toSql();
+        $sql = $repository->query()->toSql(); // @phpstan-ignore staticMethod.dynamicCall
 
         self::assertStringContainsString(self::REGISTERED_ORDER, $sql);
         self::assertStringNotContainsString(self::COMPOSED_COLUMN, $sql);
@@ -96,10 +96,10 @@ final class ManagesScopesTest extends IntegrationTestCase
 
         $sql = $repository
             ->addScope(static function (BuilderContract $query): void {
-                $query->reorder('id', 'desc');
+                $query->reorder('id', 'desc'); // @phpstan-ignore staticMethod.dynamicCall
             })
             ->query()
-            ->toSql();
+            ->toSql(); // @phpstan-ignore staticMethod.dynamicCall
 
         self::assertStringContainsString('order by "id" desc', $sql);
         self::assertStringNotContainsString('"name" asc', $sql);
@@ -155,7 +155,7 @@ final class ManagesScopesTest extends IntegrationTestCase
 
         self::assertSame(0, $repository->scopesCount());
 
-        $sql = $repository->query()->toSql();
+        $sql = $repository->query()->toSql(); // @phpstan-ignore staticMethod.dynamicCall
 
         self::assertStringNotContainsString(self::COMPOSED_COLUMN, $sql);
         self::assertStringNotContainsString('where', $sql);
@@ -197,7 +197,7 @@ final class ManagesScopesTest extends IntegrationTestCase
         // cleanly next time, and the instance it came from never held anything.
         self::assertSame(0, $composed->scopesCount());
         self::assertSame(0, $repository->scopesCount());
-        self::assertStringNotContainsString(self::COMPOSED_COLUMN, $repository->query()->toSql());
+        self::assertStringNotContainsString(self::COMPOSED_COLUMN, $repository->query()->toSql()); // @phpstan-ignore staticMethod.dynamicCall
     }
 
     /**
@@ -231,7 +231,7 @@ final class ManagesScopesTest extends IntegrationTestCase
 
         self::assertSame(0, $composed->scopesCount());
         self::assertSame(0, $composed->transientCriteriaCount());
-        self::assertStringNotContainsString(self::COMPOSED_COLUMN, $repository->query()->toSql());
+        self::assertStringNotContainsString(self::COMPOSED_COLUMN, $repository->query()->toSql()); // @phpstan-ignore staticMethod.dynamicCall
     }
 
     /**
@@ -248,7 +248,7 @@ final class ManagesScopesTest extends IntegrationTestCase
 
         $repository->forceModel($repository->getModel()->newQuery());
 
-        $sql = $repository->composeInPlace()->toSql();
+        $sql = $repository->composeInPlace()->toSql(); // @phpstan-ignore staticMethod.dynamicCall
 
         self::assertStringContainsString(self::COMPOSED_COLUMN, $sql);
         self::assertStringContainsString(self::REGISTERED_ORDER, $sql);
