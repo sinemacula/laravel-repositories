@@ -126,7 +126,9 @@ trait ManagesCriteria
      *
      * This method removes previously added criteria, either added for all
      * requests or just for the next request. It affects both persistent and
-     * transient criteria settings.
+     * transient criteria settings, on the handle it is called on: transient
+     * criteria live on the copy a withCriteria() call returned, so removing one
+     * means calling this on that copy.
      *
      * @param  array<int, string|TCriterion>|string|TCriterion  $criteria
      * @return static
@@ -154,7 +156,7 @@ trait ManagesCriteria
     #[\Override]
     public function getCriteria(): Collection
     {
-        /** @phpstan-ignore return.type (trait template resolution — reported and actual types are identical) */
+        /** @phpstan-ignore return.type (trait template resolution - reported and actual types are identical) */
         return $this->persistentCriteria->merge($this->transientCriteria);
     }
 
@@ -162,8 +164,8 @@ trait ManagesCriteria
      * Permanently enables the application of criteria in queries.
      *
      * This method ensures that criteria are applied to all queries going
-     * forward, until explicitly disabled. Note that `skipCriteria()` will
-     * override this on the next query.
+     * forward, until explicitly disabled. Note that a query composed with
+     * `skipCriteria()` overrides this for that query.
      *
      * @return static
      */
@@ -179,8 +181,8 @@ trait ManagesCriteria
      * Permanently disables the application of criteria in queries.
      *
      * This method turns off the use of criteria in all future queries until
-     * criteria are explicitly re-enabled. Note that `useCriteria()` will
-     * override this on the next query.
+     * criteria are explicitly re-enabled. Note that a query composed with
+     * `useCriteria()` or `withCriteria()` overrides this for that query.
      *
      * @return static
      */

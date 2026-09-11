@@ -13,7 +13,7 @@ guarantees for each.
 
 ## Protected Methods
 
-### boot() — Stable
+### boot() - Stable
 
 **Purpose:** Hook for subclass initialization. Called once at the end of the constructor, after all internal state has
 been initialized.
@@ -43,7 +43,7 @@ protected function boot(): void
 }
 ```
 
-### pushScope() — Stable
+### pushScope() - Stable
 
 **Purpose:** Registers a scope that applies to every query for the life of the instance. The scope counterpart of
 `pushCriteria()`, and the registrar `boot()` needs.
@@ -52,6 +52,10 @@ protected function boot(): void
 
 **Contract:** A registered scope is never consumed. It survives every query and every `resetScopes()`, and is applied
 before the scopes composing the current query, so a per-query scope can still override an ordering or limit it set.
+
+**Reference-mode note:** A repository in whole-table reference mode serves reads from a snapshot built straight from the
+model, which no scope reaches. Registering a scope therefore keeps every read on the real query pipeline, so the
+constraint is never answered with unfiltered rows.
 
 **Contrast with `addScope()`:** `addScope()` composes the next query only, and returns a copy rather than mutating the
 repository. That is what makes an abandoned composition harmless, and it is why `addScope()` cannot be used from
@@ -64,7 +68,7 @@ protected function boot(): void
 }
 ```
 
-### prepareQueryBuilder() — Internal
+### prepareQueryBuilder() - Internal
 
 **Purpose:** Orchestrates criteria and scope application, then ensures `$model` is a Builder. Called internally by
 `query()` and `__call()`.
@@ -73,15 +77,15 @@ protected function boot(): void
 builder conversion). Its behavior and signature may change as the lifecycle is clarified in future versions. Subclasses
 should use `query()` to obtain a prepared builder.
 
-### applyScopes() — Internal
+### applyScopes() - Internal
 
 **Purpose:** Iterates over registered scopes and applies each to the current model/builder. Called internally by
 `prepareQueryBuilder()`.
 
-**Why Internal:** Scope application is an internal step in the query composition pipeline. The public API for scopes
-is `addScope()`, `pushScope()` and `resetScopes()`.
+**Why Internal:** Scope application is an internal step in the query composition pipeline. Scopes are composed publicly
+with `addScope()` and `resetScopes()`, and registered from inside the subclass with `pushScope()`.
 
-### resetAndReturn() — Internal
+### resetAndReturn() - Internal
 
 **Purpose:** Resets transient state (transient criteria, scopes, model) after a forwarded method call completes. Called
 internally by `__call()`.
@@ -89,7 +93,7 @@ internally by `__call()`.
 **Why Internal:** This method is a cleanup step in the magic method forwarding pipeline. Its behavior is tied to
 internal state management and may change without notice.
 
-### applyCriteria() — Internal
+### applyCriteria() - Internal
 
 **Purpose:** Applies persistent and transient criteria to the model/builder according to the four control flags.
 Defined in the `ManagesCriteria` trait (which is itself `@internal`).
@@ -100,7 +104,7 @@ criteria management is `pushCriteria()`, `withCriteria()`, `enableCriteria()`, `
 
 ## Protected Properties
 
-### $app — Stable
+### $app - Stable
 
 **Type:** `Illuminate\Contracts\Foundation\Application` (readonly)
 
@@ -112,10 +116,10 @@ lifecycle (e.g., in `boot()` or in custom query methods).
 **Behavioral guarantees:**
 
 - Always holds a valid `Application` instance after construction.
-- Readonly — cannot be reassigned after construction.
+- Readonly - cannot be reassigned after construction.
 - Will not be removed, renamed, or retyped without a deprecation cycle.
 
-### $model — Transitional
+### $model - Transitional
 
 **Type:** `Builder|Model|null`
 
@@ -133,11 +137,11 @@ introduce a clearer lifecycle contract. Do not rely on the specific type of `$mo
 | **At rest**           | `Model`     | After construction; after `resetModel()` completes       | When `prepareQueryBuilder()` begins                    |
 | **Query composition** | `Builder`   | When `prepareQueryBuilder()` normalizes Model to Builder | When `query()` or `__call()` resets via `resetModel()` |
 
-During query composition, all criteria and scopes receive a `Builder` — no defensive `Model`-to-`Builder` conversion
+During query composition, all criteria and scopes receive a `Builder` - no defensive `Model`-to-`Builder` conversion
 is needed in criteria implementations. The normalization happens once at the start of `prepareQueryBuilder()` before any
 criteria or scopes are applied.
 
-### $persistentCriteria — Internal
+### $persistentCriteria - Internal
 
 **Type:** `Collection`
 
@@ -146,7 +150,7 @@ criteria or scopes are applied.
 **Why Internal:** Managed entirely through the public API (`pushCriteria()`, `removeCriteria()`, `getCriteria()`,
 `resetCriteria()`). Direct property access is unnecessary and bypasses the criteria lifecycle.
 
-### $transientCriteria — Internal
+### $transientCriteria - Internal
 
 **Type:** `Collection`
 
@@ -155,7 +159,7 @@ criteria or scopes are applied.
 **Why Internal:** Managed through `withCriteria()` and automatically cleared after each query. Direct access bypasses
 the intended one-shot lifecycle.
 
-### $disableCriteria — Internal
+### $disableCriteria - Internal
 
 **Type:** `bool`
 
@@ -164,7 +168,7 @@ the intended one-shot lifecycle.
 **Why Internal:** Managed through `enableCriteria()` and `disableCriteria()`. Direct manipulation risks desynchronizing
 the flag state machine.
 
-### $skipCriteria — Internal
+### $skipCriteria - Internal
 
 **Type:** `bool`
 
@@ -173,7 +177,7 @@ after each query.
 
 **Why Internal:** Managed through `skipCriteria()`. This is a transient flag that resets automatically.
 
-### $forceUseCriteria — Internal
+### $forceUseCriteria - Internal
 
 **Type:** `bool`
 
@@ -182,7 +186,7 @@ after each query.
 
 **Why Internal:** Managed through `useCriteria()`. This is a transient flag that resets automatically.
 
-### $scopes — Internal
+### $scopes - Internal
 
 **Type:** `array`
 
@@ -191,7 +195,7 @@ after each query.
 **Why Internal:** Managed through `addScope()` and `resetScopes()`, both of which return a copy rather than mutating
 the instance. Direct array manipulation bypasses the public API.
 
-### $persistentScopes — Internal
+### $persistentScopes - Internal
 
 **Type:** `array`
 
@@ -222,8 +226,8 @@ See the `ManagesCriteria` trait docblock for the complete 16-state truth table.
 
 When criteria are applied, they execute in a fixed two-phase order:
 
-1. **Transient criteria first** — Criteria registered via `withCriteria()` are applied in insertion order, then cleared.
-2. **Persistent criteria second** — Criteria registered via `pushCriteria()` are applied in insertion order. They remain
+1. **Transient criteria first** - Criteria registered via `withCriteria()` are applied in insertion order, then cleared.
+2. **Persistent criteria second** - Criteria registered via `pushCriteria()` are applied in insertion order. They remain
    registered for future queries.
 
 Within each phase, criteria execute in the order they were added. There is no priority or dependency mechanism;
@@ -237,7 +241,7 @@ accessible via `getCollectedEagerLoads()`, `getCollectedFields()`, `getCollected
 ## Supplementary Criteria Capabilities
 
 Criteria can opt into declaring additional capabilities by implementing supplementary contracts alongside
-`CriteriaInterface`. These contracts are purely additive — existing criteria that only implement `CriteriaInterface`
+`CriteriaInterface`. These contracts are purely additive - existing criteria that only implement `CriteriaInterface`
 are unaffected.
 
 | Contract                     | Purpose                                 | Collection Method          |

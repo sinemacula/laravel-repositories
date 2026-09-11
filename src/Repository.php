@@ -21,6 +21,13 @@ use SineMacula\Repositories\Exceptions\RepositoryException;
  * Core Eloquent repository abstraction that coordinates model resolution,
  * criteria-driven query composition, and transient state lifecycle.
  *
+ * Composition is immutable: addScope(), resetScopes(), withCriteria(),
+ * useCriteria() and skipCriteria() return a copy carrying the composition and
+ * leave this instance untouched, so only a query built from the returned handle
+ * carries it. Configuration mutates and returns this instance: pushScope(),
+ * pushCriteria(), removeCriteria(), enableCriteria(), disableCriteria() and
+ * resetCriteria().
+ *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
  *
@@ -67,7 +74,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     protected array $collectedMetadata = [];
 
     /**
-     * Resolve the target model and initialize criteria and scope state.
+     * Resolve the target model and initialize criteria state.
      *
      * @param  \Illuminate\Contracts\Foundation\Application  $app
      * @return void
@@ -334,9 +341,10 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * - $scopes and $persistentScopes are empty arrays
      * - $model holds a resolved Model instance
      *
-     * Register scopes here with pushScope(), not addScope(): addScope()
-     * composes the next query only, so the first query an instance builds
-     * consumes it and no later query carries it.
+     * Register scopes here with pushScope(), not addScope(): addScope() returns
+     * a copy carrying the scope and leaves this instance untouched, so a scope
+     * added with it during boot() is discarded with that copy and reaches no
+     * query at all.
      *
      * It is safe to call pushCriteria(), pushScope(), getModel(), and the other
      * base repository methods during boot(). Methods provided by bootable

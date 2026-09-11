@@ -13,7 +13,10 @@ composing left its constraints behind, and the next unrelated query silently inh
 inside the package could see that failure, because the package is not on the stack when a caller's own scope method
 throws. Returning a copy makes the abandoned composition garbage instead of state.
 
-**Who is affected:** any caller that composes in one statement and queries in another.
+**Who is affected:** any caller that composes in one statement and queries in another. The declarations a criterion
+contributes (eager loads, field selection, relationship counts, metadata) are collected on the handle the query ran
+through, so `getCollectedMetadata()` and its siblings must be read from the composed copy rather than from the
+repository the copy came from.
 
 **Before:**
 
@@ -43,21 +46,38 @@ if ($caller->isExternal()) {
 return $scoped->paginate();
 ```
 
-A repository scope method must return what it composed:
+A repository scope method must return what it composed, and marking it pure extends the discarded-result check to its
+own callers:
 
 ```php
+/**
+ * Compose the next query down to the live records.
+ *
+ * @return static
+ *
+ * @phpstan-pure
+ */
 public function scopeLive(): static
 {
-    return $this->addScope(static fn (Builder $query) => $query->whereNull('revoked_at'));
+    return $this->addScope(static function (Builder $query): void {
+        $query->whereNull('revoked_at');
+    });
 }
 ```
 
-The composition methods are marked `@phpstan-pure`, so a discarded result is reported as `method.resultUnused` from
-PHPStan level 4 upward. Mark your own scope methods `@phpstan-pure` to extend that check to their call sites.
+`addScope()`, `withCriteria()`, `useCriteria()`, `skipCriteria()`, `resetScopes()` and `withoutCache()` are marked
+`@phpstan-pure`, so a discarded result is reported as `method.resultUnused` from PHPStan level 4 upward. Mark your own
+scope methods `@phpstan-pure` to extend that check to their call sites.
 
 **Scopes that must apply to every query** are configuration rather than composition. Register them with `pushScope()`,
 which mutates the instance and is safe in `boot()`. `addScope()` during `boot()` only ever reached the first query an
-instance built.
+instance built. `pushScope()` is protected, so only the repository itself can register one.
+
+A repository in whole-table reference mode never serves a registered scope from its snapshot, so registering one keeps
+every read on the real query pipeline rather than answering the constraint with unfiltered rows.
+
+**If your subclass defines `__clone()`**, call `parent::__clone()` first. The base implementation drops the in-flight
+builder and duplicates the criteria collections, and a copy that skips it shares both with the handle it came from.
 
 ## From v2.1.x to v2.2.0
 
@@ -119,6 +139,9 @@ keep serving the unfiltered snapshot regardless of active criteria, call `skipCr
 
 v2.0.0 introduced seven categories of breaking change. This section covers each one with the change rationale and
 before/after code examples.
+
+The samples below show the idiom as it stood in v2, with composition written as its own statement. From v3 the
+composition methods return a copy, so read them alongside the section above before copying any of them.
 
 ### 1. RepositoryInterface expanded from empty marker to 8 methods
 

@@ -22,6 +22,11 @@ use SineMacula\Repositories\Exceptions\UnfingerprintableQueryException;
  * keyed by its fingerprint, so a filtered or by-id read never returns the
  * full-table collection. Write operations invalidate the whole table.
  *
+ * withoutCache() returns a copy whose next read bypasses the cache, leaving the
+ * instance it was called on untouched. Every copy of a repository shares these
+ * cache collaborators, so flushCache() and getCacheStatus() mean the same thing
+ * through any handle.
+ *
  * Overridable configuration properties (declare in the consuming class to
  * change defaults):
  *
@@ -32,7 +37,7 @@ use SineMacula\Repositories\Exceptions\UnfingerprintableQueryException;
  *   - `protected ?int $cacheMaxBytes` - size guard byte ceiling
  *   - `protected int $cacheReferenceTtl` - reference-mode cache duration
  *   - `protected ?int $cacheNegativeTtl` - null/miss cache duration
- *   - `protected bool $cacheReferenceTable = true` - opt into whole-table mode
+ *   - `protected bool $cacheReferenceTable` - set true for whole-table mode
  *   - `protected bool $cacheRegistryEnabled = true` - non-taggable version bump
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
@@ -374,11 +379,15 @@ trait Cacheable
      * owned by ManagesCriteria::hasPendingComposition() so applyCriteria() and
      * this check can never silently diverge.
      *
+     * Registered scopes count too, even though they are configuration rather
+     * than composition: the snapshot is built straight from the model, so it
+     * would answer a registered constraint with unfiltered rows.
+     *
      * @return bool
      */
     private function hasActiveComposition(): bool
     {
-        return $this->scopes !== [] || $this->hasPendingComposition();
+        return $this->scopes !== [] || $this->persistentScopes !== [] || $this->hasPendingComposition();
     }
 
     /**

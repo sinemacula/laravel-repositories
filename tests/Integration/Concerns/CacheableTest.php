@@ -31,6 +31,7 @@ use Tests\Support\Repositories\CustomPrefixCacheableTagRepository;
 use Tests\Support\Repositories\CustomStoreCacheableTagRepository;
 use Tests\Support\Repositories\ReferenceTableTagRepository;
 use Tests\Support\Repositories\RegistryDisabledFileStoreTagRepository;
+use Tests\Support\Repositories\ScopedReferenceTableTagRepository;
 use Tests\Support\Repositories\ShortReferenceTtlTagRepository;
 use Tests\Support\Repositories\ShortTtlTagRepository;
 use Tests\Support\Repositories\SizeGuardedTagRepository;
@@ -561,6 +562,29 @@ final class CacheableTest extends IntegrationTestCase
         $result = $this->repository->get(); // @phpstan-ignore staticMethod.dynamicCall
 
         self::assertCount(2, $result);
+    }
+
+    /**
+     * Test that a registered scope forces a reference read to execute a real
+     * query, because the whole-table snapshot is built straight from the model
+     * and would answer the registered constraint with unfiltered rows.
+     *
+     * @return void
+     */
+    public function testRegisteredScopeKeepsAReferenceReadOffTheSnapshot(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ScopedReferenceTableTagRepository::class);
+
+        $tags = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        self::assertCount(1, $tags);
+        self::assertSame('php', $tags->first()?->getAttribute('name'));
+
+        // A second read must stay filtered rather than falling back to a
+        // snapshot of the whole table.
+        self::assertCount(1, $repository->get()); // @phpstan-ignore staticMethod.dynamicCall
     }
 
     /**

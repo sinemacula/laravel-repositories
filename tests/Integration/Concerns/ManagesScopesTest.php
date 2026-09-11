@@ -123,6 +123,11 @@ final class ManagesScopesTest extends IntegrationTestCase
         self::assertSame(2, $composed->scopesCount());
         self::assertSame(0, $composed->resetScopes()->scopesCount());
         self::assertSame(2, $composed->scopesCount());
+
+        // The registered scope is configuration, so it is counted separately
+        // and survives both the copy and the reset.
+        self::assertSame(1, $composed->persistentScopesCount());
+        self::assertSame(1, $composed->resetScopes()->persistentScopesCount());
     }
 
     /**

@@ -14,6 +14,11 @@ use Illuminate\Support\Facades\Log;
  * than one carrying the failed call's transient criteria, scopes, one-shot
  * criteria flags, collected declarations, or model state.
  *
+ * The cleanup is about the handle the failed call was made on, not a
+ * composition the caller walked away from: an abandoned copy is garbage either
+ * way, but a handle the caller kept must not carry the failed call's leftovers
+ * into its next query.
+ *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
  *
