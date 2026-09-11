@@ -105,7 +105,7 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
 
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository->useCriteria();
+        $repository = $repository->useCriteria();
 
         self::assertCount(2, $repository->query()->get());
     }
@@ -126,7 +126,7 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
 
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository->withCriteria(new NamedUsersCriterion('Alice'));
+        $repository = $repository->withCriteria(new NamedUsersCriterion('Alice'));
 
         self::assertCount(1, $repository->query()->get());
     }
@@ -146,7 +146,7 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
 
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository->skipCriteria();
+        $repository = $repository->skipCriteria();
 
         self::assertCount(3, $repository->query()->get());
     }
@@ -167,7 +167,7 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
         $repository->forceTransientCriteria(collect([new NamedUsersCriterion('Alice')]));
-        $repository->skipCriteria();
+        $repository = $repository->skipCriteria();
 
         self::assertCount(3, $repository->query()->get());
     }
@@ -191,8 +191,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
 
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository->useCriteria();
-        $repository->skipCriteria();
+        $repository = $repository->useCriteria();
+        $repository = $repository->skipCriteria();
 
         self::assertCount(3, $repository->query()->get());
     }
@@ -212,8 +212,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
 
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository->withCriteria(new NamedUsersCriterion('Alice'));
-        $repository->skipCriteria();
+        $repository = $repository->withCriteria(new NamedUsersCriterion('Alice'));
+        $repository = $repository->skipCriteria();
 
         self::assertCount(3, $repository->query()->get());
     }
@@ -281,7 +281,7 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
         $repository->disableCriteria();
-        $repository->useCriteria();
+        $repository = $repository->useCriteria();
 
         self::assertCount(2, $repository->query()->get());
     }
@@ -303,7 +303,7 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
         $repository->disableCriteria();
-        $repository->withCriteria(new NamedUsersCriterion('Alice'));
+        $repository = $repository->withCriteria(new NamedUsersCriterion('Alice'));
 
         self::assertCount(1, $repository->query()->get());
     }
@@ -324,7 +324,7 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
         $repository->disableCriteria();
-        $repository->skipCriteria();
+        $repository = $repository->skipCriteria();
 
         self::assertCount(3, $repository->query()->get());
     }
@@ -346,7 +346,7 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
         $repository->pushCriteria(new ActiveUsersCriterion);
         $repository->disableCriteria();
         $repository->forceTransientCriteria(collect([new NamedUsersCriterion('Alice')]));
-        $repository->skipCriteria();
+        $repository = $repository->skipCriteria();
 
         self::assertCount(3, $repository->query()->get());
     }
@@ -371,8 +371,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
         $repository->disableCriteria();
-        $repository->useCriteria();
-        $repository->skipCriteria();
+        $repository = $repository->useCriteria();
+        $repository = $repository->skipCriteria();
 
         self::assertCount(3, $repository->query()->get());
     }
@@ -393,8 +393,8 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
         $repository->disableCriteria();
-        $repository->withCriteria(new NamedUsersCriterion('Alice'));
-        $repository->skipCriteria();
+        $repository = $repository->withCriteria(new NamedUsersCriterion('Alice'));
+        $repository = $repository->skipCriteria();
 
         self::assertCount(3, $repository->query()->get());
     }
@@ -412,7 +412,7 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
 
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository->skipCriteria();
+        $repository = $repository->skipCriteria();
 
         self::assertTrue($repository->isCriteriaSkipped());
 
@@ -436,7 +436,7 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
         $repository->disableCriteria();
-        $repository->useCriteria();
+        $repository = $repository->useCriteria();
 
         self::assertTrue($repository->isForceUsingCriteria());
 
@@ -459,7 +459,7 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
         $repository->disableCriteria();
-        $repository->useCriteria();
+        $repository = $repository->useCriteria();
 
         $repository->query();
 
@@ -478,7 +478,7 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
         $this->seedUsers();
 
         $repository = $this->repository();
-        $repository->withCriteria(new NamedUsersCriterion('Alice'));
+        $repository = $repository->withCriteria(new NamedUsersCriterion('Alice'));
 
         self::assertSame(1, $repository->transientCriteriaCount());
 

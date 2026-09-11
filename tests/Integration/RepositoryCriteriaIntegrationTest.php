@@ -47,7 +47,7 @@ final class RepositoryCriteriaIntegrationTest extends IntegrationTestCase
 
         self::assertCount(3, $repository->query()->get());
 
-        $repository->useCriteria();
+        $repository = $repository->useCriteria();
         self::assertCount(2, $repository->query()->get());
 
         $repository->enableCriteria();
@@ -68,18 +68,25 @@ final class RepositoryCriteriaIntegrationTest extends IntegrationTestCase
         $this->seedUsers();
 
         $repository = $this->repository();
-        $repository
-            ->pushCriteria(new ActiveUsersCriterion)
+        $repository->pushCriteria(new ActiveUsersCriterion);
+
+        $composed = $repository
             ->withCriteria(new NamedUsersCriterion('Alice'))
             ->skipCriteria();
 
-        self::assertTrue($repository->isCriteriaSkipped());
-        self::assertTrue($repository->isForceUsingCriteria());
-        self::assertCount(3, $repository->query()->get());
+        self::assertTrue($composed->isCriteriaSkipped());
+        self::assertTrue($composed->isForceUsingCriteria());
+
+        // The flags compose the copy, so the instance they were set from is
+        // untouched and its own reads still apply the pushed criterion.
         self::assertFalse($repository->isCriteriaSkipped());
         self::assertFalse($repository->isForceUsingCriteria());
-        self::assertSame(0, $repository->transientCriteriaCount());
-        self::assertCount(2, $repository->query()->get());
+
+        self::assertCount(3, $composed->query()->get());
+        self::assertFalse($composed->isCriteriaSkipped());
+        self::assertFalse($composed->isForceUsingCriteria());
+        self::assertSame(0, $composed->transientCriteriaCount());
+        self::assertCount(2, $composed->query()->get());
     }
 
     /**
@@ -93,7 +100,7 @@ final class RepositoryCriteriaIntegrationTest extends IntegrationTestCase
         $activeCriterion = new ActiveUsersCriterion;
 
         $repository->pushCriteria([$activeCriterion, new NamedUsersCriterion('Alice')]);
-        $repository->withCriteria(new NamedUsersCriterion('Bob'));
+        $repository = $repository->withCriteria(new NamedUsersCriterion('Bob'));
 
         self::assertCount(3, $repository->getCriteria());
 
@@ -137,7 +144,7 @@ final class RepositoryCriteriaIntegrationTest extends IntegrationTestCase
     {
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository->withCriteria(new NamedUsersCriterion('Alice'));
+        $repository = $repository->withCriteria(new NamedUsersCriterion('Alice'));
 
         self::assertSame(1, $repository->persistentCriteriaCount());
         self::assertSame(1, $repository->transientCriteriaCount());

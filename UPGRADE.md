@@ -1,6 +1,63 @@
 # Upgrade Guide
 
-This document provides migration guidance for breaking changes between major versions.
+This document provides migration guidance for consumer-visible changes between versions.
+
+## Composing a query now returns a copy
+
+Composing a query no longer mutates the repository. `addScope()`, `withCriteria()`, `useCriteria()`,
+`skipCriteria()`, `resetScopes()` and `withoutCache()` return a copy carrying the composition, and the instance they
+were called on is left untouched.
+
+**Why:** a composition used to live on the repository until a query consumed it. A scope method that threw after
+composing left its constraints behind, and the next unrelated query silently inherited them. No amount of cleanup
+inside the package could see that failure, because the package is not on the stack when a caller's own scope method
+throws. Returning a copy makes the abandoned composition garbage instead of state.
+
+**Who is affected:** any caller that composes in one statement and queries in another.
+
+**Before:**
+
+```php
+$repository->scopeByOrganization($organisation);
+
+return $repository->findOrFail($id);
+```
+
+**After:**
+
+```php
+return $repository
+    ->scopeByOrganization($organisation)
+    ->findOrFail($id);
+```
+
+Or keep the composed handle when the composition is conditional:
+
+```php
+$scoped = $repository->withApiCriteria();
+
+if ($caller->isExternal()) {
+    $scoped = $scoped->scopeByOrganization($organisation);
+}
+
+return $scoped->paginate();
+```
+
+A repository scope method must return what it composed:
+
+```php
+public function scopeLive(): static
+{
+    return $this->addScope(static fn (Builder $query) => $query->whereNull('revoked_at'));
+}
+```
+
+The composition methods are marked `@phpstan-pure`, so a discarded result is reported as `method.resultUnused` from
+PHPStan level 4 upward. Mark your own scope methods `@phpstan-pure` to extend that check to their call sites.
+
+**Scopes that must apply to every query** are configuration rather than composition. Register them with `pushScope()`,
+which mutates the instance and is safe in `boot()`. `addScope()` during `boot()` only ever reached the first query an
+instance built.
 
 ## From v2.1.x to v2.2.0
 

@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use SineMacula\Repositories\Concerns\BootsConcerns;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
+use SineMacula\Repositories\Concerns\ManagesScopes;
 use SineMacula\Repositories\Concerns\ResetsTransientState;
 use SineMacula\Repositories\Contracts\RepositoryCriteriaInterface;
 use SineMacula\Repositories\Contracts\RepositoryInterface;
@@ -33,7 +34,7 @@ use SineMacula\Repositories\Exceptions\RepositoryException;
 abstract class Repository implements RepositoryCriteriaInterface, RepositoryInterface
 {
     /** @use \SineMacula\Repositories\Concerns\ManagesCriteria<TModel> */
-    use BootsConcerns, ManagesCriteria, ResetsTransientState;
+    use BootsConcerns, ManagesCriteria, ManagesScopes, ResetsTransientState;
 
     /** @var \Illuminate\Contracts\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Model|null The resolved model or active query builder. */
     protected Builder|Model|null $model = null;
@@ -52,9 +53,6 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
 
     /** @var bool Managed via useCriteria(). Resets after each query. */
     protected bool $forceUseCriteria = false;
-
-    /** @var array<int, \Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void> Managed via addScope()/resetScopes(). */
-    protected array $scopes = [];
 
     /** @var array<string, (\Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void)|null> Eager-loading declarations from applied criteria. */
     protected array $collectedEagerLoads = [];
@@ -85,10 +83,27 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
         $this->persistentCriteria = new Collection;
         $this->transientCriteria  = new Collection;
         $this->resetCriteria();
-        $this->resetScopes();
         $this->makeModel();
         $this->boot();
         $this->bootConcerns();
+    }
+
+    /**
+     * Isolate a composed copy from the instance it was composed from.
+     *
+     * The in-flight builder is dropped so the copy builds its own from a fresh
+     * model, and the criteria collections are copied so composing on one handle
+     * cannot reach the other. The cache collaborators are deliberately shared:
+     * they represent one table's cache, and a flush through either handle has
+     * to be visible to both.
+     *
+     * @return void
+     */
+    public function __clone(): void
+    {
+        $this->model              = null;
+        $this->persistentCriteria = clone $this->persistentCriteria;
+        $this->transientCriteria  = clone $this->transientCriteria;
     }
 
     /**
@@ -159,19 +174,6 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     }
 
     /**
-     * Reset the scopes.
-     *
-     * @return static
-     */
-    #[\Override]
-    public function resetScopes(): static
-    {
-        $this->scopes = [];
-
-        return $this;
-    }
-
-    /**
      * Create a new model instance.
      *
      * @return \Illuminate\Database\Eloquent\Model
@@ -230,7 +232,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
             $query = $this->prepareQueryBuilder();
 
             $this->resetTransientCriteria();
-            $this->resetScopes();
+            $this->clearComposingScopes();
             $this->resetModel();
 
             return $query;
@@ -272,20 +274,6 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
         }
 
         return $this->model;
-    }
-
-    /**
-     * Add a new scope.
-     *
-     * @param  \Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void  $scope
-     * @return static
-     */
-    #[\Override]
-    public function addScope(\Closure $scope): static
-    {
-        $this->scopes[] = $scope;
-
-        return $this;
     }
 
     /**
@@ -335,7 +323,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * Boot the repository instance.
      *
      * Override this method to perform subclass initialization such as
-     * registering persistent criteria, adding scopes, or configuring
+     * registering persistent criteria, registering scopes, or configuring
      * subclass-specific state.
      *
      * When this method is called, the following state is guaranteed:
@@ -343,10 +331,14 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * - $persistentCriteria and $transientCriteria are empty Collections
      * - All criteria flags are at their defaults (disabled=false, skip=false,
      *   force=false)
-     * - $scopes is an empty array
+     * - $scopes and $persistentScopes are empty arrays
      * - $model holds a resolved Model instance
      *
-     * It is safe to call pushCriteria(), addScope(), getModel(), and the other
+     * Register scopes here with pushScope(), not addScope(): addScope()
+     * composes the next query only, so the first query an instance builds
+     * consumes it and no later query carries it.
+     *
+     * It is safe to call pushCriteria(), pushScope(), getModel(), and the other
      * base repository methods during boot(). Methods provided by bootable
      * concerns (such as the cache operations added by Cacheable) are not yet
      * available: concern collaborators initialise after boot(), via
@@ -385,29 +377,6 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     }
 
     /**
-     * Apply all accumulated scopes to the model.
-     *
-     * Called after prepareQueryBuilder() has normalized $model to a Builder.
-     *
-     * @return static
-     *
-     * @internal use addScope()/resetScopes() for scope management
-     */
-    protected function applyScopes(): static
-    {
-        if ($this->model instanceof Builder) {
-
-            $builder = $this->model;
-
-            foreach ($this->scopes as $scope) {
-                $scope($builder);
-            }
-        }
-
-        return $this;
-    }
-
-    /**
      * Reset the various transient values and return the result.
      *
      * @param  mixed  $queryResult
@@ -421,7 +390,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     protected function resetAndReturn(mixed $queryResult): mixed
     {
         $this->resetTransientCriteria();
-        $this->resetScopes();
+        $this->clearComposingScopes();
         $this->resetModel();
 
         return $queryResult;

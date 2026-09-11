@@ -11,10 +11,8 @@ use Tests\Support\Exceptions\CompositionFailure;
 use Tests\Support\Models\TestUser;
 
 /**
- * Repository test double for exercising repository internals.
- *
- * Uses the exported InspectsRepository trait for state observation and
- * mutation, eliminating the need for custom shadow API methods.
+ * Fixture repository registering a durable scope during boot and exposing the
+ * composition shapes that can abandon per-query state.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -23,16 +21,10 @@ use Tests\Support\Models\TestUser;
  *
  * @internal
  */
-final class TestUserRepository extends Repository
+final class ScopedTestUserRepository extends Repository
 {
     /** @use \SineMacula\Repositories\Testing\Concerns\InspectsRepository<\Tests\Support\Models\TestUser> */
     use InspectsRepository;
-
-    /** @var string The message carried by the aborted scope method. */
-    public const string ABORT_MESSAGE = 'Scope composition aborted.';
-
-    /** @var bool Indicates whether boot() was executed */
-    public bool $booted = false;
 
     /**
      * Return the model class.
@@ -46,11 +38,22 @@ final class TestUserRepository extends Repository
     }
 
     /**
-     * Register a name scope and then abort.
+     * Compose the next query down to the active users.
      *
-     * Mimics a repository method that fails after it has already composed part
-     * of the next query. The composed copy is abandoned, so nothing reaches the
-     * instance the caller holds.
+     * @return self
+     */
+    public function scopeActive(): self
+    {
+        return $this->addScope(static function (Builder $query): void {
+            $query->where('active', true);
+        });
+    }
+
+    /**
+     * Compose the next query down to a name, then abort.
+     *
+     * Mirrors a consumer scope method that derives something after composing
+     * and fails doing so. The composed copy is abandoned.
      *
      * @param  string  $name
      * @return self
@@ -66,17 +69,40 @@ final class TestUserRepository extends Repository
         // The copy really did compose; the exception carries how many scopes it
         // holds so a test can prove the abandoned work existed and still never
         // reached the instance the caller holds.
-        throw new CompositionFailure(self::ABORT_MESSAGE, $composed->scopesCount());
+        throw new CompositionFailure('Scope composition aborted.', $composed->scopesCount());
     }
 
     /**
-     * Boot the repository.
+     * Apply the composed scopes to the current builder from inside the
+     * subclass.
+     *
+     * Mirrors a repository that drives composition itself rather than going
+     * through query(), which is why applyScopes() is protected rather than
+     * private.
+     *
+     * @return \Illuminate\Contracts\Database\Eloquent\Builder
+     */
+    public function composeInPlace(): Builder
+    {
+        $this->applyScopes();
+
+        $builder = $this->currentModel();
+
+        assert($builder instanceof Builder);
+
+        return $builder;
+    }
+
+    /**
+     * Register the durable ordering every query for this repository carries.
      *
      * @return void
      */
     #[\Override]
     protected function boot(): void
     {
-        $this->booted = true;
+        $this->pushScope(static function (Builder $query): void {
+            $query->orderBy('name'); // @phpstan-ignore staticMethod.dynamicCall
+        });
     }
 }

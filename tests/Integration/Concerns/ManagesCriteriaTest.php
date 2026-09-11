@@ -50,7 +50,7 @@ final class ManagesCriteriaTest extends IntegrationTestCase
         $repository->pushCriteria(new NamedUsersCriterion('Bob'));
         $repository->pushCriteria(new FailingUsersCriterion);
         $repository->disableCriteria();
-        $repository->useCriteria();
+        $repository = $repository->useCriteria();
 
         try {
 
@@ -100,7 +100,7 @@ final class ManagesCriteriaTest extends IntegrationTestCase
         });
 
         $repository->pushCriteria(new NamedUsersCriterion('Bob'));
-        $repository->skipCriteria();
+        $repository = $repository->skipCriteria();
 
         try {
 
@@ -112,6 +112,60 @@ final class ManagesCriteriaTest extends IntegrationTestCase
 
         self::assertFalse($repository->isCriteriaSkipped());
         self::assertCount(1, $repository->query()->get());
+    }
+
+    /**
+     * Test that useCriteria() composes a copy and leaves the flags on the
+     * instance it was called on untouched.
+     *
+     * @return void
+     */
+    public function testUseCriteriaComposesACopyAndLeavesTheInstanceUntouched(): void
+    {
+        $repository = $this->repository();
+
+        $composed = $repository->useCriteria();
+
+        self::assertTrue($composed->isForceUsingCriteria());
+        self::assertFalse($repository->isForceUsingCriteria());
+    }
+
+    /**
+     * Test that skipCriteria() composes a copy and leaves the flags on the
+     * instance it was called on untouched.
+     *
+     * @return void
+     */
+    public function testSkipCriteriaComposesACopyAndLeavesTheInstanceUntouched(): void
+    {
+        $repository = $this->repository();
+
+        $composed = $repository->skipCriteria();
+
+        self::assertTrue($composed->isCriteriaSkipped());
+        self::assertFalse($repository->isCriteriaSkipped());
+    }
+
+    /**
+     * Test that withCriteria() composes a copy, so criteria meant for one read
+     * cannot reach a read made through the instance they were composed from.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testWithCriteriaComposesACopyAndLeavesTheInstanceUntouched(): void
+    {
+        $this->seedUsers();
+
+        $repository = $this->repository();
+
+        $composed = $repository->withCriteria(new NamedUsersCriterion('Bob'));
+
+        self::assertSame(1, $composed->transientCriteriaCount());
+        self::assertSame(0, $repository->transientCriteriaCount());
+        self::assertCount(1, $composed->query()->get());
+        self::assertCount(3, $repository->query()->get());
     }
 
     /**
@@ -129,7 +183,7 @@ final class ManagesCriteriaTest extends IntegrationTestCase
 
         $repository = $this->repository();
 
-        $repository->withCriteria([new EagerLoadingCriterion, new FailingUsersCriterion]);
+        $repository = $repository->withCriteria([new EagerLoadingCriterion, new FailingUsersCriterion]);
 
         try {
 
@@ -172,7 +226,7 @@ final class ManagesCriteriaTest extends IntegrationTestCase
     {
         $repository = $this->repository();
 
-        $repository->withCriteria([new ActiveUsersCriterion, 'invalid']);
+        $repository = $repository->withCriteria([new ActiveUsersCriterion, 'invalid']);
 
         self::assertCount(1, $repository->getCriteria());
     }
