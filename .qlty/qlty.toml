@@ -130,9 +130,17 @@ name = "yamllint"
 
 [[plugin]]
 name = "phpstan"
-version = "2.1.46"
+# Matches the version composer resolves from the package file. The tool sandbox
+# is keyed on this string, so a stale label also means sharing a sandbox with
+# any other repository still on it, whatever that one declares.
+version = "2.2.13"
 package_file = ".qlty/configs/composer.json"
 package_filters = ["phpstan", "larastan", "sinemacula"]
+
+# Without this the repository's phpstan.neon is never passed to phpstan, and
+# its ignoreErrors entries silently do nothing.
+[plugins.definitions.phpstan]
+config_files = ["phpstan.neon"]
 
 # phpstan resolves framework symbols by autoloading the package's own
 # dependencies, which a bare checkout does not have, so install them first.
