@@ -44,7 +44,6 @@ trait ManagesScopes
      * @return static
      *
      * @phpstan-pure
-     * @phpstan-pure
      */
     #[\Override]
     public function addScope(\Closure $scope): static
@@ -64,6 +63,8 @@ trait ManagesScopes
      * composition, so they are deliberately kept.
      *
      * @return static
+     *
+     * @phpstan-pure
      */
     #[\Override]
     public function resetScopes(): static
@@ -80,10 +81,10 @@ trait ManagesScopes
      * instance.
      *
      * This is the scope counterpart of pushCriteria(), and the registrar that
-     * boot() needs: a scope added with addScope() during boot() composes only
-     * the first query the instance builds, because the first query consumes it.
-     * A scope registered here is never consumed, so it survives every query and
-     * every resetScopes().
+     * boot() needs: addScope() returns a copy carrying the scope, so a scope
+     * added with it during boot() is discarded with that copy and never reaches
+     * a query. A scope registered here is never consumed, so it survives every
+     * query and every resetScopes().
      *
      * @api-stable
      *

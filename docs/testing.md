@@ -112,9 +112,14 @@ for state observation.
 
 ### How It Works
 
-Add the `InspectsRepository` trait to your test double. The trait provides methods to observe all internal repository
-state (criteria counts, flag values, scope counts, model reference) and mutate state for edge-case testing. This
+Add the `InspectsRepository` trait to your test double. The trait provides methods to observe the repository's criteria
+counts, flag values, composing-scope count and model reference, and to mutate that state for edge-case testing. This
 eliminates the need for custom public wrapper methods.
+
+Observe the handle a composing call returned, not the one it was called on. `addScope()`, `withCriteria()`,
+`useCriteria()`, `skipCriteria()` and `resetScopes()` return a copy, so the composition is on that copy. Scopes
+registered with `pushScope()` are counted by `persistentScopesCount()`, and are also observable through the query they
+produce.
 
 ### Example
 
@@ -125,8 +130,9 @@ declare(strict_types=1);
 
 namespace Tests\Support\Repositories;
 
+use Illuminate\Contracts\Database\Eloquent\Builder;
 use SineMacula\Repositories\Repository;
-use SineMacula\Repositories\Testing\InspectsRepository;
+use SineMacula\Repositories\Testing\Concerns\InspectsRepository;
 use App\Models\User;
 
 class TestableUserRepository extends Repository
@@ -181,11 +187,11 @@ class UserRepositoryTest extends TestCase
     {
         $repository = $this->app->make(TestableUserRepository::class);
 
+        $composed = $repository->addScope(fn ($query) => $query->orderBy('name'));
+
+        // The scope travels with the copy, not the repository it came from
+        $this->assertSame(1, $composed->scopesCount());
         $this->assertSame(0, $repository->scopesCount());
-
-        $repository->addScope(fn ($query) => $query->orderBy('name'));
-
-        $this->assertSame(1, $repository->scopesCount());
     }
 }
 ```
@@ -198,12 +204,13 @@ class UserRepositoryTest extends TestCase
 |-----------------------------|------------------------|-------------------------------------------------------|
 | `persistentCriteriaCount()` | `int`                  | Number of persistent criteria registered              |
 | `transientCriteriaCount()`  | `int`                  | Number of transient criteria registered               |
-| `scopesCount()`             | `int`                  | Number of scopes registered                           |
+| `scopesCount()`             | `int`                  | Number of scopes composing the next query             |
+| `persistentScopesCount()`   | `int`                  | Number of scopes registered for the instance          |
 | `isCriteriaDisabled()`      | `bool`                 | Whether persistent criteria are disabled              |
 | `isCriteriaSkipped()`       | `bool`                 | Whether the next query will skip all criteria         |
 | `isForceUsingCriteria()`    | `bool`                 | Whether criteria are force-enabled for the next query |
 | `currentModel()`            | `Builder\|Model\|null` | The current internal model/builder reference          |
-| `isBooted()`                | `bool`                 | Whether the constructor completed successfully        |
+| `isBooted()`                | `bool`                 | Whether a model or builder reference is held          |
 
 #### State Mutators
 
@@ -219,6 +226,38 @@ class UserRepositoryTest extends TestCase
 |---------------------------------|----------------------------------------------|
 | `invokeApplyScopes()`           | Call the protected `applyScopes()` method    |
 | `invokeResetAndReturn($result)` | Call the protected `resetAndReturn()` method |
+
+### Asserting a Composition Did Not Leak
+
+Composition returns a copy, so a test for a scope method should assert both halves of the contract: the returned handle
+carries the composition, and the handle it was composed from does not. The second assertion is the one that catches a
+scope method written to mutate.
+
+```php
+public function testScopeEmailVerifiedLeavesTheRepositoryUntouched(): void
+{
+    $repository = $this->app->make(TestableUserRepository::class);
+
+    $composed = $repository->scopeEmailVerified();
+
+    $this->assertSame(1, $composed->scopesCount());
+    $this->assertSame(0, $repository->scopesCount());
+}
+```
+
+To assert the same thing for a method that fails part-way, catch the failure and then query through the original
+handle. Nothing the aborted call composed should appear:
+
+```php
+try {
+    $repository->scopeEmailVerified()->scopeByTokenThatThrows('token');
+} catch (\RuntimeException) {
+    // the composition is abandoned
+}
+
+$this->assertSame(0, $repository->scopesCount());
+$this->assertStringNotContainsString('email_verified_at', $repository->query()->toSql());
+```
 
 ## Pattern 3: Testing Criteria and Scope Interaction
 
@@ -266,10 +305,10 @@ class CriteriaScopeInteractionTest extends TestCase
             return $builder;
         });
 
+        // pushCriteria() is configuration and mutates; withCriteria() composes a copy that inherits it
         $repository->pushCriteria($persistent);
-        $repository->withCriteria($transient);
 
-        $repository->query();
+        $repository->withCriteria($transient)->query();
 
         $this->assertSame(['transient', 'persistent'], $order);
         $this->assertTrue($persistent->wasApplied());
@@ -288,9 +327,10 @@ class CriteriaScopeInteractionTest extends TestCase
         });
 
         $repository->pushCriteria($criterion);
+
         $repository->addScope(function ($builder) use (&$order): void {
             $order[] = 'scope';
-        });
+        })->query();
 
         $repository->query();
 
@@ -304,12 +344,12 @@ class CriteriaScopeInteractionTest extends TestCase
         $stub = new CriterionStub;
 
         $repository->pushCriteria($stub);
-        $repository->skipCriteria();
 
-        $repository->query();
+        // skipCriteria() composes a copy, so the query has to be built from it
+        $repository->skipCriteria()->query();
 
         $this->assertFalse($stub->wasApplied());
-        $this->assertSame(0, $stub->applyCount);
+        $this->assertSame(0, $stub->applyCount());
     }
 
     public function testCriterionStubApplyCount(): void
@@ -321,11 +361,11 @@ class CriteriaScopeInteractionTest extends TestCase
 
         // First query
         $repository->query();
-        $this->assertSame(1, $stub->applyCount);
+        $this->assertSame(1, $stub->applyCount());
 
-        // Second query — persistent criteria apply again
+        // Second query - a registered criterion is never consumed
         $repository->query();
-        $this->assertSame(2, $stub->applyCount);
+        $this->assertSame(2, $stub->applyCount());
     }
 }
 ```
@@ -335,5 +375,5 @@ class CriteriaScopeInteractionTest extends TestCase
 | Member                            | Type        | Description                                                                                                                   |
 |-----------------------------------|-------------|-------------------------------------------------------------------------------------------------------------------------------|
 | `__construct(?Closure $callback)` | Constructor | Optional callback receives the Builder and must return a Builder. If omitted, the stub passes the builder through unmodified. |
-| `$applyCount`                     | `int`       | Public counter incremented each time `apply()` is called                                                                      |
+| `applyCount()`                    | `int`       | Number of times `apply()` has been called                                                                                     |
 | `wasApplied()`                    | `bool`      | Returns `true` if `apply()` was called at least once                                                                          |

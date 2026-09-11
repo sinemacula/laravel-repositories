@@ -23,7 +23,8 @@ foundation this package builds on.
 - **Supplementary Capability Contracts**: Opt-in interfaces that criteria can implement to declare eager-loading
   (`DeclaresEagerLoading`), field selection (`DeclaresFieldSelection`), relationship counts
   (`DeclaresRelationshipCounts`), and metadata (`ContributesMetadata`) alongside query modification. The repository
-  collects these declarations at criteria application time and exposes them via dedicated accessors.
+  collects these declarations at criteria application time and exposes them via dedicated accessors on the handle the
+  query ran through.
 - **Immutable Query Composition**: Composing a query returns a copy rather than mutating the repository, so a
   composition abandoned part-way through cannot reach a later, unrelated query. Scopes that must apply to every query
   are registered separately.
@@ -75,12 +76,14 @@ $live->get();                            // the copy carries the scope
 
 This is what makes a half-built query harmless. If a scope method throws after composing, the partial composition is
 garbage rather than state, so nothing reaches the next query made through the repository. Discarding the return value
-therefore discards the composition, and the composition methods are marked pure so static analysis reports a discarded
-result as an error. A consumer scope method that simply forwards to `addScope()` is only covered by that check if it is
-marked `@phpstan-pure` too.
+therefore discards the composition, and `addScope()`, `withCriteria()`, `useCriteria()`, `skipCriteria()`,
+`resetScopes()` and `withoutCache()` are marked pure so static analysis reports a discarded result as an error. A
+consumer scope method that simply forwards to `addScope()` is only covered by that check if it is marked `@phpstan-pure`
+too.
 
 Configuration is the other half, and it does mutate. `pushScope()` and `pushCriteria()` register constraints that apply
-to every query for the life of the instance, which is what `boot()` should use.
+to every query for the life of the instance, which is what `boot()` should use. `pushCriteria()` is public, while
+`pushScope()` is protected, so a registered scope is declared by the repository itself rather than by a caller.
 
 ### Container Lifecycle
 
@@ -144,13 +147,15 @@ cache growth.
 #### Reference mode
 
 For small, static tables read in full (countries, currencies, statuses), set `protected bool $cacheReferenceTable =
-true` to opt into whole-table reference mode: the table is loaded once, cached as a single snapshot, memoised on the
-repository instance, and indexed by primary key, so `get`, `all`, and `find` resolve without touching the database.
-Other read verbs skip the cache entirely in this mode.
+true` to opt into whole-table reference mode: the table is loaded once, cached as a single snapshot, memoised on a
+collaborator every copy of the repository shares, and indexed by primary key, so `get`, `all`, and `find` resolve
+without touching the database. Other read verbs skip the cache entirely in this mode.
 
 The snapshot always represents the unfiltered table, so reference reads only serve requests with no repository-level
 composition pending: when criteria or scopes are active, `get`, `all`, and `find` execute a real (uncached) query so a
-filtered read is never answered with the whole table. Eloquent global scopes (such as soft deletes) are part of the
+filtered read is never answered with the whole table. A scope registered with `pushScope()` counts as active for this
+purpose, because the snapshot is built straight from the model and would otherwise answer a registered constraint with
+unfiltered rows. Eloquent global scopes (such as soft deletes) are part of the
 snapshot query and always apply.
 
 #### Cache configuration

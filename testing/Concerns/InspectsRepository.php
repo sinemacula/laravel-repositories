@@ -16,6 +16,11 @@ use Illuminate\Support\Collection;
  * public wrapper methods for protected properties. See docs/testing.md for
  * usage patterns.
  *
+ * Every observer reads the handle it is called on, and composition returns a
+ * copy, so inspect a composition on the copy the composing call returned:
+ * $repository->addScope($scope)->scopesCount(), never a discarded addScope()
+ * followed by $repository->scopesCount().
+ *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
  *
@@ -50,13 +55,27 @@ trait InspectsRepository
     }
 
     /**
-     * Get the number of scopes registered.
+     * Get the number of scopes composing the next query.
+     *
+     * Scopes registered with pushScope() are not counted: they are
+     * configuration for the life of the instance rather than composition of the
+     * next query.
      *
      * @return int
      */
     public function scopesCount(): int
     {
         return count($this->scopes);
+    }
+
+    /**
+     * Get the number of scopes registered for the life of the instance.
+     *
+     * @return int
+     */
+    public function persistentScopesCount(): int
+    {
+        return count($this->persistentScopes);
     }
 
     /**
@@ -100,10 +119,12 @@ trait InspectsRepository
     }
 
     /**
-     * Determine whether the repository constructor completed successfully.
+     * Determine whether this handle holds a resolved model.
      *
      * Returns true when $model holds a resolved Model instance, which indicates
-     * that makeModel() and boot() both executed.
+     * that makeModel() and boot() both executed. A copy returned by a composing
+     * call starts with no model and reports false until it builds its own
+     * query, so assert this on the instance under test rather than on a copy.
      *
      * @return bool
      */
