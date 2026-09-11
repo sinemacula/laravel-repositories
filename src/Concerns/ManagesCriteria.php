@@ -55,19 +55,25 @@ trait ManagesCriteria
      * call rather than appending to them; pass an array to apply several
      * criteria to the next query.
      *
+     * Returns a copy carrying the criteria; this instance is left untouched, so
+     * a composition abandoned before a query is built cannot reach a later,
+     * unrelated query.
+     *
      * @param  array<int, TCriterion>|TCriterion  $criteria
      * @return static
+     *
+     * @phpstan-pure
      */
     #[\Override]
     public function withCriteria(array|CriteriaInterface $criteria): static
     {
         $criteria = is_array($criteria) ? $criteria : [$criteria];
 
-        $this->transientCriteria = collect($this->sanitizeCriteria($criteria));
+        $composed = $this->useCriteria();
 
-        $this->useCriteria();
+        $composed->transientCriteria = collect($this->sanitizeCriteria($criteria));
 
-        return $this;
+        return $composed;
     }
 
     /**
@@ -77,15 +83,23 @@ trait ManagesCriteria
      * allowing criteria to be applied just for the next query. This does not
      * affect the permanent enabled/disabled state.
      *
+     * Returns a copy carrying the flag; this instance is left untouched. The
+     * one-shot flags compose the next query, so they travel with the copy
+     * rather than surviving on the instance they were set from.
+     *
      * @return static
+     *
+     * @phpstan-pure
      */
     #[\Override]
     public function useCriteria(): static
     {
-        $this->skipCriteria     = false;
-        $this->forceUseCriteria = true;
+        $composed = clone $this;
 
-        return $this;
+        $composed->skipCriteria     = false;
+        $composed->forceUseCriteria = true;
+
+        return $composed;
     }
 
     /**
@@ -185,14 +199,20 @@ trait ManagesCriteria
      * even if `enableCriteria()` has been called. This does not affect the
      * permanent enabled/disabled state.
      *
+     * Returns a copy carrying the flag; this instance is left untouched.
+     *
      * @return static
+     *
+     * @phpstan-pure
      */
     #[\Override]
     public function skipCriteria(): static
     {
-        $this->skipCriteria = true;
+        $composed = clone $this;
 
-        return $this;
+        $composed->skipCriteria = true;
+
+        return $composed;
     }
 
     /**

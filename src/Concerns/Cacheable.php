@@ -105,13 +105,21 @@ trait Cacheable
     /**
      * Bypass the cache for the next read operation.
      *
+     * Returns a copy carrying the bypass; this instance is left untouched. The
+     * bypass composes the next read, so it travels with the copy rather than
+     * surviving on the instance it was requested from.
+     *
      * @return static
+     *
+     * @phpstan-pure
      */
     public function withoutCache(): static
     {
-        $this->bypassCache = true;
+        $composed = clone $this;
 
-        return $this;
+        $composed->bypassCache = true;
+
+        return $composed;
     }
 
     /**

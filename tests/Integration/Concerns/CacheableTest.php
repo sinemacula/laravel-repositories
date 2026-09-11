@@ -564,15 +564,39 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that building a raw query consumes a pending withoutCache(), so the
-     * bypass cannot carry past the call it was requested for and silently
-     * uncache an unrelated later read.
+     * Test that an unconsumed withoutCache() never reaches the instance it was
+     * composed from, so a discarded bypass cannot uncache a later read.
+     *
+     * @return void
+     */
+    public function testDiscardedCacheBypassNeverReachesTheInstance(): void
+    {
+        $this->repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        // Deliberately discarded: the copy carrying the bypass is the thing
+        // under test, so the instance must be left alone.
+        $this->repository->withoutCache(); // @phpstan-ignore method.resultUnused
+
+        DB::enableQueryLog();
+
+        $result = $this->repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        DB::disableQueryLog();
+
+        self::assertCount(2, $result);
+        self::assertCount(0, DB::getQueryLog());
+    }
+
+    /**
+     * Test that a composed withoutCache() stays on the copy that carries it, so
+     * the bypass cannot reach an unrelated later read made through the instance
+     * it was composed from.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testQueryConsumesAPendingCacheBypass(): void
+    public function testComposedCacheBypassLeavesTheInstanceItCameFrom(): void
     {
         $this->repository->get(); // @phpstan-ignore staticMethod.dynamicCall
 
@@ -614,7 +638,7 @@ final class CacheableTest extends IntegrationTestCase
         // skipCriteria() hides the pending criterion from the composition
         // check, so the read takes the snapshot branch and clears the flag
         // before the store failure strands the criterion.
-        $repository->withCriteria(new NamedTagsCriterion('php'))->skipCriteria();
+        $repository = $repository->withCriteria(new NamedTagsCriterion('php'))->skipCriteria();
 
         try {
 
@@ -828,7 +852,7 @@ final class CacheableTest extends IntegrationTestCase
 
         // skipCriteria() is one-shot: once consumed, a criterion pushed
         // afterward must still be applied on the next read.
-        $repository->skipCriteria();
+        $repository = $repository->skipCriteria();
         $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
 
         $repository->pushCriteria(new NamedTagsCriterion('php'));
@@ -840,7 +864,7 @@ final class CacheableTest extends IntegrationTestCase
         // useCriteria() is also one-shot: once consumed, disabled persistent
         // criteria must not be force-applied again on a later, unrelated read.
         $repository->disableCriteria();
-        $repository->useCriteria();
+        $repository = $repository->useCriteria();
 
         $forced = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
 
@@ -902,7 +926,7 @@ final class CacheableTest extends IntegrationTestCase
         $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
 
         $repository->pushCriteria(new NamedTagsCriterion('php'));
-        $repository->skipCriteria();
+        $repository = $repository->skipCriteria();
 
         DB::enableQueryLog();
 
@@ -1026,44 +1050,46 @@ final class CacheableTest extends IntegrationTestCase
      * Provide the criteria-composition precedence branches that determine
      * whether the next query would differ from the unfiltered snapshot.
      *
-     * @return iterable<string, array{0: \Closure(\Tests\Support\Repositories\ReferenceTableTagRepository): void, 1: bool}>
+     * @return iterable<string, array{0: \Closure(\Tests\Support\Repositories\ReferenceTableTagRepository): \Tests\Support\Repositories\ReferenceTableTagRepository, 1: bool}>
      */
     public static function compositionPrecedenceBranchProvider(): iterable
     {
         yield 'skipCriteria one-shot overrides pushed criteria' => [
-            static function (ReferenceTableTagRepository $repository): void {
+            static function (ReferenceTableTagRepository $repository): ReferenceTableTagRepository {
                 $repository->pushCriteria(new NamedTagsCriterion('php'));
-                $repository->skipCriteria();
+
+                return $repository->skipCriteria();
             },
             false,
         ];
 
         yield 'forceUseCriteria one-shot forces disabled persistent criteria' => [
-            static function (ReferenceTableTagRepository $repository): void {
+            static function (ReferenceTableTagRepository $repository): ReferenceTableTagRepository {
                 $repository->pushCriteria(new NamedTagsCriterion('php'));
                 $repository->disableCriteria();
-                $repository->useCriteria();
+
+                return $repository->useCriteria();
             },
             true,
         ];
 
         yield 'transient withCriteria is always applied' => [
-            static function (ReferenceTableTagRepository $repository): void {
-                $repository->withCriteria(new NamedTagsCriterion('php'));
-            },
+            static fn (ReferenceTableTagRepository $repository): ReferenceTableTagRepository => $repository->withCriteria(new NamedTagsCriterion('php')),
             true,
         ];
 
         yield 'pushed persistent criteria applies by default' => [
-            static function (ReferenceTableTagRepository $repository): void {
+            static function (ReferenceTableTagRepository $repository): ReferenceTableTagRepository {
                 $repository->pushCriteria(new NamedTagsCriterion('php'));
+
+                return $repository;
             },
             true,
         ];
 
         yield 'an added scope is always applied' => [
-            static function (ReferenceTableTagRepository $repository): void {
-                $repository->addScope(static function (Builder $query): void {
+            static function (ReferenceTableTagRepository $repository): ReferenceTableTagRepository {
+                return $repository->addScope(static function (Builder $query): void {
                     $query->where('name', 'php');
                 });
             },
@@ -1071,9 +1097,11 @@ final class CacheableTest extends IntegrationTestCase
         ];
 
         yield 'disabled persistent criteria without a force do not apply' => [
-            static function (ReferenceTableTagRepository $repository): void {
+            static function (ReferenceTableTagRepository $repository): ReferenceTableTagRepository {
                 $repository->pushCriteria(new NamedTagsCriterion('php'));
                 $repository->disableCriteria();
+
+                return $repository;
             },
             false,
         ];
@@ -1084,7 +1112,7 @@ final class CacheableTest extends IntegrationTestCase
      * applyCriteria() pipeline for every criteria precedence branch, locking
      * the mirror between Cacheable and ManagesCriteria in place.
      *
-     * @param  \Closure(\Tests\Support\Repositories\ReferenceTableTagRepository): void  $arrange
+     * @param  \Closure(\Tests\Support\Repositories\ReferenceTableTagRepository): \Tests\Support\Repositories\ReferenceTableTagRepository  $arrange
      * @param  bool  $expectedPending
      * @return void
      */
@@ -1097,19 +1125,19 @@ final class CacheableTest extends IntegrationTestCase
 
         $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
 
-        $arrange($repository);
+        $composed = $arrange($repository);
 
         DB::enableQueryLog();
 
-        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+        $composed->get(); // @phpstan-ignore staticMethod.dynamicCall
 
         $referencePending = DB::getQueryLog() !== [];
 
         DB::disableQueryLog();
 
-        $arrange($repository);
+        $composed = $arrange($repository);
 
-        $filtered = $repository->withoutCache()->get(); // @phpstan-ignore staticMethod.dynamicCall
+        $filtered = $composed->withoutCache()->get(); // @phpstan-ignore staticMethod.dynamicCall
 
         $applyCriteriaPending = $filtered->count() !== 2;
 

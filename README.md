@@ -24,7 +24,9 @@ foundation this package builds on.
   (`DeclaresEagerLoading`), field selection (`DeclaresFieldSelection`), relationship counts
   (`DeclaresRelationshipCounts`), and metadata (`ContributesMetadata`) alongside query modification. The repository
   collects these declarations at criteria application time and exposes them via dedicated accessors.
-- **Scoped Query Mutation**: Per-query scope registration for concise query customization without polluting models.
+- **Immutable Query Composition**: Composing a query returns a copy rather than mutating the repository, so a
+  composition abandoned part-way through cannot reach a later, unrelated query. Scopes that must apply to every query
+  are registered separately.
 - **Model-Like Ergonomics**: Explicit query entrypoints (`query()` / `newQuery()`) plus magic forwarding for
   model-style usage such as `Repository::find($id)`.
 - **Opt-In Per-Query Caching**: A transparent caching layer (`Cacheable`) that serves repeated reads from a
@@ -60,10 +62,30 @@ $users = $userRepository->query()->where('active', true)->get();
 $user = UserRepository::find($id);
 ```
 
+### Composition Returns a Copy
+
+Composing a query never mutates the repository. `addScope()`, `withCriteria()`, `useCriteria()`, `skipCriteria()`,
+`resetScopes()` and `withoutCache()` each return a copy carrying the composition, so the returned value is the only
+thing that has it:
+
+```php
+$live = $credentials->scopeLive();       // $credentials is unchanged
+$live->get();                            // the copy carries the scope
+```
+
+This is what makes a half-built query harmless. If a scope method throws after composing, the partial composition is
+garbage rather than state, so nothing reaches the next query made through the repository. Discarding the return value
+therefore discards the composition, and the composition methods are marked pure so static analysis reports a discarded
+result as an error. A consumer scope method that simply forwards to `addScope()` is only covered by that check if it is
+marked `@phpstan-pure` too.
+
+Configuration is the other half, and it does mutate. `pushScope()` and `pushCriteria()` register constraints that apply
+to every query for the life of the instance, which is what `boot()` should use.
+
 ### Container Lifecycle
 
-Repositories carry transient criteria and scope state while a query pipeline is being built. Register repositories as
-transient or scoped bindings (`bind` or `scoped`) rather than `singleton` to avoid state leakage across requests.
+A repository instance carries its registered configuration, so bind repositories as transient or scoped bindings
+(`bind` or `scoped`) rather than `singleton` when that configuration is request-specific.
 
 ### Caching
 

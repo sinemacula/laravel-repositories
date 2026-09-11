@@ -39,7 +39,7 @@ trait ResetsTransientState
     protected function resetAfterFailure(): void
     {
         $this->resetCriteriaState();
-        $this->resetScopes();
+        $this->clearComposingScopes();
 
         try {
             $this->resetModel();

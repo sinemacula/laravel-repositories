@@ -49,8 +49,8 @@ final class TestUserRepository extends Repository
      * Register a name scope and then abort.
      *
      * Mimics a repository method that fails after it has already composed part
-     * of the next query, which is the one shape the package cannot clean up for
-     * the caller because query() is never entered.
+     * of the next query. The composed copy is abandoned, so nothing reaches the
+     * instance the caller holds.
      *
      * @param  string  $name
      * @return self
@@ -59,11 +59,14 @@ final class TestUserRepository extends Repository
      */
     public function scopeByNameThenAbort(string $name): self
     {
-        $this->addScope(static function (Builder $query) use ($name): void {
+        $composed = $this->addScope(static function (Builder $query) use ($name): void {
             $query->where('name', $name);
         });
 
-        throw new CompositionFailure(self::ABORT_MESSAGE);
+        // The copy really did compose; the exception carries how many scopes it
+        // holds so a test can prove the abandoned work existed and still never
+        // reached the instance the caller holds.
+        throw new CompositionFailure(self::ABORT_MESSAGE, $composed->scopesCount());
     }
 
     /**

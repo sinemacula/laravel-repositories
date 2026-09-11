@@ -141,7 +141,7 @@ final class SupplementaryCapabilityTest extends IntegrationTestCase
     {
         $repository = $this->repository();
         $repository->pushCriteria(new EagerLoadingCriterion);
-        $repository->withCriteria(new EagerLoadingCriterion);
+        $repository = $repository->withCriteria(new EagerLoadingCriterion);
 
         $repository->query();
 
@@ -190,7 +190,7 @@ final class SupplementaryCapabilityTest extends IntegrationTestCase
     {
         $repository = $this->repository();
         $repository->pushCriteria(new EagerLoadingCriterion);
-        $repository->skipCriteria();
+        $repository = $repository->skipCriteria();
 
         $repository->query();
 
@@ -241,7 +241,7 @@ final class SupplementaryCapabilityTest extends IntegrationTestCase
 
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository->withCriteria(new NamedUsersCriterion('Alice'));
+        $repository = $repository->withCriteria(new NamedUsersCriterion('Alice'));
 
         $users = $repository->query()->get();
 

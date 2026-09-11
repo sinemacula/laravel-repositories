@@ -83,10 +83,27 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
         $this->persistentCriteria = new Collection;
         $this->transientCriteria  = new Collection;
         $this->resetCriteria();
-        $this->resetScopes();
         $this->makeModel();
         $this->boot();
         $this->bootConcerns();
+    }
+
+    /**
+     * Isolate a composed copy from the instance it was composed from.
+     *
+     * The in-flight builder is dropped so the copy builds its own from a fresh
+     * model, and the criteria collections are copied so composing on one handle
+     * cannot reach the other. The cache collaborators are deliberately shared:
+     * they represent one table's cache, and a flush through either handle has
+     * to be visible to both.
+     *
+     * @return void
+     */
+    public function __clone(): void
+    {
+        $this->model              = null;
+        $this->persistentCriteria = clone $this->persistentCriteria;
+        $this->transientCriteria  = clone $this->transientCriteria;
     }
 
     /**
@@ -215,7 +232,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
             $query = $this->prepareQueryBuilder();
 
             $this->resetTransientCriteria();
-            $this->resetScopes();
+            $this->clearComposingScopes();
             $this->resetModel();
 
             return $query;
@@ -373,7 +390,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     protected function resetAndReturn(mixed $queryResult): mixed
     {
         $this->resetTransientCriteria();
-        $this->resetScopes();
+        $this->clearComposingScopes();
         $this->resetModel();
 
         return $queryResult;

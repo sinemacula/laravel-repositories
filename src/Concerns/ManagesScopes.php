@@ -34,34 +34,45 @@ trait ManagesScopes
     /**
      * Add a scope composing the next query.
      *
-     * The scope is consumed by the next query built from this repository. Use
+     * Returns a copy carrying the scope; this instance is left untouched. A
+     * composition abandoned before a query is built is therefore garbage rather
+     * than state, so it cannot reach a later, unrelated query. The copy is the
+     * only thing carrying the scope, so discarding it discards the scope. Use
      * pushScope() for a scope that must apply to every query.
      *
      * @param  \Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void  $scope
      * @return static
+     *
+     * @phpstan-pure
+     * @phpstan-pure
      */
     #[\Override]
     public function addScope(\Closure $scope): static
     {
-        $this->scopes[] = $scope;
+        $composed = clone $this;
 
-        return $this;
+        $composed->scopes[] = $scope;
+
+        return $composed;
     }
 
     /**
-     * Reset the scopes composing the next query.
+     * Drop the scopes composing the next query.
      *
+     * Returns a copy with no composing scopes; this instance is left untouched.
      * Scopes registered with pushScope() are configuration rather than
-     * composition, so they are deliberately left in place.
+     * composition, so they are deliberately kept.
      *
      * @return static
      */
     #[\Override]
     public function resetScopes(): static
     {
-        $this->scopes = [];
+        $composed = clone $this;
 
-        return $this;
+        $composed->clearComposingScopes();
+
+        return $composed;
     }
 
     /**
@@ -109,5 +120,21 @@ trait ManagesScopes
         }
 
         return $this;
+    }
+
+    /**
+     * Clear the scopes composing the next query in place.
+     *
+     * The query pipeline consumes its own composition rather than handing a
+     * copy anywhere, so the lifecycle needs an in-place clear; resetScopes() is
+     * the copying API a caller gets.
+     *
+     * @return void
+     *
+     * @internal lifecycle step. Use resetScopes() to drop composing scopes.
+     */
+    private function clearComposingScopes(): void
+    {
+        $this->scopes = [];
     }
 }

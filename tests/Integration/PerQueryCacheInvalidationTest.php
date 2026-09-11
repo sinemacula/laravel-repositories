@@ -279,7 +279,7 @@ final class PerQueryCacheInvalidationTest extends IntegrationTestCase
     {
         $repository = $this->makeRepository(CacheableTagRepository::class);
 
-        $repository->withoutCache();
+        $repository = $repository->withoutCache();
         $repository->create(['name' => 'vue']); // @phpstan-ignore staticMethod.dynamicCall
 
         $repository->get(); // @phpstan-ignore staticMethod.dynamicCall

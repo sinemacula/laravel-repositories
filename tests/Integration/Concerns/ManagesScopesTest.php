@@ -106,19 +106,39 @@ final class ManagesScopesTest extends IntegrationTestCase
     }
 
     /**
-     * Abandonment site 1: the throw is in a consumer's own scope method, before
-     * any query entry point is reached.
-     *
-     * query() is never entered, so its guard cannot see the failure and the
-     * composed scopes stay registered on the instance. Both of them: the method
-     * that throws registers its own scope before failing. The next query
-     * consumes and clears them, so the blast radius is that one query.
+     * Verify resetScopes() returns a copy without the composing scopes and
+     * leaves the handle it was called on carrying its own.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testScopeAbandonedInAConsumerMethodOutlivesTheCallButNotTheNextQuery(): void
+    public function testResetScopesReturnsACopyWithoutTheComposingScopes(): void
+    {
+        $composed = $this->scopedRepository()
+            ->scopeActive()
+            ->addScope(static function (BuilderContract $query): void {
+                $query->where('name', 'Alice');
+            });
+
+        self::assertSame(2, $composed->scopesCount());
+        self::assertSame(0, $composed->resetScopes()->scopesCount());
+        self::assertSame(2, $composed->scopesCount());
+    }
+
+    /**
+     * Abandonment site 1: the throw is in a consumer's own scope method, before
+     * any query entry point is reached.
+     *
+     * query() is never entered, so no guard can see the failure. Nothing needs
+     * to: composition returns a copy, so the two scopes the aborted chain built
+     * live only on copies the failed statement discards.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testScopeAbandonedInAConsumerMethodNeverReachesTheInstance(): void
     {
         $this->seedUsers();
 
@@ -130,17 +150,16 @@ final class ManagesScopesTest extends IntegrationTestCase
             self::fail('Expected the aborted scope method to throw.');
         } catch (CompositionFailure $exception) {
             self::assertSame('Scope composition aborted.', $exception->getMessage());
+            self::assertSame(2, $exception->getCode());
         }
 
-        self::assertSame(2, $repository->scopesCount());
-
-        $leaked = $repository->query()->toSql();
-
-        self::assertStringContainsString(self::COMPOSED_COLUMN, $leaked);
-        self::assertStringContainsString('"name"', $leaked);
-
         self::assertSame(0, $repository->scopesCount());
-        self::assertStringNotContainsString(self::COMPOSED_COLUMN, $repository->query()->toSql());
+
+        $sql = $repository->query()->toSql();
+
+        self::assertStringNotContainsString(self::COMPOSED_COLUMN, $sql);
+        self::assertStringNotContainsString('where', $sql);
+        self::assertStringContainsString(self::REGISTERED_ORDER, $sql);
     }
 
     /**
@@ -157,7 +176,7 @@ final class ManagesScopesTest extends IntegrationTestCase
 
         $repository = $this->scopedRepository();
 
-        $repository
+        $composed = $repository
             ->scopeActive()
             ->addScope(static function (BuilderContract $query): void {
 
@@ -168,12 +187,15 @@ final class ManagesScopesTest extends IntegrationTestCase
 
         try {
 
-            $repository->query();
+            $composed->query();
             self::fail('Expected the failing scope closure to propagate.');
         } catch (CompositionFailure $exception) {
             self::assertSame('Scope closure failed.', $exception->getMessage());
         }
 
+        // The guard cleans the copy, so even a caller who kept it composes
+        // cleanly next time, and the instance it came from never held anything.
+        self::assertSame(0, $composed->scopesCount());
         self::assertSame(0, $repository->scopesCount());
         self::assertStringNotContainsString(self::COMPOSED_COLUMN, $repository->query()->toSql());
     }
@@ -192,21 +214,23 @@ final class ManagesScopesTest extends IntegrationTestCase
 
         $repository = $this->scopedRepository();
 
-        $repository->scopeActive()->withCriteria(new FailingUsersCriterion);
+        $composed = $repository->scopeActive()->withCriteria(new FailingUsersCriterion);
 
-        self::assertSame(1, $repository->scopesCount());
-        self::assertSame(1, $repository->transientCriteriaCount());
+        self::assertSame(1, $composed->scopesCount());
+        self::assertSame(1, $composed->transientCriteriaCount());
+        self::assertSame(0, $repository->scopesCount());
+        self::assertSame(0, $repository->transientCriteriaCount());
 
         try {
 
-            $repository->query();
+            $composed->query();
             self::fail('Expected the failing criterion to propagate.');
         } catch (CompositionFailure $exception) {
             self::assertSame(FailingUsersCriterion::MESSAGE, $exception->getMessage());
         }
 
-        self::assertSame(0, $repository->scopesCount());
-        self::assertSame(0, $repository->transientCriteriaCount());
+        self::assertSame(0, $composed->scopesCount());
+        self::assertSame(0, $composed->transientCriteriaCount());
         self::assertStringNotContainsString(self::COMPOSED_COLUMN, $repository->query()->toSql());
     }
 
@@ -220,11 +244,11 @@ final class ManagesScopesTest extends IntegrationTestCase
      */
     public function testApplyScopesIsCallableFromASubclassDrivingItsOwnComposition(): void
     {
-        $repository = $this->scopedRepository();
+        $repository = $this->scopedRepository()->scopeActive();
 
         $repository->forceModel($repository->getModel()->newQuery());
 
-        $sql = $repository->scopeActive()->composeInPlace()->toSql();
+        $sql = $repository->composeInPlace()->toSql();
 
         self::assertStringContainsString(self::COMPOSED_COLUMN, $sql);
         self::assertStringContainsString(self::REGISTERED_ORDER, $sql);

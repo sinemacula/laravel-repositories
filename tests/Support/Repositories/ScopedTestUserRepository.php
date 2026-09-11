@@ -52,8 +52,8 @@ final class ScopedTestUserRepository extends Repository
     /**
      * Compose the next query down to a name, then abort.
      *
-     * Mirrors a consumer scope method that derives something after registering
-     * its scope and fails doing so.
+     * Mirrors a consumer scope method that derives something after composing
+     * and fails doing so. The composed copy is abandoned.
      *
      * @param  string  $name
      * @return self
@@ -62,11 +62,14 @@ final class ScopedTestUserRepository extends Repository
      */
     public function scopeByNameThenAbort(string $name): self
     {
-        $this->addScope(static function (Builder $query) use ($name): void {
+        $composed = $this->addScope(static function (Builder $query) use ($name): void {
             $query->where('name', $name);
         });
 
-        throw new CompositionFailure('Scope composition aborted.');
+        // The copy really did compose; the exception carries how many scopes it
+        // holds so a test can prove the abandoned work existed and still never
+        // reached the instance the caller holds.
+        throw new CompositionFailure('Scope composition aborted.', $composed->scopesCount());
     }
 
     /**

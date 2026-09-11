@@ -31,8 +31,8 @@ subclass-specific state during repository construction.
   - `$model` holds a resolved Model instance (via `makeModel()`).
   - `$app` holds the Application instance.
 - It is safe to call `pushCriteria()`, `pushScope()`, and `getModel()` during `boot()`.
-- Register scopes with `pushScope()`, not `addScope()`. `addScope()` composes the next query only, so the first
-  query the instance builds consumes it and no later query carries it.
+- Register scopes with `pushScope()`, not `addScope()`. `addScope()` returns a copy carrying the scope, and `boot()`
+  has no way to return a replacement instance, so a scope added there would be discarded with the copy.
 
 **Example:**
 
@@ -53,8 +53,9 @@ protected function boot(): void
 **Contract:** A registered scope is never consumed. It survives every query and every `resetScopes()`, and is applied
 before the scopes composing the current query, so a per-query scope can still override an ordering or limit it set.
 
-**Contrast with `addScope()`:** `addScope()` composes the next query only. The first query built from the repository
-applies it and then discards it, which is why a scope added during `boot()` reaches only that first query.
+**Contrast with `addScope()`:** `addScope()` composes the next query only, and returns a copy rather than mutating the
+repository. That is what makes an abandoned composition harmless, and it is why `addScope()` cannot be used from
+`boot()`, which discards whatever it returns.
 
 ```php
 protected function boot(): void
@@ -187,7 +188,8 @@ after each query.
 
 **Purpose:** Stores registered query scopes (closures) that are applied during query composition.
 
-**Why Internal:** Managed through `addScope()` and `resetScopes()`. Direct array manipulation bypasses the public API.
+**Why Internal:** Managed through `addScope()` and `resetScopes()`, both of which return a copy rather than mutating
+the instance. Direct array manipulation bypasses the public API.
 
 ### $persistentScopes — Internal
 
@@ -260,7 +262,7 @@ begins:
 | 2    | `$persistentCriteria = new Collection`  | Empty persistent criteria collection exists                                                                                              |
 | 3    | `$transientCriteria = new Collection`   | Empty transient criteria collection exists                                                                                               |
 | 4    | `resetCriteria()`                       | Both criteria collections cleared; flags at declared defaults (`disableCriteria=false`, `skipCriteria=false`, `forceUseCriteria=false`)  |
-| 5    | `resetScopes()`                         | `$scopes` is an empty array, as is `$persistentScopes`                                                                                   |
+| 5    | (scope defaults)                        | `$scopes` is an empty array, as is `$persistentScopes`                                                                                   |
 | 6    | `makeModel()`                           | `$model` holds a resolved Model instance; RepositoryException thrown if model class is invalid                                           |
 | 7    | `boot()`                                | Subclass initialization hook. All state from steps 1-6 is available.                                                                     |
 

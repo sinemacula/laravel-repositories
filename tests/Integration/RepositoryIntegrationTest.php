@@ -98,19 +98,18 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
      */
     public function testQueryAndNewQueryReturnBuildersAndResetTransientState(): void
     {
-        $repository = $this->repository();
-        $repository
+        $composed = $this->repository()
             ->withCriteria([new ActiveUsersCriterion, 'invalid'])
             ->addScope(static function (BuilderContract $query): void {
                 $query->where('id', '>', 0);
             });
 
-        $query = $repository->query();
+        $query = $composed->query();
 
         self::assertInstanceOf(BuilderContract::class, $query);
-        self::assertSame(0, $repository->transientCriteriaCount());
-        self::assertSame(0, $repository->scopesCount());
-        self::assertInstanceOf(BuilderContract::class, $repository->newQuery());
+        self::assertSame(0, $composed->transientCriteriaCount());
+        self::assertSame(0, $composed->scopesCount());
+        self::assertInstanceOf(BuilderContract::class, $composed->newQuery());
     }
 
     /**
@@ -181,11 +180,12 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
 
         $repository = $this->repository();
         $repository->forceModel(null);
-        $repository->addScope(static function (BuilderContract $query): void {
-            $query->where('active', true);
-        });
 
-        $query = $repository->query();
+        $query = $repository
+            ->addScope(static function (BuilderContract $query): void {
+                $query->where('active', true);
+            })
+            ->query();
 
         self::assertInstanceOf(BuilderContract::class, $query);
         self::assertCount(2, $query->get());
@@ -196,23 +196,22 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
      *
      * @return void
      *
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     * @throws \Throwable
      */
     public function testResetAndReturnClearsTransientState(): void
     {
-        $repository = $this->repository();
-        $repository
+        $composed = $this->repository()
             ->withCriteria([new ActiveUsersCriterion, 'invalid'])
             ->addScope(static function (BuilderContract $query): void {
                 $query->where('id', '>', 0);
             });
 
-        $result = $repository->invokeResetAndReturn('result');
+        $result = $composed->invokeResetAndReturn('result');
 
         self::assertSame('result', $result);
-        self::assertSame(0, $repository->transientCriteriaCount());
-        self::assertSame(0, $repository->scopesCount());
-        self::assertInstanceOf(TestUser::class, $repository->getModel());
+        self::assertSame(0, $composed->transientCriteriaCount());
+        self::assertSame(0, $composed->scopesCount());
+        self::assertInstanceOf(TestUser::class, $composed->getModel());
     }
 
     /**
@@ -239,21 +238,21 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
      *
      * @return void
      */
-    public function testResetScopesClearsAllRegisteredScopes(): void
+    public function testResetScopesReturnsACopyWithoutTheComposingScopes(): void
     {
-        $repository = $this->repository();
-        $repository->addScope(static function (BuilderContract $query): void {
-            $query->where('active', true);
-        });
-        $repository->addScope(static function (BuilderContract $query): void {
-            $query->where('name', 'Alice');
-        });
+        $composed = $this->repository()
+            ->addScope(static function (BuilderContract $query): void {
+                $query->where('active', true);
+            })
+            ->addScope(static function (BuilderContract $query): void {
+                $query->where('name', 'Alice');
+            });
 
-        self::assertSame(2, $repository->scopesCount());
+        self::assertSame(2, $composed->scopesCount());
+        self::assertSame(0, $composed->resetScopes()->scopesCount());
 
-        $repository->resetScopes();
-
-        self::assertSame(0, $repository->scopesCount());
+        // The copy it was called on keeps its own composition.
+        self::assertSame(2, $composed->scopesCount());
     }
 
     /**
@@ -347,7 +346,7 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
 
         $repository = $this->repository();
 
-        $repository
+        $composed = $repository
             ->withCriteria(new NamedUsersCriterion('Bob'))
             ->addScope(static function (BuilderContract $query): void {
                 $query->where('active', false);
@@ -361,19 +360,19 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
 
         try {
 
-            $repository->query();
+            $composed->query();
             self::fail('Expected the failing scope to propagate out of query().');
         } catch (CompositionFailure $exception) {
             self::assertSame(self::SCOPE_FAILURE, $exception->getMessage());
         }
 
-        self::assertSame(0, $repository->scopesCount());
-        self::assertSame(0, $repository->transientCriteriaCount());
-        self::assertFalse($repository->isCriteriaSkipped());
-        self::assertFalse($repository->isForceUsingCriteria());
-        self::assertInstanceOf(TestUser::class, $repository->currentModel());
+        self::assertSame(0, $composed->scopesCount());
+        self::assertSame(0, $composed->transientCriteriaCount());
+        self::assertFalse($composed->isCriteriaSkipped());
+        self::assertFalse($composed->isForceUsingCriteria());
+        self::assertInstanceOf(TestUser::class, $composed->currentModel());
 
-        self::assertCount(3, $repository->query()->get());
+        self::assertCount(3, $composed->query()->get());
     }
 
     /**
@@ -403,7 +402,7 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
             return new TestUser;
         });
 
-        $repository->addScope(static function (BuilderContract $query): void {
+        $composed = $repository->addScope(static function (BuilderContract $query): void {
 
             $query->where('name', 'Bob');
 
@@ -418,47 +417,14 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
 
         try {
 
-            $repository->query();
+            $composed->query();
             self::fail('Expected the failing scope to propagate out of query().');
         } catch (CompositionFailure $exception) {
             self::assertSame(self::SCOPE_FAILURE, $exception->getMessage());
         }
 
-        self::assertNull($repository->currentModel());
-        self::assertSame(0, $repository->scopesCount());
-    }
-
-    /**
-     * Test that a scope registered by a composition step which then aborts is
-     * consumed by the next query rather than outliving it.
-     *
-     * query() is never entered here, so the scope stays registered on the
-     * instance exactly as a scope registered during boot() does; resetScopes()
-     * is the caller's remedy for discarding it sooner.
-     *
-     * @return void
-     *
-     * @throws \Throwable
-     */
-    public function testScopeFromAnAbortedCompositionStepIsConsumedByTheNextQuery(): void
-    {
-        $this->seedUsers();
-
-        $repository = $this->repository();
-
-        try {
-
-            $repository->scopeByNameThenAbort('Bob');
-            self::fail('Expected the aborted scope method to throw.');
-        } catch (CompositionFailure $exception) {
-            self::assertSame(TestUserRepository::ABORT_MESSAGE, $exception->getMessage());
-        }
-
-        self::assertSame(1, $repository->scopesCount());
-        self::assertCount(1, $repository->query()->get());
-
-        self::assertSame(0, $repository->scopesCount());
-        self::assertCount(3, $repository->query()->get());
+        self::assertNull($composed->currentModel());
+        self::assertSame(0, $composed->scopesCount());
     }
 
     /**
@@ -473,10 +439,9 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
     {
         $this->seedUsers();
 
-        $repository = $this->repository();
-        $repository->withCriteria(new ActiveUsersCriterion);
-
-        $users = $repository->all();
+        $users = $this->repository()
+            ->withCriteria(new ActiveUsersCriterion)
+            ->all();
 
         self::assertCount(2, $users);
     }
