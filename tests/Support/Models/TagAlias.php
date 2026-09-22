@@ -20,6 +20,6 @@ final class TagAlias extends Model
     /** @var string|null The backing table for tags */
     protected $table = 'tags';
 
-    /** @var array<int, string> The fillable attributes */
+    /** @var list<string> The fillable attributes */
     protected $fillable = ['name'];
 }

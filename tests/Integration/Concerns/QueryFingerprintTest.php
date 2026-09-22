@@ -154,7 +154,7 @@ final class QueryFingerprintTest extends IntegrationTestCase
         ];
 
         yield 'eager load presence' => [
-            fn (): string => QueryFingerprint::for(Tag::query()->with('posts'), 'get'),
+            fn (): string => QueryFingerprint::for(Tag::query()->with('children'), 'get'),
             fn (): string => QueryFingerprint::for(Tag::query(), 'get'),
         ];
 
@@ -248,8 +248,8 @@ final class QueryFingerprintTest extends IntegrationTestCase
         ];
 
         yield 'eager load registration order does not affect the fingerprint' => [
-            fn (): string => QueryFingerprint::for(Tag::query()->with(['posts', 'articles']), 'get'),
-            fn (): string => QueryFingerprint::for(Tag::query()->with(['articles', 'posts']), 'get'),
+            fn (): string => QueryFingerprint::for(Tag::query()->with(['children', 'aliases']), 'get'),
+            fn (): string => QueryFingerprint::for(Tag::query()->with(['aliases', 'children']), 'get'),
         ];
 
         yield 'unconstrained eager loads fingerprint stably' => [

@@ -41,9 +41,9 @@ final class CacheableTagRepository extends Repository
      * Scope the next query to the given primary key.
      *
      * @param  int|string|null  $id
-     * @return static
+     * @return self
      */
-    public function scopeById(int|string|null $id): static
+    public function scopeById(int|string|null $id): self
     {
         return $this->addScope(static function (Builder $query) use ($id): void {
             $query->where('id', $id);
