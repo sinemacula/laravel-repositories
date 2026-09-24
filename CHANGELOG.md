@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [3.1.0](https://github.com/sinemacula/laravel-repositories/compare/v3.0.0...v3.1.0) (2026-09-22)
+
+
+### Features
+
+* compose queries into a copy instead of mutating the repository ([#75](https://github.com/sinemacula/laravel-repositories/issues/75)) ([e32ce4f](https://github.com/sinemacula/laravel-repositories/commit/e32ce4f7dc567d1d363e4a3d62d0137ed46624f9))
+
+
+### Bug Fixes
+
+* **cache:** close the version-bump and cache-bypass state leaks ([#74](https://github.com/sinemacula/laravel-repositories/issues/74)) ([358af08](https://github.com/sinemacula/laravel-repositories/commit/358af0842288ed714549bb09a66de3132833f89c))
+* keep a registered scope off the whole-table snapshot ([#76](https://github.com/sinemacula/laravel-repositories/issues/76)) ([7c1e316](https://github.com/sinemacula/laravel-repositories/commit/7c1e3169142cc63cc87f5d82dd6c09985e6d5294))
+* reset composition state when a query fails to build ([#72](https://github.com/sinemacula/laravel-repositories/issues/72)) ([df8f7c7](https://github.com/sinemacula/laravel-repositories/commit/df8f7c7a168abf6d178982d2eb9f0ba0e063367c))
+
 ## [3.0.0](https://github.com/sinemacula/laravel-repositories/compare/v2.2.0...v3.0.0) (2026-07-22)
 
 
