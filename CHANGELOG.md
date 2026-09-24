@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [3.2.0](https://github.com/sinemacula/laravel-repositories/compare/v3.1.0...v3.2.0) (2026-09-24)
+
+
+### Features
+
+* declare a repository's model with an attribute ([#87](https://github.com/sinemacula/laravel-repositories/issues/87)) ([a573f7f](https://github.com/sinemacula/laravel-repositories/commit/a573f7fa806814aed657aecb86237100936003d0))
+
 ## [3.1.0](https://github.com/sinemacula/laravel-repositories/compare/v3.0.0...v3.1.0) (2026-09-22)
 
 
