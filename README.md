@@ -53,6 +53,26 @@ php artisan vendor:publish --provider="SineMacula\Repositories\RepositoryService
 Every option lives under `repositories.cache.*` and only affects repositories that opt into caching via the
 `Cacheable` trait.
 
+## Declaring the model
+
+A repository names the model it targets, either with an attribute or by implementing `model()`:
+
+```php
+use SineMacula\Repositories\Attributes\Model;
+use SineMacula\Repositories\Repository;
+
+/** @extends \SineMacula\Repositories\Repository<\App\Models\User> */
+#[Model(User::class)]
+final class UserRepository extends Repository {}
+```
+
+The attribute is looked for on the repository and then on each of its ancestors, so an abstract base can declare
+the model a family of repositories shares. Implementing `model()` replaces the lookup, so the two can never
+disagree, and a repository that does neither fails when it is constructed rather than when it is first queried.
+
+The `@extends` annotation is still worth writing. It is what tells static analysis which model the repository
+returns; the attribute is read at runtime and cannot narrow the generic.
+
 ## Usage
 
 ```php
@@ -99,17 +119,14 @@ bindings, the read verb, its arguments, and the registered eager loads, a filter
 the full-table collection.
 
 ```php
+use SineMacula\Repositories\Attributes\Model;
 use SineMacula\Repositories\Concerns\Cacheable;
 use SineMacula\Repositories\Repository;
 
+#[Model(User::class)]
 final class UserRepository extends Repository
 {
     use Cacheable;
-
-    public function model(): string
-    {
-        return User::class;
-    }
 }
 
 $users = $repository->get();                 // First read: one query, result cached

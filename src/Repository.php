@@ -9,6 +9,7 @@ use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
+use SineMacula\Repositories\Attributes\Model as ModelAttribute;
 use SineMacula\Repositories\Concerns\BootsConcerns;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
 use SineMacula\Repositories\Concerns\ManagesScopes;
@@ -72,6 +73,9 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
 
     /** @var array<string, mixed> Metadata from applied criteria. */
     protected array $collectedMetadata = [];
+
+    /** @var class-string<TModel>|null The model class read from the attribute. */
+    private ?string $declaredModel = null;
 
     /**
      * Resolve the target model and initialize criteria state.
@@ -203,10 +207,19 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     /**
      * Return the model class.
      *
+     * Defaults to the class named by the Model attribute, looked for on this
+     * repository and then on each of its ancestors. Overriding this method
+     * replaces the lookup, so an override and an attribute cannot disagree.
+     *
      * @return class-string<TModel>
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     #[\Override]
-    abstract public function model(): string;
+    public function model(): string
+    {
+        return $this->declaredModel ??= $this->resolveDeclaredModel();
+    }
 
     /**
      * Alias for query().
@@ -402,5 +415,36 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
         $this->resetModel();
 
         return $queryResult;
+    }
+
+    /**
+     * Resolve the model class named by the Model attribute.
+     *
+     * Class attributes are not inherited, so the hierarchy is walked from this
+     * repository upwards and the nearest declaration wins, which is how an
+     * inherited model() override already behaves.
+     *
+     * A declaration carrying no arguments is skipped rather than read: a
+     * generated double copies the attributes of the class it stands in for by
+     * name alone, and reading that copy would resolve nothing.
+     *
+     * @return class-string<TModel>
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     */
+    private function resolveDeclaredModel(): string
+    {
+        for ($class = static::class; $class !== false; $class = get_parent_class($class)) {
+
+            foreach ((new \ReflectionClass($class))->getAttributes(ModelAttribute::class) as $attribute) {
+
+                if ($attribute->getArguments() !== []) {
+                    // @phpstan-ignore return.type (reflection yields a runtime class name, the template is erased)
+                    return $attribute->newInstance()->model;
+                }
+            }
+        }
+
+        throw new RepositoryException(sprintf('Repository `%s` must declare its model with the `%s` attribute or by overriding model().', static::class, ModelAttribute::class));
     }
 }

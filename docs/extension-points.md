@@ -68,6 +68,26 @@ protected function boot(): void
 }
 ```
 
+### model() - Stable
+
+**Purpose:** Names the Eloquent model the repository targets.
+
+**Signature:** `public function model(): string`
+
+**Contract:** The default implementation returns the class named by the `Model` attribute, looked for on the
+repository and then on each of its ancestors, and throws a `RepositoryException` when neither the attribute nor an
+override is present. Overriding the method replaces the lookup entirely, so the two cannot disagree.
+
+```php
+use SineMacula\Repositories\Attributes\Model;
+
+#[Model(User::class)]
+final class UserRepository extends Repository {}
+```
+
+A declaration carrying no arguments is walked past rather than read, because a generated test double copies the
+attributes of the class it stands in for by name alone.
+
 ### prepareQueryBuilder() - Internal
 
 **Purpose:** Orchestrates criteria and scope application, then ensures `$model` is a Builder. Called internally by
