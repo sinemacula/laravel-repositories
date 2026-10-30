@@ -3,11 +3,14 @@
 <div align="center">
 
 [![Latest Stable Version](https://img.shields.io/packagist/v/sinemacula/laravel-repositories.svg)](https://packagist.org/packages/sinemacula/laravel-repositories)
+[![PHP Version](https://img.shields.io/packagist/dependency-v/sinemacula/laravel-repositories/php.svg)](https://packagist.org/packages/sinemacula/laravel-repositories)
+[![Laravel Version](https://img.shields.io/packagist/dependency-v/sinemacula/laravel-repositories/laravel/framework.svg?label=laravel)](https://packagist.org/packages/sinemacula/laravel-repositories)
 [![Build Status](https://github.com/sinemacula/laravel-repositories/actions/workflows/tests.yml/badge.svg?branch=master)](https://github.com/sinemacula/laravel-repositories/actions/workflows/tests.yml)
 [![Quality Gates](https://github.com/sinemacula/laravel-repositories/actions/workflows/quality-gates.yml/badge.svg?branch=master)](https://github.com/sinemacula/laravel-repositories/actions/workflows/quality-gates.yml)
 [![Maintainability](https://qlty.sh/gh/sinemacula/projects/laravel-repositories/maintainability.svg)](https://qlty.sh/gh/sinemacula/projects/laravel-repositories)
 [![Code Coverage](https://qlty.sh/gh/sinemacula/projects/laravel-repositories/coverage.svg)](https://qlty.sh/gh/sinemacula/projects/laravel-repositories)
 [![Total Downloads](https://img.shields.io/packagist/dt/sinemacula/laravel-repositories.svg)](https://packagist.org/packages/sinemacula/laravel-repositories)
+[![License](https://img.shields.io/github/license/sinemacula/laravel-repositories.svg)](LICENSE)
 
 </div>
 
