@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [3.2.1](https://github.com/sinemacula/laravel-repositories/compare/v3.2.0...v3.2.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* cache repository results without serialized objects ([#103](https://github.com/sinemacula/laravel-repositories/issues/103)) ([baf52fd](https://github.com/sinemacula/laravel-repositories/commit/baf52fdf12174c77d9f3eb9ce93a73ef8167f651))
+* silence the purity errors on copy-on-write composition ([#104](https://github.com/sinemacula/laravel-repositories/issues/104)) ([2f8277f](https://github.com/sinemacula/laravel-repositories/commit/2f8277fec2732884344190f848c021af3fb0e6cd))
+
 ## [3.2.0](https://github.com/sinemacula/laravel-repositories/compare/v3.1.0...v3.2.0) (2026-09-24)
 
 
