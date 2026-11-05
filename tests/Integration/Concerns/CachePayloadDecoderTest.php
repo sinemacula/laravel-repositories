@@ -271,6 +271,7 @@ final class CachePayloadDecoderTest extends IntegrationTestCase
         self::assertInstanceOf(Pivot::class, CachePayloadDecoder::decode(self::pivotPayload(Pivot::class, [])));
         self::assertInstanceOf(MorphPivot::class, $morph);
         self::assertSame('type', $morph->getMorphType());
+        self::assertInstanceOf(Pivot::class, CachePayloadDecoder::decode(self::pivotPayload(Pivot::class, ['morphType' => 'type', 'morphClass' => Author::class])));
         self::assertSame(1, CachePayloadDecoder::decode(self::payload(['type' => 'array', 'items' => [1]]))[0] ?? null);
     }
 

@@ -295,7 +295,7 @@ final class CachePayloadDecoder
         try {
             return new $class(self::string($node, 'time'), new \DateTimeZone(self::string($node, 'timezone')));
         } catch (\Exception $exception) {
-            throw new \UnexpectedValueException('A stored date cannot be read', 0, $exception);
+            throw new \UnexpectedValueException('A stored date cannot be read', previous: $exception);
         }
     }
 
