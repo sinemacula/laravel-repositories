@@ -14,12 +14,14 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Repositories\Concerns\CacheMiss;
+use SineMacula\Repositories\Concerns\CachePayloadEncoder;
 use SineMacula\Repositories\Concerns\CacheSizeGuard;
 use SineMacula\Repositories\Concerns\CacheStatus;
 use SineMacula\Repositories\Concerns\CacheStore;
 use SineMacula\Repositories\Concerns\CacheStoreOptions;
 use SineMacula\Repositories\Enums\CacheKeys;
 use Tests\Integration\IntegrationTestCase;
+use Tests\Support\Models\TestUser;
 
 /**
  * Tests for the per-query CacheStore collaborator.
@@ -188,6 +190,78 @@ final class CacheStoreTest extends IntegrationTestCase
         $store->put(self::HASH, collect([str_repeat('x', 256)]), 1);
 
         self::assertNull($store->fetch(self::HASH));
+    }
+
+    /**
+     * Test that the size guard weighs the payload the store holds, which can be
+     * admitted under a ceiling the result itself would exceed.
+     *
+     * @return void
+     */
+    public function testSizeGuardWeighsTheStoredPayload(): void
+    {
+        $items   = new TestUser(['name' => 'Alice']);
+        $payload = CachePayloadEncoder::encode($items);
+        $ceiling = strlen(serialize($payload));
+
+        self::assertGreaterThan($ceiling, strlen(serialize($items)));
+
+        $store = new CacheStore(Cache::store('array'), 'test-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, $ceiling), true, 10));
+
+        $store->put(self::HASH, $items, 1);
+
+        self::assertEquals($items, $store->fetch(self::HASH));
+    }
+
+    /**
+     * Test that a result holding a value the cache cannot store is left
+     * uncached and the skip is logged.
+     *
+     * @return void
+     */
+    public function testPutLeavesAResultTheCacheCannotStoreUncached(): void
+    {
+        Log::shouldReceive('debug')
+            ->once()
+            ->with('Query result holds a value the cache cannot store; read left uncached', ['table' => 'test-table', 'hash' => self::HASH]);
+
+        $this->cacheStore->put(self::HASH, collect([new \ArrayObject]), 1);
+
+        self::assertNull($this->cacheStore->fetch(self::HASH));
+        self::assertFalse($this->cacheStore->getStatus()->isPopulated());
+    }
+
+    /**
+     * Test that an entry which does not read back, such as one an earlier
+     * version stored as objects, is fetched as absent.
+     *
+     * @return void
+     */
+    public function testFetchTreatsAnUnreadableEntryAsAbsent(): void
+    {
+        $store = new CacheStore(Cache::store('file'), 'legacy-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
+
+        Cache::store('file')->getStore()->put('repositories:repository-query:legacy-table:0:' . self::HASH, collect(['a']), 3600);
+
+        self::assertNull($store->fetch(self::HASH));
+
+        $store->put(self::HASH, collect(['b']), 1);
+
+        self::assertEquals(collect(['b']), $store->fetch(self::HASH));
+    }
+
+    /**
+     * Test that a negative entry is stored as a plain payload.
+     *
+     * @return void
+     */
+    public function testPutMissStoresAPlainPayload(): void
+    {
+        $store = new CacheStore(Cache::store('file'), 'miss-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
+
+        $store->putMiss(self::HASH);
+
+        self::assertSame(CachePayloadEncoder::miss(), Cache::store('file')->get('repositories:repository-query:miss-table:0:' . self::HASH));
     }
 
     /**
@@ -511,7 +585,7 @@ final class CacheStoreTest extends IntegrationTestCase
             ->andReturn(3);
         $store->shouldReceive('get')
             ->with('repositories:repository-query:increment-table:4:' . self::HASH)
-            ->andReturn('post-bump');
+            ->andReturn(CachePayloadEncoder::encode('post-bump'));
 
         Cache::extend('incrementless', fn (): Repository => new Repository($store));
         Config::set('cache.stores.incrementless', ['driver' => 'incrementless']);
@@ -534,8 +608,8 @@ final class CacheStoreTest extends IntegrationTestCase
     {
         $entries = [
             'repositories:repository-cache-version:throwing-table'         => 3,
-            'repositories:repository-query:throwing-table:3:' . self::HASH => 'pre-flush',
-            'repositories:repository-query:throwing-table:4:' . self::HASH => 'post-bump',
+            'repositories:repository-query:throwing-table:3:' . self::HASH => CachePayloadEncoder::encode('pre-flush'),
+            'repositories:repository-query:throwing-table:4:' . self::HASH => CachePayloadEncoder::encode('post-bump'),
         ];
 
         $store = \Mockery::mock(Store::class)->shouldIgnoreMissing();
@@ -573,7 +647,7 @@ final class CacheStoreTest extends IntegrationTestCase
      */
     public function testVersionBumpStartsAtTheFirstGenerationWhenNothingWasRead(): void
     {
-        $entries = ['repositories:repository-query:unread-table:1:' . self::HASH => 'post-bump'];
+        $entries = ['repositories:repository-query:unread-table:1:' . self::HASH => CachePayloadEncoder::encode('post-bump')];
 
         $store = \Mockery::mock(Store::class)->shouldIgnoreMissing();
         $store->shouldReceive('increment')->andThrow(new \RuntimeException(self::STORE_FAILURE)); // @phpstan-ignore method.notFound
