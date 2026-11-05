@@ -120,24 +120,29 @@ final class CacheStore implements CacheInvalidator
     }
 
     /**
-     * Get the raw cached entry for the given query fingerprint in a single
-     * round trip.
+     * Get the cached entry for the given query fingerprint in a single round
+     * trip.
      *
-     * The negative-cache marker is returned as-is, so a caller can distinguish
-     * an absent entry (null), a negative hit (CacheMiss), and a cached value
-     * without a separate has() check - and without the window where an entry
-     * expiring between the two calls masquerades as a negative hit.
+     * A negative entry is returned as the miss marker, so a caller can
+     * distinguish an absent entry (null), a negative hit (CacheMiss), and a
+     * cached value without a separate has() check - and without the window
+     * where an entry expiring between the two calls masquerades as a negative
+     * hit. An entry that does not read back, such as one an earlier version
+     * stored as objects, is absent, so the read recomputes and overwrites it.
      *
      * @param  string  $hash
      * @return mixed
      */
     public function fetch(string $hash): mixed
     {
-        return $this->scopedStore()->get($this->keyFor($hash));
+        return CachePayloadDecoder::decode($this->scopedStore()->get($this->keyFor($hash)));
     }
 
     /**
      * Store the given value for a query fingerprint, subject to the size guard.
+     *
+     * The value is stored as arrays and scalars. One holding an object that
+     * cannot be stored that way is left uncached.
      *
      * @param  string  $hash
      * @param  mixed  $value
@@ -146,11 +151,23 @@ final class CacheStore implements CacheInvalidator
      */
     public function put(string $hash, mixed $value, int $rows): void
     {
-        if (!$this->options->sizeGuard->allows($value, $rows)) {
+        $payload = CachePayloadEncoder::encode($value);
+
+        if ($payload === null) {
+
+            Log::debug('Query result holds a value the cache cannot store; read left uncached', [
+                'table' => $this->table,
+                'hash'  => $hash,
+            ]);
+
             return;
         }
 
-        $this->scopedStore()->put($this->keyFor($hash), $value, $this->options->ttl);
+        if (!$this->options->sizeGuard->allows($payload, $rows)) {
+            return;
+        }
+
+        $this->scopedStore()->put($this->keyFor($hash), $payload, $this->options->ttl);
         $this->store->put($this->metaKey, ['populated_at' => now()->timestamp], $this->options->ttl);
     }
 
@@ -168,7 +185,7 @@ final class CacheStore implements CacheInvalidator
      */
     public function putMiss(string $hash): void
     {
-        $this->scopedStore()->put($this->keyFor($hash), new CacheMiss, $this->options->negativeTtl);
+        $this->scopedStore()->put($this->keyFor($hash), CachePayloadEncoder::miss(), $this->options->negativeTtl);
     }
 
     /**

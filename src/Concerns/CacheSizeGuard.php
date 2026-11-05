@@ -8,9 +8,10 @@ namespace SineMacula\Repositories\Concerns;
  * Decides whether a query result is small enough to be stored in the repository
  * cache.
  *
- * The guard bounds both the row count and the serialized byte size of a result.
- * A result that exceeds either bound is still fetched and returned to the
- * caller, but is never written to the cache, preventing unbounded growth.
+ * The guard bounds both the row count and the serialized byte size of the
+ * payload stored for a result. A result that exceeds either bound is still
+ * fetched and returned to the caller, but is never written to the cache,
+ * preventing unbounded growth.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.

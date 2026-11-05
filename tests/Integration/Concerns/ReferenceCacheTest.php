@@ -9,6 +9,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
+use SineMacula\Repositories\Concerns\CachePayloadEncoder;
 use SineMacula\Repositories\Concerns\CacheSizeGuard;
 use SineMacula\Repositories\Concerns\CacheStatus;
 use SineMacula\Repositories\Concerns\ReferenceCache;
@@ -29,6 +30,9 @@ final class ReferenceCacheTest extends IntegrationTestCase
 {
     /** @var string The resolved reference metadata cache key for the tags table. */
     private const string META_KEY = 'repositories:repository-cache-meta:tags';
+
+    /** @var string The resolved snapshot cache key for the tags table. */
+    private const string SNAPSHOT_KEY = 'repositories:repository-cache:tags';
 
     /** @var \SineMacula\Repositories\Concerns\ReferenceCache The reference cache under test. */
     private ReferenceCache $referenceCache;
@@ -191,6 +195,73 @@ final class ReferenceCacheTest extends IntegrationTestCase
         self::assertCount(2, $second);
         self::assertCount(2, DB::getQueryLog());
         self::assertFalse($reference->getStatus()->isPopulated());
+
+        DB::disableQueryLog();
+    }
+
+    /**
+     * Test that a table holding a value the cache cannot store is returned in
+     * full but neither cached nor memoised.
+     *
+     * @return void
+     */
+    public function testDoesNotCacheATableTheCacheCannotStore(): void
+    {
+        Tag::retrieved(static function (Tag $tag): void {
+            $tag->setRawAttributes(['label' => new \ArrayObject] + $tag->getAttributes(), true);
+        });
+
+        DB::enableQueryLog();
+
+        $first  = $this->referenceCache->all(new Tag);
+        $second = $this->referenceCache->all(new Tag);
+
+        self::assertCount(2, $first);
+        self::assertCount(2, $second);
+        self::assertCount(2, DB::getQueryLog());
+        self::assertFalse($this->referenceCache->getStatus()->isPopulated());
+
+        DB::disableQueryLog();
+    }
+
+    /**
+     * Test that a snapshot an earlier version stored as objects is read as a
+     * miss, so the table is loaded again and the snapshot overwritten.
+     *
+     * @return void
+     */
+    public function testReloadsASnapshotThatDoesNotReadBack(): void
+    {
+        Cache::store('file')->getStore()->put(self::SNAPSHOT_KEY, Tag::query()->get(), 3600);
+
+        $reference = new ReferenceCache(Cache::store('file'), 'tags', 3600, new CacheSizeGuard(null, null));
+
+        DB::enableQueryLog();
+
+        $tags = $reference->all(new Tag);
+
+        self::assertInstanceOf(Collection::class, $tags);
+        self::assertSame(['php', 'laravel'], $tags->pluck('name')->all());
+        self::assertCount(1, DB::getQueryLog());
+        self::assertIsArray(Cache::store('file')->get(self::SNAPSHOT_KEY));
+
+        DB::disableQueryLog();
+    }
+
+    /**
+     * Test that a payload in the snapshot key that is not a collection is read
+     * as a miss.
+     *
+     * @return void
+     */
+    public function testReloadsASnapshotThatIsNotACollection(): void
+    {
+        Cache::store('array')->put(self::SNAPSHOT_KEY, CachePayloadEncoder::miss(), 3600);
+
+        DB::enableQueryLog();
+
+        self::assertCount(2, $this->referenceCache->all(new Tag));
+        self::assertCount(1, DB::getQueryLog());
 
         DB::disableQueryLog();
     }

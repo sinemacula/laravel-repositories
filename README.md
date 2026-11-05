@@ -166,7 +166,17 @@ cache and are served stale until the TTL expires or `flushCache()` is called.
 A read that returns nothing is cached as a miss marker under the shorter `negative_ttl` (10 seconds by default), so
 repeated probes for a missing record do not hammer the database while a stale "not found" stays tightly bounded.
 Results exceeding `max_rows` or `max_bytes` are still fetched and returned but never stored, preventing unbounded
-cache growth.
+cache growth. `max_bytes` is weighed against the serialized payload the store holds.
+
+#### What the cache stores
+
+Every entry is stored as arrays and scalars, never as objects, so the cache works under Laravel's default
+`cache.serializable_classes => false` without allowing any model or package class. A model is stored as its raw
+attributes, its eager-loaded relations (pivots included), and any hidden, visible, appended, cast, or table state set
+on the instance, and is rebuilt on read without firing model events. Collections keep their class and keys, and the
+enum and date values `value` and `pluck` return keep their type. A result holding any other object, such as a value
+cast to an `ArrayObject`, is still returned but never cached. An entry that does not read back in the expected shape,
+such as one an earlier version stored as objects, is treated as a miss, then recomputed and overwritten.
 
 #### Reference mode
 
