@@ -5,7 +5,7 @@
 [project]
 project_name = "Laravel Repositories"
 project_description = "Provides the repository data pattern to Laravel applications"
-copyright = "Sine Macula Limited."
+copyright = "Sine Macula Limited"
 
 [language]
 # Primary language — auto-detected or manually set.

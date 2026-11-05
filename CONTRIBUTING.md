@@ -27,6 +27,8 @@ Branch from `master` using the appropriate prefix:
 | `bugfix/`   | Bug fixes                        |
 | `hotfix/`   | Urgent production fixes          |
 | `refactor/` | Refactoring without new features |
+| `test/`     | Test-only changes                |
+| `docs/`     | Documentation-only changes       |
 | `chore/`    | Tooling, CI, dependencies        |
 
 ### Commits
@@ -39,6 +41,10 @@ fix: preserve transient criteria through a bypassed read
 test: cover the criteria flag truth table boundary
 chore: update qlty configuration
 ```
+
+Pull request titles must follow the same convention - and they are the ones that matter most: PRs are
+squash-merged, so the title becomes the commit on `master`, and release-please derives the changelog and
+the next version from those commits.
 
 ### Code Quality
 
@@ -55,8 +61,10 @@ composer smells   # Advisory code smells (duplication, complexity)
 Run the full test suite before submitting:
 
 ```bash
-composer test            # Run the test suite in parallel using Paratest
-composer test:coverage   # With clover coverage report
+composer test                 # Run the test suite in parallel using Paratest
+composer test:coverage        # With clover coverage report
+composer test:mutation        # Mutation gate scoped to your diff against master
+composer test:mutation:full   # Full mutation run, no threshold
 ```
 
 Single test file or method:
@@ -72,20 +80,11 @@ vendor/bin/phpunit --filter testMethodName tests/Unit/SomeTest.php
 - Full type hints on all public method parameters and return types
 - PHPDoc on all methods and classes
 - New code is expected to ship with tests covering the behavioural surface; the package's mutation-testing gate
-  (`composer test:mutation`) is the enforced floor
+  (`composer test:mutation`) is the enforced floor. Behaviour that spans the repository lifecycle (criteria, scopes,
+  the cache) should be covered by integration tests that exercise the package the way a consuming application does.
 
 ## Pull Requests
 
+- Title the PR as a Conventional Commit - the squash-merge makes it the commit that drives the changelog
 - Keep changes minimal and scoped to a single concern
 - Do not change static analysis or formatting configuration without prior discussion
-- Include tests for new or changed behaviour
-- Ensure `composer check` and `composer test` pass
-
-## Security
-
-If you discover a security vulnerability, please report it directly to Sine Macula rather than opening a public issue.
-See [SECURITY.md](SECURITY.md) for details.
-
-## License
-
-By contributing, you agree that your contributions will be licensed under the [Apache License 2.0](LICENSE).

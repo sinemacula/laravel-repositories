@@ -54,6 +54,9 @@ jobs:
                     persist-credentials: false
                     fetch-depth: 0
 
+            -   name: Fetch base branch for the diff
+                run: git fetch --no-tags origin master
+
             -   name: Setup PHP
                 uses: sinemacula/.github/.github/actions/setup-php@v1.13.0
                 with:
