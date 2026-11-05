@@ -50,6 +50,7 @@ trait ManagesScopes
     {
         $composed = clone $this;
 
+        // @phpstan-ignore impure.propertyAssign
         $composed->scopes[] = $scope;
 
         return $composed;
@@ -71,6 +72,7 @@ trait ManagesScopes
     {
         $composed = clone $this;
 
+        // @phpstan-ignore impure.methodCall
         $composed->clearComposingScopes();
 
         return $composed;
