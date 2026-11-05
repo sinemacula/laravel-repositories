@@ -312,6 +312,19 @@ final class CachePayloadDecoderTest extends IntegrationTestCase
     }
 
     /**
+     * Test that the depth limit counts nesting, not the number of values beside
+     * one another.
+     *
+     * @return void
+     */
+    public function testDecodesMoreValuesSideBySideThanTheDepthLimit(): void
+    {
+        $items = array_fill(0, CachePayloadEncoder::MAX_DEPTH + 1, ['type' => 'array', 'items' => []]);
+
+        self::assertCount(CachePayloadEncoder::MAX_DEPTH + 1, CachePayloadDecoder::decode(self::payload(['type' => 'array', 'items' => $items])) ?? []);
+    }
+
+    /**
      * Test that a value nested as deep as a payload may be written reads back.
      *
      * @return void

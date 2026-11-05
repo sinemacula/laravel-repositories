@@ -7,6 +7,7 @@ namespace Tests\Integration\Concerns;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Config;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Repositories\Concerns\CachePayloadEncoder;
 use Tests\Integration\IntegrationTestCase;
@@ -309,6 +310,33 @@ final class CachePayloadEncoderTest extends IntegrationTestCase
             'perPage'      => 5,
             'touches'      => ['books'],
         ], $this->modelNode($author)['state']);
+    }
+
+    /**
+     * Test that the depth limit counts nesting, not the number of values beside
+     * one another.
+     *
+     * @return void
+     */
+    public function testEncodesMoreValuesSideBySideThanTheDepthLimit(): void
+    {
+        self::assertNotNull(CachePayloadEncoder::encode(array_fill(0, CachePayloadEncoder::MAX_DEPTH + 1, [])));
+    }
+
+    /**
+     * Test that a model on a connection with its own date format stores no date
+     * format of its own.
+     *
+     * @return void
+     */
+    public function testStoresNoDateFormatAModelTakesFromItsConnection(): void
+    {
+        Config::set('database.connections.reporting', ['driver' => 'sqlsrv', 'database' => 'reporting']);
+
+        $book = (new Book)->setConnection('reporting');
+
+        self::assertSame('Y-m-d H:i:s.v', $book->getDateFormat());
+        self::assertSame([], $this->modelNode($book)['state']);
     }
 
     /**
