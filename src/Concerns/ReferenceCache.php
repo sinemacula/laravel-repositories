@@ -16,8 +16,8 @@ use SineMacula\Repositories\Enums\CacheKeys;
  *
  * In reference mode the table is loaded once and served from memory: full
  * collection reads and single-record lookups by primary key resolve without
- * touching the database. The deserialized snapshot is memoised on the instance
- * and indexed by key, so repeated reads within a request neither re-hydrate the
+ * touching the database. The rebuilt snapshot is memoised on the instance and
+ * indexed by key, so repeated reads within a request neither re-hydrate the
  * cached payload nor scan it linearly. Whole-table caching semantics, including
  * cross-request persistence, are preserved as an explicit opt-in.
  *
@@ -169,11 +169,13 @@ final class ReferenceCache implements CacheInvalidator
         /** @var \Illuminate\Support\Collection<int, \Illuminate\Database\Eloquent\Model> $rows */
         $rows = $model->newQuery()->get();
 
-        // Skip caching a table over the size guard: reference mode on an
-        // unexpectedly large table falls back to querying each read rather than
-        // holding (or memoising) a huge serialized snapshot. Any earlier memo
-        // state is dropped so no stale index can outlive the snapshot.
-        if (!$this->sizeGuard->allows($rows, $rows->count())) {
+        $payload = CachePayloadEncoder::encode($rows);
+
+        // Skip caching a table over the size guard, or one holding a value the
+        // cache cannot store: each read then queries rather than holding (or
+        // memoising) the snapshot. Any earlier memo state is dropped so no
+        // stale index can outlive the snapshot.
+        if ($payload === null || !$this->sizeGuard->allows($payload, $rows->count())) {
 
             $this->memo  = null;
             $this->index = null;
@@ -181,7 +183,7 @@ final class ReferenceCache implements CacheInvalidator
             return $rows;
         }
 
-        $this->store->put($this->cacheKey, $rows, $this->ttl);
+        $this->store->put($this->cacheKey, $payload, $this->ttl);
         $this->store->put($this->metaKey, ['populated_at' => now()->timestamp], $this->ttl);
 
         return $this->remember($rows, $model);
@@ -206,11 +208,17 @@ final class ReferenceCache implements CacheInvalidator
     /**
      * Get the cached whole-table snapshot, or null on a miss.
      *
+     * A snapshot that does not read back as a collection, such as one an
+     * earlier version stored as objects, is a miss, so the table is loaded
+     * again and the snapshot overwritten.
+     *
      * @return \Illuminate\Support\Collection<int, \Illuminate\Database\Eloquent\Model>|null
      */
     private function snapshot(): ?Collection
     {
+        $snapshot = CachePayloadDecoder::decode($this->store->get($this->cacheKey));
+
         /** @var \Illuminate\Support\Collection<int, \Illuminate\Database\Eloquent\Model>|null */
-        return $this->store->get($this->cacheKey);
+        return $snapshot instanceof Collection ? $snapshot : null;
     }
 }

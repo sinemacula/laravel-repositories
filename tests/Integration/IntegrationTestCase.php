@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace Tests\Integration;
 
+use Illuminate\Cache\Events\KeyWritten;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Filesystem\Filesystem;
@@ -24,6 +25,9 @@ abstract class IntegrationTestCase extends TestCase
     /** @var string|null The per-test isolated file-cache directory, if one was provisioned. */
     private ?string $fileCachePath = null;
 
+    /** @var array<int, string> The cache keys written with a value that does not read back without its classes. */
+    private array $unreadableCacheWrites = [];
+
     /**
      * Set up the integration schema.
      *
@@ -35,6 +39,25 @@ abstract class IntegrationTestCase extends TestCase
         parent::setUp();
 
         $this->createSchema();
+    }
+
+    /**
+     * Fail the test when it wrote a cache entry that would not read back with
+     * every class refused, as Laravel's serializable_classes setting refuses
+     * them by default.
+     *
+     * @return void
+     */
+    #[\Override]
+    protected function assertPostConditions(): void
+    {
+        parent::assertPostConditions();
+
+        if ($this->unreadableCacheWrites === []) {
+            return;
+        }
+
+        static::fail('These cache entries do not read back with serializable classes disabled: ' . implode(', ', array_unique($this->unreadableCacheWrites)));
     }
 
     /**
@@ -93,6 +116,29 @@ abstract class IntegrationTestCase extends TestCase
         // assertions flap and the mutation score non-deterministic.
         $this->fileCachePath = sys_get_temp_dir() . '/laravel-repositories-test-cache-' . getmypid() . '-' . uniqid('', true);
         $app['config']->set('cache.stores.file.path', $this->fileCachePath);
+
+        $app['events']->listen(KeyWritten::class, $this->recordUnreadableCacheWrite(...));
+    }
+
+    /**
+     * Record a cache write whose value does not read back unchanged once
+     * serialized and unserialized with every class refused.
+     *
+     * The write is recorded before the value is serialized, so a value that
+     * cannot be serialized at all stays recorded when serializing it throws.
+     *
+     * @param  \Illuminate\Cache\Events\KeyWritten  $event
+     * @return void
+     */
+    private function recordUnreadableCacheWrite(KeyWritten $event): void
+    {
+        $this->unreadableCacheWrites[] = $event->key;
+
+        if (unserialize(serialize($event->value), ['allowed_classes' => false]) !== $event->value) {
+            return;
+        }
+
+        array_pop($this->unreadableCacheWrites);
     }
 
     /**

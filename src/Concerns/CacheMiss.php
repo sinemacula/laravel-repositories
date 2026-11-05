@@ -10,9 +10,9 @@ namespace SineMacula\Repositories\Concerns;
  *
  * A dedicated marker type lets the cache distinguish "this query was executed
  * and returned nothing" from an absent entry, without colliding with any real
- * repository result (no query result is an instance of this class) and while
- * surviving serialization on non-array cache stores - it is matched via
- * instanceof rather than object identity.
+ * repository result (no query result is an instance of this class). The store
+ * holds the miss as a plain payload and the marker is built on read, so it is
+ * matched via instanceof rather than object identity.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
