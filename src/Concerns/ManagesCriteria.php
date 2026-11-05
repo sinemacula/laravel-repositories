@@ -71,6 +71,7 @@ trait ManagesCriteria
 
         $composed = $this->useCriteria();
 
+        // @phpstan-ignore impure.propertyAssign, possiblyImpure.functionCall, possiblyImpure.methodCall
         $composed->transientCriteria = collect($this->sanitizeCriteria($criteria));
 
         return $composed;
@@ -96,7 +97,10 @@ trait ManagesCriteria
     {
         $composed = clone $this;
 
-        $composed->skipCriteria     = false;
+        // @phpstan-ignore impure.propertyAssign
+        $composed->skipCriteria = false;
+
+        // @phpstan-ignore impure.propertyAssign
         $composed->forceUseCriteria = true;
 
         return $composed;
@@ -212,6 +216,7 @@ trait ManagesCriteria
     {
         $composed = clone $this;
 
+        // @phpstan-ignore impure.propertyAssign
         $composed->skipCriteria = true;
 
         return $composed;

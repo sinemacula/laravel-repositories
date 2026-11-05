@@ -122,6 +122,7 @@ trait Cacheable
     {
         $composed = clone $this;
 
+        // @phpstan-ignore impure.propertyAssign
         $composed->bypassCache = true;
 
         return $composed;
@@ -240,7 +241,7 @@ trait Cacheable
 
         try {
             $this->activeStore()->flushTable();
-        } catch (\Throwable $exception) {
+        } catch (\Throwable $exception) { // @phpstan-ignore catch.neverThrown
             // Best-effort: the write is already committed, so a cache-store
             // outage must not surface as a write failure (the caller could
             // retry and duplicate). Stale-until-TTL is the safe degraded state.
