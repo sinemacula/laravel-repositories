@@ -19,8 +19,8 @@ use Illuminate\Support\Collection;
  * and keys. A model reached twice, as a chaperoned relation reaches its parent,
  * is written once and referenced after, so the rebuilt graph shares the same
  * instances. Collections keep their class and keys, enums their case and dates
- * their instant and timezone. A result holding any other object cannot be
- * stored.
+ * their instant and timezone. A result holding any other object, or a
+ * collection whose class cannot be built without arguments, cannot be stored.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -37,6 +37,9 @@ final class CachePayloadEncoder
 
     /** @var int How deep the value being encoded currently nests. */
     private int $depth = 0;
+
+    /** @var array<class-string<\Illuminate\Support\Collection<array-key, mixed>>, bool> Whether a reader can rebuild each collection class seen so far. */
+    private array $buildable = [];
 
     /** @var array<int, int> The payload id of every model written so far, keyed by object id. */
     private array $ids = [];
@@ -95,7 +98,7 @@ final class CachePayloadEncoder
         $node = match (true) {
             is_array($value)                     => ['type' => 'array', 'items' => $this->items($value)],
             $value instanceof Model              => $this->model($value),
-            $value instanceof Collection         => ['type' => 'collection', 'class' => $value::class, 'items' => $this->items($value->all())],
+            $value instanceof Collection         => $this->collection($value),
             $value instanceof \UnitEnum          => ['type' => 'enum', 'class' => $value::class, 'case' => $value->name],
             $value instanceof \DateTimeInterface => $this->date($value),
             default                              => throw new \UnexpectedValueException('The value cannot be stored without its class'),
@@ -121,6 +124,29 @@ final class CachePayloadEncoder
             'time'     => $date->format('U u'),
             'timezone' => $date->getTimezone()->getName(),
         ];
+    }
+
+    /**
+     * Encode a collection by its class and items.
+     *
+     * A collection class a reader cannot build without arguments is refused,
+     * since an entry naming it would be rejected on every read, then recomputed
+     * and written again.
+     *
+     * @param  \Illuminate\Support\Collection<array-key, mixed>  $collection
+     * @return array<string, mixed>
+     *
+     * @throws \UnexpectedValueException
+     */
+    private function collection(Collection $collection): array
+    {
+        $class = $collection::class;
+
+        if (!($this->buildable[$class] ??= CachePayloadDecoder::isInstantiable($class))) {
+            throw new \UnexpectedValueException('The collection cannot be rebuilt without arguments');
+        }
+
+        return ['type' => 'collection', 'class' => $class, 'items' => $this->items($collection->all())];
     }
 
     /**

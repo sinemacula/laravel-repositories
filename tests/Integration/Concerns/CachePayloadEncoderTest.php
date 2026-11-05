@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Config;
 use PHPUnit\Framework\Attributes\CoversClass;
 use SineMacula\Repositories\Concerns\CachePayloadEncoder;
 use Tests\Integration\IntegrationTestCase;
+use Tests\Support\Collections\KeyedCollection;
 use Tests\Support\Concerns\InteractsWithAuthors;
 use Tests\Support\Enums\Status;
 use Tests\Support\Models\Author;
@@ -274,6 +275,20 @@ final class CachePayloadEncoderTest extends IntegrationTestCase
         $book->setRawAttributes(['id' => 1, 'title' => 'Notes']);
 
         self::assertNull(CachePayloadEncoder::encode($book));
+    }
+
+    /**
+     * Test that a collection whose class a reader cannot rebuild is not
+     * encoded, so the read is left uncached rather than stored as an entry that
+     * is rejected, recomputed and rewritten on every read.
+     *
+     * @return void
+     */
+    public function testDoesNotEncodeACollectionAReaderCannotRebuild(): void
+    {
+        self::assertNull(CachePayloadEncoder::encode(new KeyedCollection('genre', ['Notes'])));
+        self::assertNull(CachePayloadEncoder::encode(['books' => new KeyedCollection('genre')]));
+        self::assertNotNull(CachePayloadEncoder::encode(new Collection(['Notes'])));
     }
 
     /**

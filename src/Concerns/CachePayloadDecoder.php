@@ -62,6 +62,23 @@ final class CachePayloadDecoder
     }
 
     /**
+     * Determine whether a class can be built without arguments, as a reader
+     * builds every model and collection class it names.
+     *
+     * The encoder checks the same rule, so it never stores a class that could
+     * not be read back.
+     *
+     * @param  class-string  $class
+     * @return bool
+     */
+    public static function isInstantiable(string $class): bool
+    {
+        $reflection = new \ReflectionClass($class);
+
+        return $reflection->isInstantiable() && (int) $reflection->getConstructor()?->getNumberOfRequiredParameters() === 0;
+    }
+
+    /**
      * Decode a single value.
      *
      * @param  mixed  $node
@@ -377,18 +394,5 @@ final class CachePayloadDecoder
         }
 
         return $class;
-    }
-
-    /**
-     * Determine whether a class can be built without arguments.
-     *
-     * @param  class-string  $class
-     * @return bool
-     */
-    private static function isInstantiable(string $class): bool
-    {
-        $reflection = new \ReflectionClass($class);
-
-        return $reflection->isInstantiable() && (int) $reflection->getConstructor()?->getNumberOfRequiredParameters() === 0;
     }
 }
