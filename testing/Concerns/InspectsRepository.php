@@ -189,6 +189,8 @@ trait InspectsRepository
      *
      * @param  mixed  $result
      * @return mixed
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public function invokeResetAndReturn(mixed $result): mixed
     {
