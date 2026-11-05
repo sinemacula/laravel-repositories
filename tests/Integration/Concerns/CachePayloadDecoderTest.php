@@ -18,6 +18,7 @@ use SineMacula\Repositories\Concerns\CachePayloadDecoder;
 use SineMacula\Repositories\Concerns\CachePayloadEncoder;
 use Tests\Integration\IntegrationTestCase;
 use Tests\Support\Collections\AuthorCollection;
+use Tests\Support\Collections\KeyedCollection;
 use Tests\Support\Concerns\InteractsWithAuthors;
 use Tests\Support\Enums\Status;
 use Tests\Support\Models\Author;
@@ -247,6 +248,80 @@ final class CachePayloadDecoderTest extends IntegrationTestCase
     }
 
     /**
+     * Test that a date reads back as the same instant even at a wall time the
+     * timezone repeats, and before the epoch.
+     *
+     * @return void
+     */
+    public function testRebuildsADateAsTheSameInstant(): void
+    {
+        $repeated = Carbon::parse('2026-11-01T06:30:00.25Z')->setTimezone('America/New_York');
+        $historic = new \DateTime('1815-12-10 08:30:00.5', new \DateTimeZone('Europe/London'));
+
+        $decoded = $this->roundTrip([$repeated, $historic]);
+
+        self::assertIsArray($decoded);
+        self::assertInstanceOf(Carbon::class, $decoded[0]);
+        self::assertInstanceOf(\DateTime::class, $decoded[1]);
+        self::assertSame($repeated->format('Y-m-d H:i:s.u P e'), $decoded[0]->format('Y-m-d H:i:s.u P e'));
+        self::assertSame($historic->format('Y-m-d H:i:s.u P e'), $decoded[1]->format('Y-m-d H:i:s.u P e'));
+    }
+
+    /**
+     * Test that the instance state a model can carry beyond what the other
+     * tests set is restored.
+     *
+     * @return void
+     */
+    public function testRestoresKeyPagingAndPersistenceState(): void
+    {
+        $author = Author::query()->findOrFail(1);
+
+        $author->fillable(['name'])->guard(['secret'])->setDateFormat('U')->setKeyName('name')->setKeyType('string');
+        $author->setIncrementing(false)->setPerPage(5)->setTouchedRelations(['books']);
+
+        $decoded = $this->roundTrip($author);
+
+        self::assertInstanceOf(Author::class, $decoded);
+        self::assertSame(['name'], $decoded->getFillable());
+        self::assertSame(['secret'], $decoded->getGuarded());
+        self::assertSame('U', $decoded->getDateFormat());
+        self::assertSame('name', $decoded->getKeyName());
+        self::assertSame('string', $decoded->getKeyType());
+        self::assertFalse($decoded->getIncrementing());
+        self::assertSame(5, $decoded->getPerPage());
+        self::assertSame(['books'], $decoded->getTouchedRelations());
+        self::assertEquals($author, $decoded);
+    }
+
+    /**
+     * Test that a stored value that contains itself, as a reference in the
+     * serialized form can make it, is rejected rather than read without end.
+     *
+     * @return void
+     */
+    public function testRejectsAValueThatContainsItself(): void
+    {
+        $node = ['type' => 'array', 'items' => []];
+
+        $node['items'][0] = &$node;
+
+        $stored = unserialize(serialize(self::payload($node)), ['allowed_classes' => false]);
+
+        self::assertNull(CachePayloadDecoder::decode($stored));
+    }
+
+    /**
+     * Test that a value nested as deep as a payload may be written reads back.
+     *
+     * @return void
+     */
+    public function testDecodesAValueNestedToTheDeepestLevel(): void
+    {
+        self::assertIsArray(CachePayloadDecoder::decode(self::payload(self::nested(CachePayloadEncoder::MAX_DEPTH))));
+    }
+
+    /**
      * Test that a payload recording a read found nothing decodes to the miss
      * marker.
      *
@@ -300,6 +375,8 @@ final class CachePayloadDecoderTest extends IntegrationTestCase
         yield 'a collection class that is not a string' => [self::payload(['type' => 'collection', 'class' => 1, 'items' => []])];
         yield 'a collection without a class' => [self::payload(['type' => 'collection', 'items' => []])];
         yield 'a model class that is not a model' => [self::payload(['class' => Collection::class] + $model)];
+        yield 'a model class that cannot be built' => [self::payload(['class' => Model::class] + $model)];
+        yield 'a collection class that cannot be built without arguments' => [self::payload(['type' => 'collection', 'class' => KeyedCollection::class, 'items' => []])];
         yield 'a model without an id' => [self::payload(array_diff_key($model, ['id' => true]))];
         yield 'a model id that is not an integer' => [self::payload(['id' => '0'] + $model)];
         yield 'two models with one id' => [self::payload(['type' => 'array', 'items' => [$model, $model]])];
@@ -311,7 +388,16 @@ final class CachePayloadDecoderTest extends IntegrationTestCase
         yield 'original attributes that are unreadable' => [self::payload(['original' => ['name' => ['a']]] + $model)];
         yield 'a model without original attributes' => [self::payload(array_diff_key($model, ['original' => true]))];
         yield 'state that is not an array' => [self::payload(['state' => 'a'] + $model)];
-        yield 'unknown state' => [self::payload(['state' => ['guarded' => []]] + $model)];
+        yield 'unknown state' => [self::payload(['state' => ['with' => []]] + $model)];
+        yield 'state under a numeric key' => [self::payload(['state' => [[]]] + $model)];
+        yield 'fillable attributes that are not strings' => [self::payload(['state' => ['fillable' => [1]]] + $model)];
+        yield 'guarded attributes that are not strings' => [self::payload(['state' => ['guarded' => [1]]] + $model)];
+        yield 'a date format that is not a string' => [self::payload(['state' => ['dateFormat' => 1]] + $model)];
+        yield 'a key name that is not a string' => [self::payload(['state' => ['keyName' => 1]] + $model)];
+        yield 'a key type that is not a string' => [self::payload(['state' => ['keyType' => 1]] + $model)];
+        yield 'an incrementing flag that is not a boolean' => [self::payload(['state' => ['incrementing' => 1]] + $model)];
+        yield 'a page size that is not an integer' => [self::payload(['state' => ['perPage' => '15']] + $model)];
+        yield 'touched relations that are not strings' => [self::payload(['state' => ['touches' => [1]]] + $model)];
         yield 'a table that is not a string' => [self::payload(['state' => ['table' => 1]] + $model)];
         yield 'hidden attributes that are not strings' => [self::payload(['state' => ['hidden' => [1]]] + $model)];
         yield 'visible attributes that are not strings' => [self::payload(['state' => ['visible' => [1]]] + $model)];
@@ -338,12 +424,14 @@ final class CachePayloadDecoderTest extends IntegrationTestCase
         yield 'an enum class that is not an enum' => [self::payload(['type' => 'enum', 'class' => \stdClass::class, 'case' => 'ACTIVE'])];
         yield 'an enum case that no longer exists' => [self::payload(['type' => 'enum', 'class' => Status::class, 'case' => 'ARCHIVED'])];
         yield 'an enum case that is not a string' => [self::payload(['type' => 'enum', 'class' => Status::class, 'case' => 1])];
-        yield 'a date class that is not a date' => [self::payload(['type' => 'date', 'class' => \stdClass::class, 'time' => '2026-01-01', 'timezone' => 'UTC'])];
-        yield 'a date class that is only an interface' => [self::payload(['type' => 'date', 'class' => \DateTimeInterface::class, 'time' => '2026-01-01', 'timezone' => 'UTC'])];
-        yield 'a date class that is not a string' => [self::payload(['type' => 'date', 'class' => 1, 'time' => '2026-01-01', 'timezone' => 'UTC'])];
+        yield 'a date class that is not a date' => [self::payload(['type' => 'date', 'class' => \stdClass::class, 'time' => '0 0', 'timezone' => 'UTC'])];
+        yield 'a date class that is only an interface' => [self::payload(['type' => 'date', 'class' => \DateTimeInterface::class, 'time' => '0 0', 'timezone' => 'UTC'])];
+        yield 'a date class that is not a string' => [self::payload(['type' => 'date', 'class' => 1, 'time' => '0 0', 'timezone' => 'UTC'])];
         yield 'a date time that cannot be read' => [self::payload(['type' => 'date', 'class' => \DateTimeImmutable::class, 'time' => 'not a time', 'timezone' => 'UTC'])];
-        yield 'a date timezone that cannot be read' => [self::payload(['type' => 'date', 'class' => \DateTime::class, 'time' => '2026-01-01', 'timezone' => 'Nowhere/Else'])];
+        yield 'a date time that Carbon cannot read' => [self::payload(['type' => 'date', 'class' => Carbon::class, 'time' => 'not a time', 'timezone' => 'UTC'])];
+        yield 'a date timezone that cannot be read' => [self::payload(['type' => 'date', 'class' => \DateTime::class, 'time' => '0 0', 'timezone' => 'Nowhere/Else'])];
         yield 'a date time that is not a string' => [self::payload(['type' => 'date', 'class' => \DateTime::class, 'time' => 1, 'timezone' => 'UTC'])];
+        yield 'a value nested deeper than any payload is written' => [self::payload(self::nested(CachePayloadEncoder::MAX_DEPTH + 1))];
     }
 
     /**
@@ -383,6 +471,23 @@ final class CachePayloadDecoderTest extends IntegrationTestCase
         $section = array_diff_key($pivot + self::pivotNode(), array_flip($without));
 
         return self::payload(['class' => $class, 'pivot' => $section] + self::modelNode());
+    }
+
+    /**
+     * Get an array node nested the given number of levels deep.
+     *
+     * @param  int  $levels
+     * @return array<string, mixed>
+     */
+    private static function nested(int $levels): array
+    {
+        $node = ['type' => 'array', 'items' => []];
+
+        for ($level = 1; $level < $levels; $level++) {
+            $node = ['type' => 'array', 'items' => [$node]];
+        }
+
+        return $node;
     }
 
     /**

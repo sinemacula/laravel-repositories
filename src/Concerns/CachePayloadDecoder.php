@@ -30,6 +30,15 @@ final class CachePayloadDecoder
     /** @var array<int, \Illuminate\Database\Eloquent\Model> The models rebuilt so far, keyed by payload id. */
     private array $models = [];
 
+    /** @var array<string, bool> Whether each class named so far can be built without arguments. */
+    private array $instantiable = [];
+
+    /** @var array<string, \Closure(\Illuminate\Database\Eloquent\Model, array<array-key, mixed>, string): mixed>|null The state setters, built on first use. */
+    private ?array $restorers = null;
+
+    /** @var int How deep the node being decoded currently nests. */
+    private int $depth = 0;
+
     /**
      * Decode a stored payload.
      *
@@ -46,7 +55,7 @@ final class CachePayloadDecoder
         }
 
         try {
-            return ($payload['miss'] ?? null) === true ? new CacheMiss : (new self)->node(self::field($payload, 'value'));
+            return ($payload['miss'] ?? null) === true ? new CacheMiss : (new self)->node(CachePayloadField::field($payload, 'value'));
         } catch (\UnexpectedValueException) {
             return null;
         }
@@ -63,10 +72,12 @@ final class CachePayloadDecoder
     private function node(mixed $node): mixed
     {
         if (!is_array($node)) {
-            return self::scalar($node);
+            return CachePayloadField::scalar($node);
         }
 
-        return match ($node['type'] ?? null) {
+        $this->descend();
+
+        $value = match ($node['type'] ?? null) {
             'array'      => $this->items($node),
             'collection' => $this->collection($node),
             'model'      => $this->model($node),
@@ -75,23 +86,27 @@ final class CachePayloadDecoder
             'date'       => self::date($node),
             default      => throw new \UnexpectedValueException('A stored value has no known type'),
         };
+
+        $this->depth--;
+
+        return $value;
     }
 
     /**
-     * Check that a value outside an array node is a scalar or null.
+     * Enter a node one level deeper, refusing to go deeper than any payload is
+     * written.
      *
-     * @param  mixed  $value
-     * @return scalar|null
+     * @return void
      *
      * @throws \UnexpectedValueException
      */
-    private static function scalar(mixed $value): bool|float|int|string|null
+    private function descend(): void
     {
-        if ($value !== null && !is_scalar($value)) {
-            throw new \UnexpectedValueException('A stored value is neither a scalar nor an array');
+        if ($this->depth >= CachePayloadEncoder::MAX_DEPTH) {
+            throw new \UnexpectedValueException('A stored value nests deeper than any payload is written');
         }
 
-        return $value;
+        $this->depth++;
     }
 
     /**
@@ -107,7 +122,7 @@ final class CachePayloadDecoder
     {
         $items = [];
 
-        foreach (self::list($node, $key) as $index => $value) {
+        foreach (CachePayloadField::list($node, $key) as $index => $value) {
             $items[$index] = $this->node($value);
         }
 
@@ -124,16 +139,29 @@ final class CachePayloadDecoder
      */
     private function collection(array $node): Collection
     {
-        $class      = self::classOf($node, Collection::class);
+        $class      = $this->instantiableClassOf($node, Collection::class);
         $collection = new $class($this->items($node));
 
         // A collection the framework builds for models turns on relationship
-        // autoloading when it is enabled, so a rebuilt one must too.
-        if ($collection instanceof EloquentCollection && Model::isAutomaticallyEagerLoadingRelationships()) {
+        // autoloading when it is enabled, so a rebuilt one must too. Releases
+        // before the setting existed never autoload.
+        if ($collection instanceof EloquentCollection && self::autoloadsRelationships()) {
             $collection->withRelationshipAutoloading();
         }
 
         return $collection;
+    }
+
+    /**
+     * Determine whether the application autoloads the relationships of the
+     * models a collection holds.
+     *
+     * @return bool
+     */
+    private static function autoloadsRelationships(): bool
+    {
+        // @phpstan-ignore function.alreadyNarrowedType
+        return method_exists(Model::class, 'isAutomaticallyEagerLoadingRelationships') && Model::isAutomaticallyEagerLoadingRelationships();
     }
 
     /**
@@ -149,8 +177,8 @@ final class CachePayloadDecoder
      */
     private function model(array $node): Model
     {
-        $class = self::classOf($node, Model::class);
-        $id    = self::field($node, 'id');
+        $class = $this->instantiableClassOf($node, Model::class);
+        $id    = CachePayloadField::field($node, 'id');
 
         if (!is_int($id) || isset($this->models[$id])) {
             throw new \UnexpectedValueException('A stored model has no unique id');
@@ -158,21 +186,21 @@ final class CachePayloadDecoder
 
         $model = $this->models[$id] = new $class;
 
-        $model->exists = self::boolean($node, 'exists');
-        $model->setConnection(self::nullableString($node, 'connection'));
+        $model->exists = CachePayloadField::boolean($node, 'exists');
+        $model->setConnection(CachePayloadField::nullableString($node, 'connection'));
 
-        $attributes = self::attributes($node, 'attributes');
-        $original   = self::field($node, 'original') === null ? $attributes : self::attributes($node, 'original');
+        $attributes = CachePayloadField::attributes($node, 'attributes');
+        $original   = CachePayloadField::field($node, 'original') === null ? $attributes : CachePayloadField::attributes($node, 'original');
 
         $model->setRawAttributes($original, true);
         $model->setRawAttributes($attributes);
 
-        self::restoreState($model, self::list($node, 'state'));
+        $this->restoreState($model, CachePayloadField::list($node, 'state'));
 
         $model->setRelations($this->items($node, 'relations'));
 
         if (array_key_exists('pivot', $node) || $model instanceof Pivot) {
-            $this->restorePivot($model, self::list($node, 'pivot'));
+            $this->restorePivot($model, CachePayloadField::list($node, 'pivot'));
         }
 
         return $model;
@@ -188,7 +216,7 @@ final class CachePayloadDecoder
      */
     private function reference(array $node): Model
     {
-        $id = self::field($node, 'id');
+        $id = CachePayloadField::field($node, 'id');
 
         if (!is_int($id) || !isset($this->models[$id])) {
             throw new \UnexpectedValueException('A stored reference names no model');
@@ -208,25 +236,25 @@ final class CachePayloadDecoder
      */
     private function restorePivot(Model $pivot, array $node): void
     {
-        $parent  = $this->node(self::field($node, 'parent'));
-        $related = $this->node(self::field($node, 'related'));
+        $parent  = $this->node(CachePayloadField::field($node, 'parent'));
+        $related = $this->node(CachePayloadField::field($node, 'related'));
 
         if (!$pivot instanceof Pivot || !$parent instanceof Model || !($related === null || $related instanceof Model)) {
             throw new \UnexpectedValueException('A stored pivot does not belong to a relationship');
         }
 
         $pivot->pivotParent = $parent;
-        $pivot->setPivotKeys(self::nullableString($node, 'foreignKey'), self::nullableString($node, 'relatedKey'));
+        $pivot->setPivotKeys(CachePayloadField::nullableString($node, 'foreignKey'), CachePayloadField::nullableString($node, 'relatedKey'));
         $pivot->setRelatedModel($related);
 
-        $morphType = self::nullableString($node, 'morphType');
+        $morphType = CachePayloadField::nullableString($node, 'morphType');
 
         if (!$pivot instanceof MorphPivot || $morphType === null) {
             return;
         }
 
         $pivot->setMorphType($morphType);
-        $pivot->setMorphClass(self::nullableString($node, 'morphClass'));
+        $pivot->setMorphClass(CachePayloadField::nullableString($node, 'morphClass'));
     }
 
     /**
@@ -238,20 +266,42 @@ final class CachePayloadDecoder
      *
      * @throws \UnexpectedValueException
      */
-    private static function restoreState(Model $model, array $state): void
+    private function restoreState(Model $model, array $state): void
     {
+        $this->restorers ??= self::restorers();
+
         foreach (array_keys($state) as $key) {
-            match ($key) {
-                'table'               => $model->setTable(self::string($state, $key)),
-                'hidden'              => $model->setHidden(self::strings($state, $key)),
-                'visible'             => $model->setVisible(self::strings($state, $key)),
-                'appends'             => $model->setAppends(self::strings($state, $key)),
-                'casts'               => $model->mergeCasts(self::strings($state, $key)),
-                'timestamps'          => $model->timestamps          = self::boolean($state, $key),
-                'preventsLazyLoading' => $model->preventsLazyLoading = self::boolean($state, $key),
-                default               => throw new \UnexpectedValueException('A stored model has unknown state'),
-            };
+            $restore = $this->restorers[$key] ?? throw new \UnexpectedValueException('A stored model has unknown state');
+
+            $restore($model, $state, (string) $key);
         }
+    }
+
+    /**
+     * Get the setter for each piece of state a model can carry, each checking
+     * the stored value has the type the setter takes.
+     *
+     * @return array<string, \Closure(\Illuminate\Database\Eloquent\Model, array<array-key, mixed>, string): mixed>
+     */
+    private static function restorers(): array
+    {
+        return [
+            'table'               => static fn (Model $model, array $state, string $key): mixed => $model->setTable(CachePayloadField::string($state, $key)),
+            'hidden'              => static fn (Model $model, array $state, string $key): mixed => $model->setHidden(CachePayloadField::strings($state, $key)),
+            'visible'             => static fn (Model $model, array $state, string $key): mixed => $model->setVisible(CachePayloadField::strings($state, $key)),
+            'appends'             => static fn (Model $model, array $state, string $key): mixed => $model->setAppends(CachePayloadField::strings($state, $key)),
+            'fillable'            => static fn (Model $model, array $state, string $key): mixed => $model->fillable(CachePayloadField::strings($state, $key)),
+            'guarded'             => static fn (Model $model, array $state, string $key): mixed => $model->guard(CachePayloadField::strings($state, $key)),
+            'casts'               => static fn (Model $model, array $state, string $key): mixed => $model->mergeCasts(CachePayloadField::strings($state, $key)),
+            'dateFormat'          => static fn (Model $model, array $state, string $key): mixed => $model->setDateFormat(CachePayloadField::string($state, $key)),
+            'keyName'             => static fn (Model $model, array $state, string $key): mixed => $model->setKeyName(CachePayloadField::string($state, $key)),
+            'keyType'             => static fn (Model $model, array $state, string $key): mixed => $model->setKeyType(CachePayloadField::string($state, $key)),
+            'incrementing'        => static fn (Model $model, array $state, string $key): mixed => $model->setIncrementing(CachePayloadField::boolean($state, $key)),
+            'perPage'             => static fn (Model $model, array $state, string $key): mixed => $model->setPerPage(CachePayloadField::integer($state, $key)),
+            'touches'             => static fn (Model $model, array $state, string $key): mixed => $model->setTouchedRelations(CachePayloadField::strings($state, $key)),
+            'timestamps'          => static fn (Model $model, array $state, string $key): mixed => $model->timestamps = CachePayloadField::boolean($state, $key),
+            'preventsLazyLoading' => static fn (Model $model, array $state, string $key): mixed => $model->preventsLazyLoading = CachePayloadField::boolean($state, $key),
+        ];
     }
 
     /**
@@ -264,8 +314,8 @@ final class CachePayloadDecoder
      */
     private static function enum(array $node): \UnitEnum
     {
-        $class = self::classOf($node, \UnitEnum::class);
-        $case  = $class . '::' . self::string($node, 'case');
+        $class = CachePayloadField::classOf($node, \UnitEnum::class);
+        $case  = $class . '::' . CachePayloadField::string($node, 'case');
 
         $value = defined($case) ? constant($case) : null;
 
@@ -286,21 +336,29 @@ final class CachePayloadDecoder
      */
     private static function date(array $node): \DateTimeInterface
     {
-        $class = self::field($node, 'class');
+        $class = CachePayloadField::field($node, 'class');
 
         if (!is_string($class) || !(is_a($class, \DateTime::class, true) || is_a($class, \DateTimeImmutable::class, true))) {
             throw new \UnexpectedValueException('A stored date has no date class');
         }
 
         try {
-            return new $class(self::string($node, 'time'), new \DateTimeZone(self::string($node, 'timezone')));
+            $date = $class::createFromFormat('U u', CachePayloadField::string($node, 'time'));
+            $zone = new \DateTimeZone(CachePayloadField::string($node, 'timezone'));
         } catch (\Exception $exception) {
             throw new \UnexpectedValueException('A stored date cannot be read', previous: $exception);
         }
+
+        if (!$date instanceof \DateTimeInterface) {
+            throw new \UnexpectedValueException('A stored date cannot be read');
+        }
+
+        return $date->setTimezone($zone);
     }
 
     /**
-     * Get a class name a node holds, checking it is the given type.
+     * Get a class name a node holds, checking it is the given type and can be
+     * built without arguments.
      *
      * @template TClass of object
      *
@@ -310,154 +368,27 @@ final class CachePayloadDecoder
      *
      * @throws \UnexpectedValueException
      */
-    private static function classOf(array $node, string $type): string
+    private function instantiableClassOf(array $node, string $type): string
     {
-        $class = self::field($node, 'class');
+        $class = CachePayloadField::classOf($node, $type);
 
-        if (!is_string($class) || !is_a($class, $type, true)) {
-            throw new \UnexpectedValueException('A stored class is missing or of the wrong type');
+        if (!($this->instantiable[$class] ??= self::isInstantiable($class))) {
+            throw new \UnexpectedValueException('A stored class cannot be built without arguments');
         }
 
         return $class;
     }
 
     /**
-     * Get the raw attributes a node holds.
+     * Determine whether a class can be built without arguments.
      *
-     * @param  array<array-key, mixed>  $node
-     * @param  string  $key
-     * @return array<string, scalar|null>
-     *
-     * @throws \UnexpectedValueException
-     */
-    private static function attributes(array $node, string $key): array
-    {
-        $attributes = self::list($node, $key);
-
-        foreach ($attributes as $name => $value) {
-            if (!is_string($name) || ($value !== null && !is_scalar($value))) {
-                throw new \UnexpectedValueException('A stored attribute is not a named scalar');
-            }
-        }
-
-        /** @var array<string, scalar|null> */
-        return $attributes;
-    }
-
-    /**
-     * Get the strings a node holds under the given key.
-     *
-     * @param  array<array-key, mixed>  $node
-     * @param  string  $key
-     * @return array<array-key, string>
-     *
-     * @throws \UnexpectedValueException
-     */
-    private static function strings(array $node, string $key): array
-    {
-        $values = self::list($node, $key);
-
-        foreach ($values as $value) {
-            if (!is_string($value)) {
-                throw new \UnexpectedValueException('A stored list holds a value other than a string');
-            }
-        }
-
-        /** @var array<array-key, string> */
-        return $values;
-    }
-
-    /**
-     * Get the array a node holds under the given key.
-     *
-     * @param  array<array-key, mixed>  $node
-     * @param  string  $key
-     * @return array<array-key, mixed>
-     *
-     * @throws \UnexpectedValueException
-     */
-    private static function list(array $node, string $key): array
-    {
-        $value = self::field($node, $key);
-
-        if (!is_array($value)) {
-            throw new \UnexpectedValueException('A stored value is not an array');
-        }
-
-        return $value;
-    }
-
-    /**
-     * Get the string a node holds under the given key.
-     *
-     * @param  array<array-key, mixed>  $node
-     * @param  string  $key
-     * @return string
-     *
-     * @throws \UnexpectedValueException
-     */
-    private static function string(array $node, string $key): string
-    {
-        $value = self::field($node, $key);
-
-        if (!is_string($value)) {
-            throw new \UnexpectedValueException('A stored value is not a string');
-        }
-
-        return $value;
-    }
-
-    /**
-     * Get the string or null a node holds under the given key.
-     *
-     * @param  array<array-key, mixed>  $node
-     * @param  string  $key
-     * @return string|null
-     *
-     * @throws \UnexpectedValueException
-     */
-    private static function nullableString(array $node, string $key): ?string
-    {
-        $value = self::field($node, $key);
-
-        return $value === null ? null : self::string($node, $key);
-    }
-
-    /**
-     * Get the boolean a node holds under the given key.
-     *
-     * @param  array<array-key, mixed>  $node
-     * @param  string  $key
+     * @param  class-string  $class
      * @return bool
-     *
-     * @throws \UnexpectedValueException
      */
-    private static function boolean(array $node, string $key): bool // phpcs:ignore SineMacula.NamingConventions.BooleanMethodName.NotPredicate
+    private static function isInstantiable(string $class): bool
     {
-        $value = self::field($node, $key);
+        $reflection = new \ReflectionClass($class);
 
-        if (!is_bool($value)) {
-            throw new \UnexpectedValueException('A stored value is not a boolean');
-        }
-
-        return $value;
-    }
-
-    /**
-     * Get the value a node holds under the given key, which must be present.
-     *
-     * @param  array<array-key, mixed>  $node
-     * @param  string  $key
-     * @return mixed
-     *
-     * @throws \UnexpectedValueException
-     */
-    private static function field(array $node, string $key): mixed
-    {
-        if (!array_key_exists($key, $node)) {
-            throw new \UnexpectedValueException('A stored value is missing a field');
-        }
-
-        return $node[$key];
+        return $reflection->isInstantiable() && (int) $reflection->getConstructor()?->getNumberOfRequiredParameters() === 0;
     }
 }

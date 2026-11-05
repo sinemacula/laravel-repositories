@@ -16,6 +16,7 @@
         <exclude-pattern>*/src/Concerns/Cacheable.php</exclude-pattern>
         <exclude-pattern>*/src/Concerns/CachePayloadDecoder.php</exclude-pattern>
         <exclude-pattern>*/src/Concerns/CachePayloadEncoder.php</exclude-pattern>
+        <exclude-pattern>*/src/Concerns/CachePayloadField.php</exclude-pattern>
         <exclude-pattern>*/src/Concerns/CacheSizeGuard.php</exclude-pattern>
         <exclude-pattern>*/src/Concerns/CacheStore.php</exclude-pattern>
         <exclude-pattern>*/src/Concerns/ManagesCriteria.php</exclude-pattern>

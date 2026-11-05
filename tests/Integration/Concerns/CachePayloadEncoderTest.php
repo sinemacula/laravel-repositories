@@ -79,7 +79,7 @@ final class CachePayloadEncoderTest extends IntegrationTestCase
                     'scalars'    => ['type' => 'array', 'items' => [1, 1.5, 'one', false, null]],
                     'collection' => ['type' => 'collection', 'class' => Collection::class, 'items' => ['b' => 2, 'a' => 1]],
                     'enum'       => ['type' => 'enum', 'class' => Status::class, 'case' => 'ACTIVE'],
-                    'date'       => ['type' => 'date', 'class' => CarbonImmutable::class, 'time' => '2026-03-09 12:34:56.789012', 'timezone' => 'Europe/London'],
+                    'date'       => ['type' => 'date', 'class' => CarbonImmutable::class, 'time' => $date->format('U u'), 'timezone' => 'Europe/London'],
                 ],
             ],
         ], $payload);
@@ -276,6 +276,42 @@ final class CachePayloadEncoderTest extends IntegrationTestCase
     }
 
     /**
+     * Test that a value nests at most as deep as a reader accepts.
+     *
+     * @return void
+     */
+    public function testDoesNotEncodeAValueNestedDeeperThanAReaderAccepts(): void
+    {
+        self::assertNotNull(CachePayloadEncoder::encode(self::nested(CachePayloadEncoder::MAX_DEPTH)));
+        self::assertNull(CachePayloadEncoder::encode(self::nested(CachePayloadEncoder::MAX_DEPTH + 1)));
+    }
+
+    /**
+     * Test that the instance state a model can carry beyond what the other
+     * tests set is stored when it differs.
+     *
+     * @return void
+     */
+    public function testStoresKeyPagingAndPersistenceState(): void
+    {
+        $author = Author::query()->findOrFail(1);
+
+        $author->fillable(['name'])->guard(['secret'])->setDateFormat('U')->setKeyName('name')->setKeyType('string');
+        $author->setIncrementing(false)->setPerPage(5)->setTouchedRelations(['books']);
+
+        self::assertSame([
+            'fillable'     => ['name'],
+            'guarded'      => ['secret'],
+            'dateFormat'   => 'U',
+            'keyName'      => 'name',
+            'keyType'      => 'string',
+            'incrementing' => false,
+            'perPage'      => 5,
+            'touches'      => ['books'],
+        ], $this->modelNode($author)['state']);
+    }
+
+    /**
      * Test that the miss payload records that a read found nothing.
      *
      * @return void
@@ -283,6 +319,23 @@ final class CachePayloadEncoderTest extends IntegrationTestCase
     public function testTheMissPayloadRecordsAMiss(): void
     {
         self::assertSame(['format' => CachePayloadEncoder::FORMAT, 'miss' => true], CachePayloadEncoder::miss());
+    }
+
+    /**
+     * Get an array nested the given number of levels deep.
+     *
+     * @param  int  $levels
+     * @return array<int, mixed>
+     */
+    private static function nested(int $levels): array
+    {
+        $value = [];
+
+        for ($level = 1; $level < $levels; $level++) {
+            $value = [$value];
+        }
+
+        return $value;
     }
 
     /**

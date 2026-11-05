@@ -14,12 +14,13 @@ use Illuminate\Support\Collection;
  * stores, so an entry reads back under a store that unserializes no class.
  *
  * A model keeps its class, connection, raw attributes, eager-loaded relations
- * and any visibility, append, cast or table state that differs from a fresh
- * instance; a pivot also keeps its parent, related model and keys. A model
- * reached twice, as a chaperoned relation reaches its parent, is written once
- * and referenced after, so the rebuilt graph shares the same instances.
- * Collections keep their class and keys, enums their case and dates their time
- * and timezone. A result holding any other object cannot be stored.
+ * and any instance state, such as visibility, appends, casts or its table, that
+ * differs from a fresh instance; a pivot also keeps its parent, related model
+ * and keys. A model reached twice, as a chaperoned relation reaches its parent,
+ * is written once and referenced after, so the rebuilt graph shares the same
+ * instances. Collections keep their class and keys, enums their case and dates
+ * their instant and timezone. A result holding any other object cannot be
+ * stored.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -30,6 +31,12 @@ final class CachePayloadEncoder
 {
     /** @var int The payload format version, so a reader can tell an entry from another format. */
     public const int FORMAT = 1;
+
+    /** @var int The deepest a value may nest, so a reader can refuse a payload that recurses without end. */
+    public const int MAX_DEPTH = 64;
+
+    /** @var int How deep the value being encoded currently nests. */
+    private int $depth = 0;
 
     /** @var array<int, int> The payload id of every model written so far, keyed by object id. */
     private array $ids = [];
@@ -75,8 +82,17 @@ final class CachePayloadEncoder
      */
     private function node(mixed $value): mixed
     {
-        return match (true) {
-            $value === null || is_scalar($value) => $value,
+        if ($value === null || is_scalar($value)) {
+            return $value;
+        }
+
+        if ($this->depth >= self::MAX_DEPTH) {
+            throw new \UnexpectedValueException('The value nests too deeply to store');
+        }
+
+        $this->depth++;
+
+        $node = match (true) {
             is_array($value)                     => ['type' => 'array', 'items' => $this->items($value)],
             $value instanceof Model              => $this->model($value),
             $value instanceof Collection         => ['type' => 'collection', 'class' => $value::class, 'items' => $this->items($value->all())],
@@ -84,10 +100,15 @@ final class CachePayloadEncoder
             $value instanceof \DateTimeInterface => $this->date($value),
             default                              => throw new \UnexpectedValueException('The value cannot be stored without its class'),
         };
+
+        $this->depth--;
+
+        return $node;
     }
 
     /**
-     * Encode a date by its time and timezone.
+     * Encode a date by its instant and timezone, so a wall time that occurs
+     * twice in the timezone still reads back as the same instant.
      *
      * @param  \DateTimeInterface  $date
      * @return array<string, string>
@@ -97,7 +118,7 @@ final class CachePayloadEncoder
         return [
             'type'     => 'date',
             'class'    => $date::class,
-            'time'     => $date->format('Y-m-d H:i:s.u'),
+            'time'     => $date->format('U u'),
             'timezone' => $date->getTimezone()->getName(),
         ];
     }
@@ -185,28 +206,42 @@ final class CachePayloadEncoder
     {
         $prototype = $this->prototypes[$model::class] ??= new ($model::class);
 
-        $state = [
+        // The date format falls back to the connection's, so the fresh instance
+        // must share the model's connection to compare equal.
+        $prototype->setConnection($model->getConnectionName());
+
+        $fresh = self::stateOf($prototype);
+        $state = array_filter(self::stateOf($model), static fn (mixed $value, string $key): bool => $value !== $fresh[$key], ARRAY_FILTER_USE_BOTH);
+        $casts = array_diff_assoc($model->getCasts(), $prototype->getCasts());
+
+        return $casts === [] ? $state : $state + ['casts' => $casts];
+    }
+
+    /**
+     * Get the instance state a model can carry beyond its raw attributes and
+     * relations.
+     *
+     * @param  \Illuminate\Database\Eloquent\Model  $model
+     * @return array<string, mixed>
+     */
+    private static function stateOf(Model $model): array
+    {
+        return [
             'table'               => $model->getTable(),
             'hidden'              => $model->getHidden(),
             'visible'             => $model->getVisible(),
             'appends'             => $model->getAppends(),
+            'fillable'            => $model->getFillable(),
+            'guarded'             => $model->getGuarded(),
+            'dateFormat'          => $model->getDateFormat(),
+            'keyName'             => $model->getKeyName(),
+            'keyType'             => $model->getKeyType(),
+            'incrementing'        => $model->getIncrementing(),
+            'perPage'             => $model->getPerPage(),
+            'touches'             => $model->getTouchedRelations(),
             'timestamps'          => $model->timestamps,
             'preventsLazyLoading' => $model->preventsLazyLoading,
         ];
-
-        $fresh = [
-            'table'               => $prototype->getTable(),
-            'hidden'              => $prototype->getHidden(),
-            'visible'             => $prototype->getVisible(),
-            'appends'             => $prototype->getAppends(),
-            'timestamps'          => $prototype->timestamps,
-            'preventsLazyLoading' => $prototype->preventsLazyLoading,
-        ];
-
-        $state = array_filter($state, static fn (mixed $value, string $key): bool => $value !== $fresh[$key], ARRAY_FILTER_USE_BOTH);
-        $casts = array_diff_assoc($model->getCasts(), $prototype->getCasts());
-
-        return $casts === [] ? $state : $state + ['casts' => $casts];
     }
 
     /**
