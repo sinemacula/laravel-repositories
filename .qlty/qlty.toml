@@ -142,7 +142,7 @@ name = "phpstan"
 # Matches the version composer resolves from the package file. The tool sandbox
 # is keyed on this string, so a stale label also means sharing a sandbox with
 # any other repository still on it, whatever that one declares.
-version = "2.2.13"
+version = "2.3.5"
 package_file = ".qlty/configs/composer.json"
 package_filters = ["phpstan", "larastan", "sinemacula"]
 
