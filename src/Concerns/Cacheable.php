@@ -482,12 +482,17 @@ trait Cacheable
     /**
      * Resolve an overridable property declared on the consuming repository.
      *
+     * A value of a type no override takes is treated as undeclared, so the
+     * package configuration applies.
+     *
      * @param  string  $name
-     * @return mixed
+     * @return bool|int|string|null
      */
-    private function resolveProperty(string $name): mixed
+    private function resolveProperty(string $name): bool|int|string|null
     {
         // @phpstan-ignore property.dynamicName (guarded by property_exists; reads optional overridable config props)
-        return property_exists($this, $name) ? $this->{$name} : null;
+        $value = property_exists($this, $name) ? $this->{$name} : null;
+
+        return is_bool($value) || is_int($value) || is_string($value) ? $value : null;
     }
 }

@@ -31,6 +31,7 @@ use Tests\Support\Repositories\CacheableInertBuilderRepository;
 use Tests\Support\Repositories\CacheableTagRepository;
 use Tests\Support\Repositories\CustomPrefixCacheableTagRepository;
 use Tests\Support\Repositories\CustomStoreCacheableTagRepository;
+use Tests\Support\Repositories\MistypedOverrideTagRepository;
 use Tests\Support\Repositories\ReferenceTableTagRepository;
 use Tests\Support\Repositories\RegistryDisabledFileStoreTagRepository;
 use Tests\Support\Repositories\ScopedReferenceTableTagRepository;
@@ -1339,6 +1340,26 @@ final class CacheableTest extends IntegrationTestCase
 
         self::assertFalse($this->getProperty($repository, 'skipCriteria'));
         self::assertFalse($this->getProperty($repository, 'forceUseCriteria'));
+    }
+
+    /**
+     * Test that resolveProperty() treats an override declared with a type no
+     * override takes as undeclared, and passes each type an override takes
+     * through unchanged.
+     *
+     * @return void
+     */
+    public function testResolvePropertyTreatsAnOverrideOfAnotherTypeAsUndeclared(): void
+    {
+        self::assertNotNull($this->app);
+
+        $mistyped = $this->app->make(MistypedOverrideTagRepository::class);
+        $tuned    = $this->app->make(TunedCacheableTagRepository::class);
+
+        self::assertNull($this->invokeMethod($mistyped, 'resolveProperty', 'cacheTtl'));
+        self::assertSame(120, $this->invokeMethod($tuned, 'resolveProperty', 'cacheTtl'));
+        self::assertFalse($this->invokeMethod($tuned, 'resolveProperty', 'cacheRegistryEnabled'));
+        self::assertSame('custom-prefix', $this->invokeMethod($this->app->make(CustomPrefixCacheableTagRepository::class), 'resolveProperty', 'cacheKeyPrefix'));
     }
 
     /**
