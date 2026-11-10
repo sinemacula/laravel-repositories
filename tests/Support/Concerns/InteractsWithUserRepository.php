@@ -59,6 +59,6 @@ trait InteractsWithUserRepository
      */
     private function criteria(CriteriaInterface ...$criteria): Collection
     {
-        return new Collection($criteria);
+        return new Collection(array_values($criteria));
     }
 }
