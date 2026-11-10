@@ -124,6 +124,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * @param  array<int, mixed>  $arguments
      * @return mixed
      *
+     * @throws \BadMethodCallException
      * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     public static function __callStatic(string $method, array $arguments): mixed
@@ -133,7 +134,11 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
         if ($container instanceof Application) {
 
             $instance = $container->make(static::class);
-            $callable = \Closure::fromCallable([$instance, $method]);
+            $callable = [$instance, $method];
+
+            if (!is_callable($callable)) {
+                throw new \BadMethodCallException(sprintf('Call to undefined method %s::%s()', get_debug_type($instance), $method));
+            }
 
             return $callable(...$arguments);
         }
@@ -148,6 +153,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * @param  array<int, mixed>  $arguments
      * @return mixed
      *
+     * @throws \BadMethodCallException
      * @throws \Throwable
      */
     public function __call(string $method, array $arguments): mixed
@@ -155,7 +161,11 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
         try {
 
             $query    = $this->prepareQueryBuilder();
-            $callable = \Closure::fromCallable([$query, $method]);
+            $callable = [$query, $method];
+
+            if (!is_callable($callable)) {
+                throw new \BadMethodCallException(sprintf('Call to undefined method %s::%s()', $query::class, $method));
+            }
 
             return $this->resetAndReturn($callable(...$arguments));
         } catch (\Throwable $exception) {

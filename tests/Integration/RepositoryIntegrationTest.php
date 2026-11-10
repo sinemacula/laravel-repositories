@@ -6,6 +6,7 @@ namespace Tests\Integration;
 
 use Illuminate\Contracts\Container\BindingResolutionException;
 use Illuminate\Contracts\Database\Eloquent\Builder as BuilderContract;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -14,11 +15,13 @@ use PHPUnit\Framework\Attributes\CoversTrait;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
 use SineMacula\Repositories\Concerns\ResetsTransientState;
 use SineMacula\Repositories\Repository;
+use Tests\Support\Builders\InertBuilder;
 use Tests\Support\Criteria\ActiveUsersCriterion;
 use Tests\Support\Criteria\NamedUsersCriterion;
 use Tests\Support\Exceptions\CompositionFailure;
 use Tests\Support\Exceptions\ResolutionFailure;
 use Tests\Support\Models\TestUser;
+use Tests\Support\Repositories\InertBuilderRepository;
 use Tests\Support\Repositories\PlainTestUserRepository;
 use Tests\Support\Repositories\TestUserRepository;
 
@@ -99,7 +102,7 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
     public function testQueryAndNewQueryReturnBuildersAndResetTransientState(): void
     {
         $composed = $this->repository()
-            ->withCriteria([new ActiveUsersCriterion, 'invalid'])
+            ->withCriteria(new ActiveUsersCriterion)
             ->addScope(static function (BuilderContract $query): void {
                 $query->where('id', '>', 0);
             });
@@ -146,6 +149,7 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
             })
             ->__call('get', []);
 
+        self::assertInstanceOf(Collection::class, $users);
         self::assertCount(1, $users);
         self::assertSame(0, $repository->transientCriteriaCount());
         self::assertSame(0, $repository->scopesCount());
@@ -165,6 +169,40 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
 
         self::assertInstanceOf(TestUser::class, $user);
         self::assertSame('Alice', $user->getAttribute('name'));
+    }
+
+    /**
+     * Verify __callStatic refuses a method the resolved instance cannot take.
+     *
+     * @return void
+     */
+    public function testStaticCallsRefuseAMethodTheResolvedInstanceCannotTake(): void
+    {
+        self::assertNotNull($this->app);
+
+        $this->app->instance(PlainTestUserRepository::class, new \stdClass);
+
+        $this->expectException(\BadMethodCallException::class);
+        $this->expectExceptionMessage('Call to undefined method stdClass::find()');
+
+        PlainTestUserRepository::find(1);
+    }
+
+    /**
+     * Verify __call refuses a method the prepared builder cannot take.
+     *
+     * @return void
+     *
+     * @throws \Throwable
+     */
+    public function testCallRefusesAMethodThePreparedBuilderCannotTake(): void
+    {
+        $this->expectException(\BadMethodCallException::class);
+        $this->expectExceptionMessage(sprintf('Call to undefined method %s::get()', InertBuilder::class));
+
+        self::assertNotNull($this->app);
+
+        $this->app->make(InertBuilderRepository::class)->__call('get', []);
     }
 
     /**
@@ -201,7 +239,7 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
     public function testResetAndReturnClearsTransientState(): void
     {
         $composed = $this->repository()
-            ->withCriteria([new ActiveUsersCriterion, 'invalid'])
+            ->withCriteria(new ActiveUsersCriterion)
             ->addScope(static function (BuilderContract $query): void {
                 $query->where('id', '>', 0);
             });
@@ -443,6 +481,7 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
             ->withCriteria(new ActiveUsersCriterion)
             ->all();
 
+        self::assertInstanceOf(Collection::class, $users);
         self::assertCount(2, $users);
     }
 
