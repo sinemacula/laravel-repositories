@@ -22,10 +22,12 @@ use SineMacula\Repositories\Concerns\CacheStoreOptions;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
 use SineMacula\Repositories\Concerns\ReferenceCache;
 use Tests\Integration\IntegrationTestCase;
+use Tests\Support\Builders\InertBuilder;
 use Tests\Support\Concerns\InteractsWithNonPublicMembers;
 use Tests\Support\Criteria\NamedTagsCriterion;
 use Tests\Support\Models\Tag;
 use Tests\Support\Repositories\ByteSizeGuardedTagRepository;
+use Tests\Support\Repositories\CacheableInertBuilderRepository;
 use Tests\Support\Repositories\CacheableTagRepository;
 use Tests\Support\Repositories\CustomPrefixCacheableTagRepository;
 use Tests\Support\Repositories\CustomStoreCacheableTagRepository;
@@ -113,6 +115,24 @@ final class CacheableTest extends IntegrationTestCase
 
         self::assertInstanceOf(Collection::class, $result);
         self::assertCount(2, $result);
+    }
+
+    /**
+     * Test that a cacheable read refuses a verb the prepared builder cannot
+     * take.
+     *
+     * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     */
+    public function testCachedReadRefusesAVerbThePreparedBuilderCannotTake(): void
+    {
+        $this->expectException(\BadMethodCallException::class);
+        $this->expectExceptionMessage(sprintf('Call to undefined method %s::get()', InertBuilder::class));
+
+        self::assertNotNull($this->app);
+
+        $this->app->make(CacheableInertBuilderRepository::class)->__call('get', []);
     }
 
     /**
