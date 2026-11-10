@@ -49,7 +49,7 @@ final class QueryFingerprintTest extends IntegrationTestCase
             $query->where('name', $name);
         }]));
 
-        $internalConstraint = strlen(...);
+        $internalConstraint = spl_object_id(...);
 
         yield 'differing SQL' => [
             fn (): string => QueryFingerprint::for(Tag::query()),
@@ -212,7 +212,7 @@ final class QueryFingerprintTest extends IntegrationTestCase
             $query->where('active', true);
         };
 
-        $internalConstraint = strlen(...);
+        $internalConstraint = spl_object_id(...);
 
         yield 'identical queries' => [
             fn (): string => QueryFingerprint::for(Tag::query()->where('name', 'php')),

@@ -321,7 +321,10 @@ final class CachePayloadDecoderTest extends IntegrationTestCase
     {
         $items = array_fill(0, CachePayloadEncoder::MAX_DEPTH + 1, ['type' => 'array', 'items' => []]);
 
-        self::assertCount(CachePayloadEncoder::MAX_DEPTH + 1, CachePayloadDecoder::decode(self::payload(['type' => 'array', 'items' => $items])) ?? []);
+        $decoded = CachePayloadDecoder::decode(self::payload(['type' => 'array', 'items' => $items]));
+
+        self::assertIsArray($decoded);
+        self::assertCount(CachePayloadEncoder::MAX_DEPTH + 1, $decoded);
     }
 
     /**
@@ -428,9 +431,12 @@ final class CachePayloadDecoderTest extends IntegrationTestCase
         yield 'a pivot related model that is not a model' => [self::pivotPayload(Pivot::class, ['related' => 'a'])];
         yield 'a pivot foreign key that is not a string' => [self::pivotPayload(Pivot::class, ['foreignKey' => 1])];
         yield 'a pivot related key that is not a string' => [self::pivotPayload(Pivot::class, ['relatedKey' => 1])];
+        yield 'a pivot without a foreign key' => [self::pivotPayload(Pivot::class, ['foreignKey' => null])];
+        yield 'a pivot without a related key' => [self::pivotPayload(Pivot::class, ['relatedKey' => null])];
         yield 'a pivot morph type that is not a string' => [self::pivotPayload(MorphPivot::class, ['morphType' => 1])];
         yield 'a pivot morph class that is not a string' => [self::pivotPayload(MorphPivot::class, ['morphType' => 'type', 'morphClass' => 1])];
         yield 'a pivot without a morph class' => [self::pivotPayload(MorphPivot::class, ['morphType' => 'type'], ['morphClass'])];
+        yield 'a pivot with a null morph class' => [self::pivotPayload(MorphPivot::class, ['morphType' => 'type', 'morphClass' => null])];
         yield 'a reference to no model' => [self::payload(['type' => 'ref', 'id' => 0])];
         yield 'a reference without an id' => [self::payload(['type' => 'ref'])];
         yield 'a reference id that is not an integer' => [self::payload(['type' => 'array', 'items' => [$model, ['type' => 'ref', 'id' => '0']]])];

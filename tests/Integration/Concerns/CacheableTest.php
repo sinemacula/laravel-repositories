@@ -22,13 +22,16 @@ use SineMacula\Repositories\Concerns\CacheStoreOptions;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
 use SineMacula\Repositories\Concerns\ReferenceCache;
 use Tests\Integration\IntegrationTestCase;
+use Tests\Support\Builders\InertBuilder;
 use Tests\Support\Concerns\InteractsWithNonPublicMembers;
 use Tests\Support\Criteria\NamedTagsCriterion;
 use Tests\Support\Models\Tag;
 use Tests\Support\Repositories\ByteSizeGuardedTagRepository;
+use Tests\Support\Repositories\CacheableInertBuilderRepository;
 use Tests\Support\Repositories\CacheableTagRepository;
 use Tests\Support\Repositories\CustomPrefixCacheableTagRepository;
 use Tests\Support\Repositories\CustomStoreCacheableTagRepository;
+use Tests\Support\Repositories\MistypedOverrideTagRepository;
 use Tests\Support\Repositories\ReferenceTableTagRepository;
 use Tests\Support\Repositories\RegistryDisabledFileStoreTagRepository;
 use Tests\Support\Repositories\ScopedReferenceTableTagRepository;
@@ -113,6 +116,24 @@ final class CacheableTest extends IntegrationTestCase
 
         self::assertInstanceOf(Collection::class, $result);
         self::assertCount(2, $result);
+    }
+
+    /**
+     * Test that a cacheable read refuses a verb the prepared builder cannot
+     * take.
+     *
+     * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     */
+    public function testCachedReadRefusesAVerbThePreparedBuilderCannotTake(): void
+    {
+        $this->expectException(\BadMethodCallException::class);
+        $this->expectExceptionMessage(sprintf('Call to undefined method %s::get()', InertBuilder::class));
+
+        self::assertNotNull($this->app);
+
+        $this->app->make(CacheableInertBuilderRepository::class)->__call('get', []);
     }
 
     /**
@@ -511,7 +532,7 @@ final class CacheableTest extends IntegrationTestCase
 
         $created = Tag::query()->where('name', 'svelte')->first();
 
-        $found = $this->repository->scopeById($created?->getAttribute('id'))->first(); // @phpstan-ignore staticMethod.dynamicCall
+        $found = $this->repository->scopeById($created?->id)->first(); // @phpstan-ignore staticMethod.dynamicCall
 
         self::assertInstanceOf(Tag::class, $found);
     }
@@ -1319,6 +1340,26 @@ final class CacheableTest extends IntegrationTestCase
 
         self::assertFalse($this->getProperty($repository, 'skipCriteria'));
         self::assertFalse($this->getProperty($repository, 'forceUseCriteria'));
+    }
+
+    /**
+     * Test that resolveProperty() treats an override declared with a type no
+     * override takes as undeclared, and passes each type an override takes
+     * through unchanged.
+     *
+     * @return void
+     */
+    public function testResolvePropertyTreatsAnOverrideOfAnotherTypeAsUndeclared(): void
+    {
+        self::assertNotNull($this->app);
+
+        $mistyped = $this->app->make(MistypedOverrideTagRepository::class);
+        $tuned    = $this->app->make(TunedCacheableTagRepository::class);
+
+        self::assertNull($this->invokeMethod($mistyped, 'resolveProperty', 'cacheTtl'));
+        self::assertSame(120, $this->invokeMethod($tuned, 'resolveProperty', 'cacheTtl'));
+        self::assertFalse($this->invokeMethod($tuned, 'resolveProperty', 'cacheRegistryEnabled'));
+        self::assertSame('custom-prefix', $this->invokeMethod($this->app->make(CustomPrefixCacheableTagRepository::class), 'resolveProperty', 'cacheKeyPrefix'));
     }
 
     /**

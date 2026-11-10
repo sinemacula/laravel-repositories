@@ -5,9 +5,12 @@ declare(strict_types = 1);
 namespace Tests\Integration\Concerns;
 
 use Illuminate\Contracts\Container\BindingResolutionException;
+use Illuminate\Contracts\Database\Eloquent\Builder;
 use PHPUnit\Framework\Attributes\CoversTrait;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
+use SineMacula\Repositories\Contracts\CriteriaInterface;
 use Tests\Integration\IntegrationTestCase;
+use Tests\Support\Concerns\InteractsWithNonPublicMembers;
 use Tests\Support\Concerns\InteractsWithUserRepository;
 use Tests\Support\Criteria\ActiveUsersCriterion;
 use Tests\Support\Criteria\EagerLoadingCriterion;
@@ -27,7 +30,7 @@ use Tests\Support\Models\TestUser;
 #[CoversTrait(ManagesCriteria::class)]
 final class ManagesCriteriaTest extends IntegrationTestCase
 {
-    use InteractsWithUserRepository;
+    use InteractsWithNonPublicMembers, InteractsWithUserRepository;
 
     /** @var string The message carried by a binding that cannot resolve. */
     private const string RESOLUTION_FAILURE = 'Simulated resolution failure.';
@@ -200,34 +203,72 @@ final class ManagesCriteriaTest extends IntegrationTestCase
     }
 
     /**
-     * Test that pushCriteria() sanitizes non-criterion entries out of the
-     * persistent criteria collection instead of registering them as pending
-     * composition.
+     * Test that removing criteria by instance removes every criterion of that
+     * instance's class, persistent and transient, and leaves the others.
      *
      * @return void
      */
-    public function testPushCriteriaSanitizesNonCriterionEntriesFromPersistentCriteria(): void
+    public function testRemoveCriteriaByInstanceRemovesOnlyCriteriaOfItsClass(): void
     {
         $repository = $this->repository();
+        $repository->pushCriteria([new ActiveUsersCriterion, new NamedUsersCriterion('Alice')]);
 
-        $repository->pushCriteria([new ActiveUsersCriterion, 'invalid']);
+        $repository = $repository->withCriteria([new ActiveUsersCriterion, new EagerLoadingCriterion]);
+        $repository->removeCriteria(new ActiveUsersCriterion);
 
-        self::assertCount(1, $repository->getCriteria());
+        self::assertSame([NamedUsersCriterion::class, EagerLoadingCriterion::class], $repository->getCriteria()->map(get_class(...))->all());
     }
 
     /**
-     * Test that withCriteria() sanitizes non-criterion entries out of the
-     * transient criteria collection instead of registering them as pending
-     * composition.
+     * Test that removing criteria by class name removes only criteria of that
+     * exact class, not those that merely extend or implement it.
      *
      * @return void
      */
-    public function testWithCriteriaSanitizesNonCriterionEntriesFromTransientCriteria(): void
+    public function testRemoveCriteriaByClassNameRemovesOnlyThatExactClass(): void
     {
         $repository = $this->repository();
+        $repository->pushCriteria([new ActiveUsersCriterion, new NamedUsersCriterion('Alice')]);
 
-        $repository = $repository->withCriteria([new ActiveUsersCriterion, 'invalid']);
+        $repository->removeCriteria([CriteriaInterface::class, NamedUsersCriterion::class]);
 
-        self::assertCount(1, $repository->getCriteria());
+        self::assertSame([ActiveUsersCriterion::class], $repository->getCriteria()->map(get_class(...))->all());
+    }
+
+    /**
+     * Test that a subclass applying criteria before any builder is prepared has
+     * them applied to a query started from the repository's model.
+     *
+     * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     */
+    public function testCriteriaApplyToAQueryStartedFromTheModelWhenNoBuilderIsPrepared(): void
+    {
+        $this->seedUsers();
+
+        $repository = $this->repository();
+        $repository->pushCriteria(new ActiveUsersCriterion);
+        $repository->forceModel(null);
+
+        $repository->applyCriteriaInPlace();
+
+        $query = $repository->currentModel();
+
+        self::assertInstanceOf(Builder::class, $query);
+        self::assertSame(['Alice', 'Carol'], $query->pluck('name')->all());
+    }
+
+    /**
+     * Test that the criteria sanitizer drops entries that are not criteria, so
+     * neither the persistent nor the transient collection registers them.
+     *
+     * @return void
+     */
+    public function testSanitizerDropsNonCriterionEntries(): void
+    {
+        $criterion = new ActiveUsersCriterion;
+
+        self::assertSame([$criterion], $this->invokeMethod($this->repository(), 'sanitizeCriteria', [$criterion, 'invalid']));
     }
 }

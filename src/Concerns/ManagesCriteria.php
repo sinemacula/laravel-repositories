@@ -4,6 +4,7 @@ declare(strict_types = 1);
 
 namespace SineMacula\Repositories\Concerns;
 
+use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Support\Collection;
 use SineMacula\Repositories\Contracts\ContributesMetadata;
 use SineMacula\Repositories\Contracts\CriteriaInterface;
@@ -140,13 +141,13 @@ trait ManagesCriteria
     #[\Override]
     public function removeCriteria(array|CriteriaInterface|string $criteria): static
     {
-        $criteria = is_array($criteria) ? $criteria : [$criteria];
+        $requested = collect(is_array($criteria) ? $criteria : [$criteria]);
 
-        $this->persistentCriteria = $this->persistentCriteria
-            ->reject(fn (mixed $persisted): bool => $this->criteriaMatchesRemovalRequest($persisted, $criteria));
+        $matches = static fn (mixed $candidate): bool => is_object($candidate)
+            && $requested->contains(static fn (object|string $criterion): bool => is_object($criterion) ? $candidate instanceof $criterion : $candidate::class === $criterion);
 
-        $this->transientCriteria = $this->transientCriteria
-            ->reject(fn (mixed $transient): bool => $this->criteriaMatchesRemovalRequest($transient, $criteria));
+        $this->persistentCriteria = $this->persistentCriteria->reject($matches);
+        $this->transientCriteria  = $this->transientCriteria->reject($matches);
 
         return $this;
     }
@@ -246,6 +247,8 @@ trait ManagesCriteria
      *
      * @return static
      *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     *
      * @internal Use the public criteria management API
      *           (pushCriteria, withCriteria, etc.).
      */
@@ -266,7 +269,7 @@ trait ManagesCriteria
 
             foreach ($this->transientCriteria as $criterion) {
 
-                $this->model = $criterion->apply($this->model);
+                $this->model = $criterion->apply($this->criteriaQuery());
                 $this->collectCapabilities($criterion);
             }
 
@@ -277,7 +280,7 @@ trait ManagesCriteria
 
             foreach ($this->persistentCriteria as $criterion) {
 
-                $this->model = $criterion->apply($this->model);
+                $this->model = $criterion->apply($this->criteriaQuery());
                 $this->collectCapabilities($criterion);
             }
         }
@@ -310,6 +313,20 @@ trait ManagesCriteria
     }
 
     /**
+     * Get the query the next criterion applies to, starting one from the
+     * repository's model when the model has not been normalized to a builder.
+     *
+     * @return \Illuminate\Contracts\Database\Eloquent\Builder
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     */
+    private function criteriaQuery(): Builder
+    {
+        return $this->model instanceof Builder ? $this->model : $this->getModel()->newQuery();
+    }
+
+    /**
      * Sanitize the given array of criteria to ensure they are valid criteria
      * instances.
      *
@@ -319,35 +336,6 @@ trait ManagesCriteria
     private function sanitizeCriteria(array $criteria): array
     {
         return array_filter($criteria, fn (mixed $criterion): bool => $criterion instanceof CriteriaInterface);
-    }
-
-    /**
-     * Determine whether a candidate criterion matches the given removal
-     * request.
-     *
-     * @param  mixed  $candidate
-     * @param  array<int, string|TCriterion>  $criteria
-     * @return bool
-     *
-     * @imperative
-     */
-    private function criteriaMatchesRemovalRequest(mixed $candidate, array $criteria): bool
-    {
-        if (!is_object($candidate)) {
-            return false;
-        }
-
-        foreach ($criteria as $criterion) {
-
-            if (
-                (is_object($criterion) && $candidate instanceof $criterion)
-                || (is_string($criterion) && $candidate::class === $criterion)
-            ) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /**

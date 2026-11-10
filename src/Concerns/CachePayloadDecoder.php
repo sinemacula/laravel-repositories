@@ -261,7 +261,7 @@ final class CachePayloadDecoder
         }
 
         $pivot->pivotParent = $parent;
-        $pivot->setPivotKeys(CachePayloadField::nullableString($node, 'foreignKey'), CachePayloadField::nullableString($node, 'relatedKey'));
+        $pivot->setPivotKeys(CachePayloadField::string($node, 'foreignKey'), CachePayloadField::string($node, 'relatedKey'));
         $pivot->setRelatedModel($related);
 
         $morphType = CachePayloadField::nullableString($node, 'morphType');
@@ -271,7 +271,7 @@ final class CachePayloadDecoder
         }
 
         $pivot->setMorphType($morphType);
-        $pivot->setMorphClass(CachePayloadField::nullableString($node, 'morphClass'));
+        $pivot->setMorphClass(CachePayloadField::string($node, 'morphClass'));
     }
 
     /**

@@ -79,7 +79,7 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
 
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository->forceTransientCriteria(collect([new NamedUsersCriterion('Alice')]));
+        $repository->forceTransientCriteria($this->criteria(new NamedUsersCriterion('Alice')));
 
         // Both applied: active AND named Alice → 1 result
         self::assertCount(1, $repository->query()->get());
@@ -166,7 +166,7 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
 
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository->forceTransientCriteria(collect([new NamedUsersCriterion('Alice')]));
+        $repository->forceTransientCriteria($this->criteria(new NamedUsersCriterion('Alice')));
         $repository = $repository->skipCriteria();
 
         self::assertCount(3, $repository->query()->get());
@@ -255,7 +255,7 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
         $repository->disableCriteria();
-        $repository->forceTransientCriteria(collect([new NamedUsersCriterion('Alice')]));
+        $repository->forceTransientCriteria($this->criteria(new NamedUsersCriterion('Alice')));
 
         // Transient applied (Alice only), persistent NOT applied → 1 result
         self::assertCount(1, $repository->query()->get());
@@ -345,7 +345,7 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
         $repository->disableCriteria();
-        $repository->forceTransientCriteria(collect([new NamedUsersCriterion('Alice')]));
+        $repository->forceTransientCriteria($this->criteria(new NamedUsersCriterion('Alice')));
         $repository = $repository->skipCriteria();
 
         self::assertCount(3, $repository->query()->get());

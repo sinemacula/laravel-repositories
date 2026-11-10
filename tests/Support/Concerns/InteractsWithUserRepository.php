@@ -4,7 +4,9 @@ declare(strict_types = 1);
 
 namespace Tests\Support\Concerns;
 
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use SineMacula\Repositories\Contracts\CriteriaInterface;
 use Tests\Support\Repositories\TestUserRepository;
 
 /**
@@ -47,5 +49,16 @@ trait InteractsWithUserRepository
         static::assertNotNull($this->app);
 
         return $this->app->make(TestUserRepository::class);
+    }
+
+    /**
+     * Collect criteria for the test user repository.
+     *
+     * @param  \SineMacula\Repositories\Contracts\CriteriaInterface<\Tests\Support\Models\TestUser>  ...$criteria
+     * @return \Illuminate\Support\Collection<int, \SineMacula\Repositories\Contracts\CriteriaInterface<\Tests\Support\Models\TestUser>>
+     */
+    private function criteria(CriteriaInterface ...$criteria): Collection
+    {
+        return new Collection(array_values($criteria));
     }
 }

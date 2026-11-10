@@ -39,7 +39,7 @@ final class RepositoryCriteriaIntegrationTest extends IntegrationTestCase
         $this->seedUsers();
 
         $repository = $this->repository();
-        $repository->pushCriteria([new ActiveUsersCriterion, 'invalid']);
+        $repository->pushCriteria(new ActiveUsersCriterion);
 
         self::assertCount(2, $repository->query()->get());
 

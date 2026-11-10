@@ -280,7 +280,7 @@ trait Cacheable
                     'exception' => $exception,
                 ]);
 
-                return parent::resetAndReturn(\Closure::fromCallable([$query, $method])(...$arguments));
+                return parent::resetAndReturn($this->forwardRead($query, $method, $arguments));
             }
 
             $cached = $this->cacheStore->fetch($hash);
@@ -289,7 +289,7 @@ trait Cacheable
                 return parent::resetAndReturn($cached instanceof CacheMiss ? null : $cached);
             }
 
-            $value = \Closure::fromCallable([$query, $method])(...$arguments);
+            $value = $this->forwardRead($query, $method, $arguments);
 
             if ($value !== null) {
                 $this->cacheStore->put($hash, $value, $this->rowCount($value));
@@ -304,6 +304,27 @@ trait Cacheable
 
             throw $exception;
         }
+    }
+
+    /**
+     * Forward a read verb to the prepared query.
+     *
+     * @param  \Illuminate\Contracts\Database\Eloquent\Builder  $query
+     * @param  string  $method
+     * @param  array<int, mixed>  $arguments
+     * @return mixed
+     *
+     * @throws \BadMethodCallException
+     */
+    private function forwardRead(Builder $query, string $method, array $arguments): mixed
+    {
+        $callable = [$query, $method];
+
+        if (!is_callable($callable)) {
+            throw new \BadMethodCallException(sprintf('Call to undefined method %s::%s()', $query::class, $method));
+        }
+
+        return $callable(...$arguments);
     }
 
     /**
@@ -461,12 +482,17 @@ trait Cacheable
     /**
      * Resolve an overridable property declared on the consuming repository.
      *
+     * A value of a type no override takes is treated as undeclared, so the
+     * package configuration applies.
+     *
      * @param  string  $name
-     * @return mixed
+     * @return bool|int|string|null
      */
-    private function resolveProperty(string $name): mixed
+    private function resolveProperty(string $name): bool|int|string|null
     {
         // @phpstan-ignore property.dynamicName (guarded by property_exists; reads optional overridable config props)
-        return property_exists($this, $name) ? $this->{$name} : null;
+        $value = property_exists($this, $name) ? $this->{$name} : null;
+
+        return is_bool($value) || is_int($value) || is_string($value) ? $value : null;
     }
 }
