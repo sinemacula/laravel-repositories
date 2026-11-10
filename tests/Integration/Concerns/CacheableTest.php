@@ -511,7 +511,7 @@ final class CacheableTest extends IntegrationTestCase
 
         $created = Tag::query()->where('name', 'svelte')->first();
 
-        $found = $this->repository->scopeById($created?->getAttribute('id'))->first(); // @phpstan-ignore staticMethod.dynamicCall
+        $found = $this->repository->scopeById($created?->id)->first(); // @phpstan-ignore staticMethod.dynamicCall
 
         self::assertInstanceOf(Tag::class, $found);
     }

@@ -4,15 +4,14 @@ declare(strict_types = 1);
 
 namespace Tests\Integration;
 
-use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\CoversTrait;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
 use SineMacula\Repositories\Repository;
+use Tests\Support\Concerns\InteractsWithUserRepository;
 use Tests\Support\Criteria\ActiveUsersCriterion;
 use Tests\Support\Criteria\EagerLoadingCriterion;
 use Tests\Support\Criteria\NamedUsersCriterion;
-use Tests\Support\Repositories\TestUserRepository;
 
 /**
  * Integration tests for supplementary criteria capabilities and criteria
@@ -27,6 +26,8 @@ use Tests\Support\Repositories\TestUserRepository;
 #[CoversTrait(ManagesCriteria::class)]
 final class SupplementaryCapabilityTest extends IntegrationTestCase
 {
+    use InteractsWithUserRepository;
+
     // -------------------------------------------------------------------------
     // Supplementary contract detection and collection
     // -------------------------------------------------------------------------
@@ -211,7 +212,7 @@ final class SupplementaryCapabilityTest extends IntegrationTestCase
         $repository = $this->repository();
         $repository->pushCriteria(new EagerLoadingCriterion);
         $repository->disableCriteria();
-        $repository->forceTransientCriteria(collect([new EagerLoadingCriterion]));
+        $repository->forceTransientCriteria($this->criteria(new EagerLoadingCriterion));
 
         $repository->query();
 
@@ -274,35 +275,5 @@ final class SupplementaryCapabilityTest extends IntegrationTestCase
         $repository->pushCriteria(new ActiveUsersCriterion);
 
         self::assertCount(2, $repository->query()->get());
-    }
-
-    // -------------------------------------------------------------------------
-    // Helpers
-    // -------------------------------------------------------------------------
-
-    /**
-     * Resolve the repository under test.
-     *
-     * @return \Tests\Support\Repositories\TestUserRepository
-     */
-    private function repository(): TestUserRepository
-    {
-        self::assertNotNull($this->app);
-
-        return $this->app->make(TestUserRepository::class);
-    }
-
-    /**
-     * Seed baseline users for ordering scenarios.
-     *
-     * @return void
-     */
-    private function seedUsers(): void
-    {
-        DB::table('test_users')->insert([
-            ['id' => 1, 'name' => 'Alice', 'active' => true],
-            ['id' => 2, 'name' => 'Bob', 'active' => false],
-            ['id' => 3, 'name' => 'Carol', 'active' => true],
-        ]);
     }
 }

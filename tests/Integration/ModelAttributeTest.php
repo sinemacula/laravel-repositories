@@ -125,8 +125,8 @@ final class ModelAttributeTest extends IntegrationTestCase
     /**
      * Resolve a repository from the container.
      *
-     * @param  class-string<\SineMacula\Repositories\Repository<\Illuminate\Database\Eloquent\Model>>  $repository
-     * @return \SineMacula\Repositories\Repository<\Illuminate\Database\Eloquent\Model>
+     * @param  class-string<\SineMacula\Repositories\Repository<covariant \Illuminate\Database\Eloquent\Model>>  $repository
+     * @return \SineMacula\Repositories\Repository<covariant \Illuminate\Database\Eloquent\Model>
      *
      * @throws \Throwable
      */

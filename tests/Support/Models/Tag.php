@@ -11,6 +11,8 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * Fixture tag model for repository cache behavior checks.
  *
+ * @property int $id
+ *
  * @method static static create(array<string, string> $attributes = [])
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>

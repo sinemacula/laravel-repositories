@@ -209,8 +209,8 @@ final class RepositoryTest extends TestCase
     /**
      * Build an attribute-declared repository against a mocked container.
      *
-     * @param  class-string<\SineMacula\Repositories\Repository<\Illuminate\Database\Eloquent\Model>>  $repository
-     * @return \SineMacula\Repositories\Repository<\Illuminate\Database\Eloquent\Model>
+     * @param  class-string<\SineMacula\Repositories\Repository<covariant \Illuminate\Database\Eloquent\Model>>  $repository
+     * @return \SineMacula\Repositories\Repository<covariant \Illuminate\Database\Eloquent\Model>
      *
      * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */

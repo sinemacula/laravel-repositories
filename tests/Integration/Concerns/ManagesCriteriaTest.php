@@ -8,6 +8,7 @@ use Illuminate\Contracts\Container\BindingResolutionException;
 use PHPUnit\Framework\Attributes\CoversTrait;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
 use Tests\Integration\IntegrationTestCase;
+use Tests\Support\Concerns\InteractsWithNonPublicMembers;
 use Tests\Support\Concerns\InteractsWithUserRepository;
 use Tests\Support\Criteria\ActiveUsersCriterion;
 use Tests\Support\Criteria\EagerLoadingCriterion;
@@ -27,7 +28,7 @@ use Tests\Support\Models\TestUser;
 #[CoversTrait(ManagesCriteria::class)]
 final class ManagesCriteriaTest extends IntegrationTestCase
 {
-    use InteractsWithUserRepository;
+    use InteractsWithNonPublicMembers, InteractsWithUserRepository;
 
     /** @var string The message carried by a binding that cannot resolve. */
     private const string RESOLUTION_FAILURE = 'Simulated resolution failure.';
@@ -200,34 +201,15 @@ final class ManagesCriteriaTest extends IntegrationTestCase
     }
 
     /**
-     * Test that pushCriteria() sanitizes non-criterion entries out of the
-     * persistent criteria collection instead of registering them as pending
-     * composition.
+     * Test that the criteria sanitizer drops entries that are not criteria, so
+     * neither the persistent nor the transient collection registers them.
      *
      * @return void
      */
-    public function testPushCriteriaSanitizesNonCriterionEntriesFromPersistentCriteria(): void
+    public function testSanitizerDropsNonCriterionEntries(): void
     {
-        $repository = $this->repository();
+        $criterion = new ActiveUsersCriterion;
 
-        $repository->pushCriteria([new ActiveUsersCriterion, 'invalid']);
-
-        self::assertCount(1, $repository->getCriteria());
-    }
-
-    /**
-     * Test that withCriteria() sanitizes non-criterion entries out of the
-     * transient criteria collection instead of registering them as pending
-     * composition.
-     *
-     * @return void
-     */
-    public function testWithCriteriaSanitizesNonCriterionEntriesFromTransientCriteria(): void
-    {
-        $repository = $this->repository();
-
-        $repository = $repository->withCriteria([new ActiveUsersCriterion, 'invalid']);
-
-        self::assertCount(1, $repository->getCriteria());
+        self::assertSame([$criterion], $this->invokeMethod($this->repository(), 'sanitizeCriteria', [$criterion, 'invalid']));
     }
 }

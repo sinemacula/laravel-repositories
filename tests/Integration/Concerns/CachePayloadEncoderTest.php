@@ -5,7 +5,6 @@ declare(strict_types = 1);
 namespace Tests\Integration\Concerns;
 
 use Carbon\CarbonImmutable;
-use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Config;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -258,7 +257,7 @@ final class CachePayloadEncoderTest extends IntegrationTestCase
 
         self::assertNull(CachePayloadEncoder::encode($book));
         self::assertNull(CachePayloadEncoder::encode(Author::query()->value('settings')));
-        self::assertNull(CachePayloadEncoder::encode(new EloquentCollection([static fn (): int => 1])));
+        self::assertNull(CachePayloadEncoder::encode(new Collection([static fn (): int => 1])));
     }
 
     /**

@@ -239,6 +239,8 @@ final class PerQueryCacheTest extends IntegrationTestCase
         $second = $repository->all();
 
         self::assertCount(0, DB::getQueryLog());
+        self::assertInstanceOf(Collection::class, $first);
+        self::assertInstanceOf(Collection::class, $second);
         self::assertCount(2, $first);
         self::assertCount(2, $second);
     }
