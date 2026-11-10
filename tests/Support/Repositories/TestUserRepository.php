@@ -70,6 +70,22 @@ final class TestUserRepository extends Repository
     }
 
     /**
+     * Apply the registered criteria from inside the subclass.
+     *
+     * Mirrors a repository that drives composition itself rather than going
+     * through query(), which is why applyCriteria() is protected rather than
+     * private.
+     *
+     * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     */
+    public function applyCriteriaInPlace(): void
+    {
+        $this->applyCriteria();
+    }
+
+    /**
      * Boot the repository.
      *
      * @return void

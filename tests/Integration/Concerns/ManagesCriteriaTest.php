@@ -5,8 +5,10 @@ declare(strict_types = 1);
 namespace Tests\Integration\Concerns;
 
 use Illuminate\Contracts\Container\BindingResolutionException;
+use Illuminate\Contracts\Database\Eloquent\Builder;
 use PHPUnit\Framework\Attributes\CoversTrait;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
+use SineMacula\Repositories\Contracts\CriteriaInterface;
 use Tests\Integration\IntegrationTestCase;
 use Tests\Support\Concerns\InteractsWithNonPublicMembers;
 use Tests\Support\Concerns\InteractsWithUserRepository;
@@ -198,6 +200,63 @@ final class ManagesCriteriaTest extends IntegrationTestCase
         self::assertSame([], $repository->getCollectedFields());
         self::assertSame([], $repository->getCollectedCounts());
         self::assertSame([], $repository->getCollectedMetadata());
+    }
+
+    /**
+     * Test that removing criteria by instance removes every criterion of that
+     * instance's class, persistent and transient, and leaves the others.
+     *
+     * @return void
+     */
+    public function testRemoveCriteriaByInstanceRemovesOnlyCriteriaOfItsClass(): void
+    {
+        $repository = $this->repository();
+        $repository->pushCriteria([new ActiveUsersCriterion, new NamedUsersCriterion('Alice')]);
+
+        $repository = $repository->withCriteria([new ActiveUsersCriterion, new EagerLoadingCriterion]);
+        $repository->removeCriteria(new ActiveUsersCriterion);
+
+        self::assertSame([NamedUsersCriterion::class, EagerLoadingCriterion::class], $repository->getCriteria()->map(get_class(...))->all());
+    }
+
+    /**
+     * Test that removing criteria by class name removes only criteria of that
+     * exact class, not those that merely extend or implement it.
+     *
+     * @return void
+     */
+    public function testRemoveCriteriaByClassNameRemovesOnlyThatExactClass(): void
+    {
+        $repository = $this->repository();
+        $repository->pushCriteria([new ActiveUsersCriterion, new NamedUsersCriterion('Alice')]);
+
+        $repository->removeCriteria([CriteriaInterface::class, NamedUsersCriterion::class]);
+
+        self::assertSame([ActiveUsersCriterion::class], $repository->getCriteria()->map(get_class(...))->all());
+    }
+
+    /**
+     * Test that a subclass applying criteria before any builder is prepared has
+     * them applied to a query started from the repository's model.
+     *
+     * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     */
+    public function testCriteriaApplyToAQueryStartedFromTheModelWhenNoBuilderIsPrepared(): void
+    {
+        $this->seedUsers();
+
+        $repository = $this->repository();
+        $repository->pushCriteria(new ActiveUsersCriterion);
+        $repository->forceModel(null);
+
+        $repository->applyCriteriaInPlace();
+
+        $query = $repository->currentModel();
+
+        self::assertInstanceOf(Builder::class, $query);
+        self::assertSame(['Alice', 'Carol'], $query->pluck('name')->all());
     }
 
     /**
