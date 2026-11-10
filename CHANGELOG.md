@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [3.2.2](https://github.com/sinemacula/laravel-repositories/compare/v3.2.1...v3.2.2) (2026-11-10)
+
+
+### Bug Fixes
+
+* clear the qlty findings and drop configuration the shared source provides ([#113](https://github.com/sinemacula/laravel-repositories/issues/113)) ([9f8e9cf](https://github.com/sinemacula/laravel-repositories/commit/9f8e9cf25318eb15e22cf034f596139f787fbf7d))
+
 ## [3.2.1](https://github.com/sinemacula/laravel-repositories/compare/v3.2.0...v3.2.1) (2026-11-05)
 
 
