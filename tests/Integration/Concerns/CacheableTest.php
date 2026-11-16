@@ -8,6 +8,7 @@ use Illuminate\Cache\Repository;
 use Illuminate\Contracts\Cache\Store;
 use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Config;
@@ -846,6 +847,117 @@ final class CacheableTest extends IntegrationTestCase
         self::assertTrue($repository->getCacheStatus()->isPopulated());
 
         DB::disableQueryLog();
+    }
+
+    /**
+     * @return iterable<string, array{string, array<int, array<int, int|string>|int|string>}>
+     */
+    public static function referenceReadsSelectingEveryColumn(): iterable
+    {
+        yield 'get with no column list' => ['get', []];
+        yield 'get with a wildcard string' => ['get', ['*']];
+        yield 'get with a wildcard list' => ['get', [['*']]];
+        yield 'find with no column list' => ['find', [1]];
+        yield 'find with a wildcard string' => ['find', [1, '*']];
+        yield 'find with a wildcard list' => ['find', [1, ['*']]];
+    }
+
+    /**
+     * Test that a reference read selecting every column is served from the
+     * snapshot, however the full column list is written.
+     *
+     * @param  string  $method
+     * @param  array<int, array<int, int|string>|int|string>  $arguments
+     * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     */
+    #[DataProvider('referenceReadsSelectingEveryColumn')]
+    public function testReferenceModeServesReadsSelectingEveryColumnFromTheSnapshot(string $method, array $arguments): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        DB::enableQueryLog();
+
+        self::assertNotNull($repository->__call($method, $arguments));
+        self::assertCount(0, DB::getQueryLog());
+
+        DB::disableQueryLog();
+    }
+
+    /**
+     * @return iterable<string, array{string, array<array-key, array<int, int|string>|int|string>, array<int, string>}>
+     */
+    public static function referenceReadsTheSnapshotCannotServe(): iterable
+    {
+        $every = ['id', 'name', 'created_at', 'updated_at'];
+
+        yield 'get with a column list' => ['get', [['id']], ['id']];
+        yield 'get with a column string' => ['get', ['id'], ['id']];
+        yield 'get with a named column list' => ['get', ['columns' => ['id']], ['id']];
+        yield 'get with an extra argument' => ['get', [['*'], 'extra'], $every];
+        yield 'find with a column list' => ['find', [1, ['id']], ['id']];
+        yield 'find of many with a column list' => ['find', [[1, 2], ['id']], ['id']];
+        yield 'find with a named column list' => ['find', ['id' => 1, 'columns' => ['id']], ['id']];
+    }
+
+    /**
+     * Test that a reference read the snapshot cannot answer exactly - one
+     * selecting only some columns, or with an argument shape it does not
+     * recognise - executes a real query and returns what that query selects.
+     *
+     * @param  string  $method
+     * @param  array<array-key, array<int, int|string>|int|string>  $arguments
+     * @param  array<int, string>  $attributes
+     * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     */
+    #[DataProvider('referenceReadsTheSnapshotCannotServe')]
+    public function testReferenceModeQueriesReadsTheSnapshotCannotServe(string $method, array $arguments, array $attributes): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        DB::enableQueryLog();
+
+        $result = $repository->__call($method, $arguments);
+        $models = $result instanceof Tag ? [$result] : ($result instanceof Collection ? $result->all() : []);
+
+        self::assertCount(1, DB::getQueryLog());
+        self::assertNotEmpty($models);
+
+        foreach ($models as $model) {
+            self::assertInstanceOf(Tag::class, $model);
+            self::assertSame($attributes, array_keys($model->getAttributes()));
+        }
+
+        DB::disableQueryLog();
+    }
+
+    /**
+     * Test that an explicit null column list reaches the real query, which
+     * rejects it, rather than being answered with every column.
+     *
+     * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     */
+    public function testReferenceModeLeavesAnExplicitNullColumnListToTheQuery(): void
+    {
+        assert($this->app !== null);
+
+        $repository = $this->app->make(ReferenceTableTagRepository::class);
+        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        $this->expectException(QueryException::class);
+
+        $repository->__call('get', [null]);
     }
 
     /**
