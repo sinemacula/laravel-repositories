@@ -28,9 +28,9 @@ return [
     | `max_rows` and `max_bytes` form the size guard: results larger than either
     | limit are still fetched and returned, but not stored. Set either to null
     | to disable that bound. `registry_enabled` controls how non-taggable stores
-    | invalidate per-query entries: when true a generational table version is
-    | bumped on every write, orphaning existing entries in a single atomic
-    | increment; when false invalidation falls back to TTL expiry only (a
+    | invalidate per-query entries: when true a generation token is replaced
+    | on every write, orphaning existing entries in a single write; when false
+    | invalidation falls back to TTL expiry only (a
     | documented degraded behaviour). `negative_ttl` is the shorter lifetime
     | applied to negatively cached null/miss reads, bounding how long a stale
     | "not found" is served and how much memory probe-fill can occupy; it

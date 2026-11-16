@@ -8,6 +8,7 @@ use Illuminate\Cache\Repository as ConcreteRepository;
 use Illuminate\Contracts\Cache\Repository as CacheContract;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use SineMacula\Repositories\Contracts\CacheInvalidator;
 use SineMacula\Repositories\Enums\CacheKeys;
 
@@ -18,11 +19,11 @@ use SineMacula\Repositories\Enums\CacheKeys;
  * Each executed query is stored under a key derived from its fingerprint, so a
  * filtered or by-id read never returns the full-table collection. Invalidation
  * is performed per table - via cache tags when the store supports them, or via
- * a generational table version otherwise: every per-query key embeds the
- * current table version, and a write bumps the version with a single atomic
- * increment. Invalidation is therefore O(1) and free of the read-modify-write
- * races a tracked key set suffers; orphaned old-version entries simply expire
- * by TTL.
+ * a generation token otherwise: every per-query key embeds the table's current
+ * token, and a write replaces it with a fresh random one in a single write.
+ * Invalidation is therefore O(1), and since a token never repeats, neither
+ * concurrent writes nor an evicted token can make an orphaned entry reachable
+ * again; orphaned entries simply expire by TTL.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -37,14 +38,14 @@ final class CacheStore implements CacheInvalidator
     /** @var string The resolved cache key for the repository metadata. */
     private readonly string $metaKey;
 
-    /** @var string The resolved cache key holding the table's generational version. */
-    private readonly string $versionKey;
+    /** @var string The resolved cache key holding the table's generation token. */
+    private readonly string $generationKey;
 
     /** @var \Illuminate\Cache\Repository|null The concrete store when it supports tags, otherwise null. */
     private readonly ?ConcreteRepository $taggableStore;
 
-    /** @var int|null The memoised table version for the non-taggable generational scheme. */
-    private ?int $version = null;
+    /** @var string|null The memoised generation token for the non-taggable scheme. */
+    private ?string $generation = null;
 
     /**
      * Create a new cache store instance.
@@ -68,7 +69,7 @@ final class CacheStore implements CacheInvalidator
         $this->taggableStore = $this->store instanceof ConcreteRepository && $this->store->supportsTags() ? $this->store : null;
         $this->tag           = self::tagFor($this->table);
         $this->metaKey       = CacheKeys::REPOSITORY_CACHE_META->resolveKey([$this->table]);
-        $this->versionKey    = self::versionKeyFor($this->table);
+        $this->generationKey = self::generationKeyFor($this->table);
     }
 
     /**
@@ -77,7 +78,7 @@ final class CacheStore implements CacheInvalidator
      * table's cache.
      *
      * This is the invalidation half of flushTable(): it flushes the table tag
-     * on a taggable store, or bumps the generational version on a non-taggable
+     * on a taggable store, or replaces the generation token on a non-taggable
      * store when the registry is enabled. It deliberately omits the metadata
      * write flushTable() performs, because the caller is not the owning
      * repository and does not track that table's cache status.
@@ -106,16 +107,16 @@ final class CacheStore implements CacheInvalidator
             return;
         }
 
-        $versionKey = self::versionKeyFor($table);
+        $generationKey = self::generationKeyFor($table);
 
-        if (self::incrementVersion($store, $versionKey) !== null) {
+        if ($store->forever($generationKey, self::newGeneration())) {
             return;
         }
 
-        Log::error('Table version increment failed after seed retry', [
-            'store'       => $cacheStoreName,
-            'table'       => $table,
-            'version_key' => $versionKey,
+        Log::error('Table generation could not be replaced', [
+            'store'          => $cacheStoreName,
+            'table'          => $table,
+            'generation_key' => $generationKey,
         ]);
     }
 
@@ -175,9 +176,9 @@ final class CacheStore implements CacheInvalidator
      * Store a negative (null/miss) marker for a query fingerprint under the
      * shorter negative TTL.
      *
-     * The marker is scoped to the table tag/version like any other entry, so a
-     * write still invalidates it; it bypasses the size guard because it is a
-     * constant-size sentinel, and it does not touch the populated_at metadata
+     * The marker is scoped to the table tag or generation like any other entry,
+     * so a write still invalidates it; it bypasses the size guard because it is
+     * a constant-size sentinel, and it does not touch the populated_at metadata
      * because it represents the absence of data rather than cached data.
      *
      * @param  string  $hash
@@ -199,7 +200,7 @@ final class CacheStore implements CacheInvalidator
         if ($this->taggableStore !== null) {
             $this->taggableStore->tags([$this->tag])->flush();
         } elseif ($this->options->registryEnabled) {
-            $this->bumpVersion();
+            $this->rotateGeneration();
         }
 
         $this->store->put($this->metaKey, ['invalidated_at' => now()->timestamp], $this->options->ttl);
@@ -235,35 +236,13 @@ final class CacheStore implements CacheInvalidator
     }
 
     /**
-     * Atomically increment a table's generational version, seeding the key when
-     * the store cannot increment a missing entry.
+     * Mint a generation token no earlier entry can have been stored under.
      *
-     * Some stores (e.g. the database driver) return false instead of creating
-     * the key on increment, which would silently reduce every version bump to a
-     * no-op; add() seeds the key atomically so concurrent writers converge on a
-     * single counter before retrying the increment. Returns null when the
-     * increment still fails after the seed retry - a store outage rather than a
-     * missing key - so the caller can surface the failure instead of masking
-     * it. A store implementation is free to throw rather than refuse, so the
-     * caller must handle that too.
-     *
-     * @param  \Illuminate\Contracts\Cache\Repository  $store
-     * @param  string  $versionKey
-     * @return int|null
+     * @return string
      */
-    private static function incrementVersion(CacheContract $store, string $versionKey): ?int
+    private static function newGeneration(): string
     {
-        $bumped = $store->increment($versionKey);
-
-        if (is_int($bumped)) {
-            return $bumped;
-        }
-
-        $store->add($versionKey, 0);
-
-        $bumped = $store->increment($versionKey);
-
-        return is_int($bumped) ? $bumped : null;
+        return Str::random(32);
     }
 
     /**
@@ -278,12 +257,12 @@ final class CacheStore implements CacheInvalidator
     }
 
     /**
-     * Resolve the cache key holding a table's generational version.
+     * Resolve the cache key holding a table's generation token.
      *
      * @param  string  $table
      * @return string
      */
-    private static function versionKeyFor(string $table): string
+    private static function generationKeyFor(string $table): string
     {
         return CacheKeys::REPOSITORY_CACHE_VERSION->resolveKey([$table]);
     }
@@ -292,15 +271,15 @@ final class CacheStore implements CacheInvalidator
      * Resolve the cache key for a query fingerprint.
      *
      * On taggable stores the tag handles invalidation, so the key is the bare
-     * table/fingerprint pair. Otherwise the current generational version is
-     * folded in, so a version bump orphans every previously stored key.
+     * table/fingerprint pair. Otherwise the current generation token is folded
+     * in, so replacing it orphans every previously stored key.
      *
      * @param  string  $hash
      * @return string
      */
     private function keyFor(string $hash): string
     {
-        $scopedHash = $this->taggableStore !== null ? $hash : $this->tableVersion() . ':' . $hash;
+        $scopedHash = $this->taggableStore !== null ? $hash : $this->generation() . ':' . $hash;
 
         return CacheKeys::REPOSITORY_QUERY_CACHE->resolveKey([$this->table, $scopedHash]);
     }
@@ -318,69 +297,80 @@ final class CacheStore implements CacheInvalidator
     }
 
     /**
-     * Resolve the table's current generational version, memoised for the
-     * lifetime of this store instance.
+     * Resolve the table's current generation token, memoised for the lifetime
+     * of this store instance.
      *
-     * Only applies to non-taggable stores. The version is read once per
-     * instance and held for the request, so a concurrent bump elsewhere is
-     * invisible here until this instance is discarded; orphaned entries still
-     * expire by TTL, so the inconsistency is bounded and self-healing.
+     * Only applies to non-taggable stores. The token is read once per instance
+     * and held for the request, so a replacement elsewhere is invisible here
+     * until this instance is discarded; orphaned entries still expire by TTL,
+     * so the inconsistency is bounded and self-healing. A missing token, never
+     * written or evicted, is replaced with a fresh one rather than read as a
+     * fixed value, which would make the entries stored under it before an
+     * earlier write reachable again.
      *
-     * @return int
+     * @return string
      */
-    private function tableVersion(): int
+    private function generation(): string
     {
-        if ($this->version !== null) {
-            return $this->version;
+        if ($this->generation !== null) {
+            return $this->generation;
         }
 
-        $value = $this->store->get($this->versionKey);
+        $generation = $this->store->get($this->generationKey);
 
-        return $this->version = is_int($value) ? $value : 0;
+        if (is_string($generation)) {
+            return $this->generation = $generation;
+        }
+
+        return $this->generation = $this->publishGeneration();
     }
 
     /**
-     * Bump the table's generational version, orphaning every existing per-query
-     * key for the table in a single atomic write.
-     *
-     * Falls back to a local, unpersisted bump when the store cannot persist the
-     * increment, so this instance still stops serving pre-flush entries; the
-     * failure is logged since other processes never observe it. A store that
-     * throws rather than refusing the increment takes the same fallback, off
-     * the memoised version alone, because the read behind tableVersion() would
-     * hit the same dead store.
+     * Replace the table's generation token, orphaning every existing per-query
+     * key for the table in a single write.
      *
      * @return void
      */
-    private function bumpVersion(): void
+    private function rotateGeneration(): void
     {
+        $this->generation = $this->publishGeneration();
+    }
+
+    /**
+     * Store a fresh generation token for the table and return it.
+     *
+     * The token is used by this instance even when the store cannot persist
+     * it, so this instance still stops serving entries stored under the old
+     * one; the failure is logged since other processes never observe the new
+     * token. A store that throws rather than refusing the write takes the same
+     * fallback.
+     *
+     * @return string
+     */
+    private function publishGeneration(): string
+    {
+        $generation = self::newGeneration();
+
         try {
-            $bumped = self::incrementVersion($this->store, $this->versionKey);
+            $published = $this->store->forever($this->generationKey, $generation);
         } catch (\Throwable $exception) { // @phpstan-ignore catch.neverThrown
 
-            Log::error('Table version increment failed with a store error', [
-                'table'       => $this->table,
-                'version_key' => $this->versionKey,
-                'exception'   => $exception,
+            Log::error('Table generation could not be stored due to a store error', [
+                'table'          => $this->table,
+                'generation_key' => $this->generationKey,
+                'exception'      => $exception,
             ]);
 
-            $this->version = ($this->version ?? 0) + 1;
-
-            return;
+            return $generation;
         }
 
-        if ($bumped !== null) {
-
-            $this->version = $bumped;
-
-            return;
+        if (!$published) {
+            Log::error('Table generation could not be replaced', [
+                'table'          => $this->table,
+                'generation_key' => $this->generationKey,
+            ]);
         }
 
-        Log::error('Table version increment failed after seed retry', [
-            'table'       => $this->table,
-            'version_key' => $this->versionKey,
-        ]);
-
-        $this->version = $this->tableVersion() + 1;
+        return $generation;
     }
 }

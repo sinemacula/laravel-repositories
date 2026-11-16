@@ -159,9 +159,10 @@ Write verbs forwarded through the repository (`create`, `update`, `delete`, `fir
 after the write executes. How the invalidation happens depends on the backing store:
 
 - **Taggable stores** (e.g. Redis): every entry is tagged with its table, and a write flushes the tag.
-- **Non-taggable stores** (e.g. file, database): every key embeds a generational table version, and a write bumps the
-  version with a single atomic increment. Invalidation is O(1) and race-free; orphaned old-version entries simply
-  expire by TTL. Setting `registry_enabled` to `false` disables the version bump, degrading invalidation to TTL
+- **Non-taggable stores** (e.g. file, database): every key embeds a generation token for the table, and a write
+  replaces it with a fresh random one in a single write. Invalidation is O(1), and since a token never repeats,
+  concurrent writes cannot make an orphaned entry reachable again; orphaned entries simply expire by TTL. Setting
+  `registry_enabled` to `false` disables the replacement, degrading invalidation to TTL
   expiry only.
 
 A cache-store failure during the post-write flush is logged and swallowed: the write has already committed, so the
@@ -229,23 +230,23 @@ multi-connection applications are isolated automatically.
 
 Like any look-aside cache, a read that misses, queries the database, and stores its result can interleave with a
 concurrent write on taggable stores and in reference mode: the freshly stored entry may predate the write, and is
-served until the TTL expires or the next write flushes it. The staleness window is bounded and self-healing; on
-non-taggable stores the generational version is captured before the database read, so a late store lands under the
-old version and is never served.
+served until the TTL expires or the next write flushes it. The staleness window is bounded and self-healing. On
+non-taggable stores a repository captures the generation token before its first database read and keeps it for its
+lifetime, so a late store lands under the old token and is never served to a repository resolved after the write; a
+repository that captured the token before the write keeps serving its own entries until it is discarded.
 
 #### Non-taggable store considerations
 
-The generational version scheme depends on the version key outliving every entry it scopes, so a few things are
-worth knowing before picking a non-taggable store:
+A few things are worth knowing about the generation token before picking a non-taggable store:
 
-- **Eviction risk.** Under memory pressure an LRU store (e.g. Redis or Memcached without tags) can evict the version
-  key like any other entry, resetting the counter to zero and un-orphaning entries that were meant to stay
-  invalidated. Use a non-evicting store (or a dedicated one) for the cache store when relying on this scheme.
-- **Shared across connections.** The version key is scoped by table alone, not by connection: a write on one
-  connection bumps the same counter another connection's per-query keys embed, so it invalidates that connection's
-  cache too. This is a coherence trade-off rather than a correctness bug - orphaned entries still expire by TTL.
-- **Database driver.** Each version bump is a single locking increment transaction against one row, plus an extra
-  round trip the first time the key is seeded. Prefer a taggable store for tables with a high write volume.
+- **Eviction.** An LRU store (e.g. Redis or Memcached without tags) can evict the token like any other entry. A
+  missing token is replaced with a fresh one, so eviction costs a round of cache misses but never revives entries
+  that were meant to stay invalidated.
+- **Shared across connections.** The token is scoped by table alone, not by connection: a write on one connection
+  replaces the token another connection's per-query keys embed, so it invalidates that connection's cache too. This
+  is a coherence trade-off rather than a correctness bug - orphaned entries still expire by TTL.
+- **Failed writes.** If the store cannot write a new token, the repository that wrote keeps a local one and logs the
+  failure; other processes keep serving their entries until the TTL expires.
 
 ### Testing Utilities
 

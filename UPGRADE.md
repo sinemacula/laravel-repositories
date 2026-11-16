@@ -2,6 +2,18 @@
 
 This document provides migration guidance for consumer-visible changes between versions.
 
+## Non-taggable stores invalidate with a generation token
+
+On a non-taggable store, the `repository-cache-version:{table}` key now holds a random generation token that every
+write replaces, instead of an integer that every write incremented.
+
+**Why:** the file store increments with an unlocked read-modify-write, and seeding a missing counter was not atomic
+either, so concurrent writes could roll the counter back to a value whose entries predate a write and serve them
+again. A token never repeats, so neither concurrent writes nor an evicted key can revive an orphaned entry.
+
+**Who is affected:** per-query entries on non-taggable stores miss once after the upgrade. Code that read or
+incremented the version key directly must stop; call `CacheStore::invalidateTable()` or `flushCache()` instead.
+
 ## Cache keys follow global scopes and eager-load constraints
 
 A cacheable read is now keyed by the SQL Eloquent runs, global scopes and eager-load constraints included, and a
