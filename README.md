@@ -193,7 +193,8 @@ such as one an earlier version stored as objects, is treated as a miss, then rec
 For small, static tables read in full (countries, currencies, statuses), set `protected bool $cacheReferenceTable =
 true` to opt into whole-table reference mode: the table is loaded once, cached as a single snapshot, memoised on a
 collaborator every copy of the repository shares, and indexed by primary key, so `get`, `all`, and `find` resolve
-without touching the database. Other read verbs skip the cache entirely in this mode.
+without touching the database. A `get` or `find` that selects only some columns executes a real query, since the
+snapshot holds every column. Other read verbs skip the cache entirely in this mode.
 
 The snapshot always represents the unfiltered table, so reference reads only serve requests with no repository-level
 composition pending: when criteria or scopes are active, `get`, `all`, and `find` execute a real (uncached) query so a
