@@ -313,7 +313,7 @@ final class PerQueryCacheInvalidationTest extends IntegrationTestCase
         $result = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
 
         self::assertCount(3, $result);
-        self::assertSame(1, Cache::store('database')->get('repositories:repository-cache-version:tags'));
+        self::assertIsString(Cache::store('database')->get('repositories:repository-cache-version:tags'));
     }
 
     /**

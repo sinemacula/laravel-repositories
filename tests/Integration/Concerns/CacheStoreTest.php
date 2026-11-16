@@ -251,7 +251,8 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a negative entry is stored as a plain payload.
+     * Test that a negative entry is stored as a plain payload under the table's
+     * generation.
      *
      * @return void
      */
@@ -261,7 +262,9 @@ final class CacheStoreTest extends IntegrationTestCase
 
         $store->putMiss(self::HASH);
 
-        self::assertSame(CachePayloadEncoder::miss(), Cache::store('file')->get('repositories:repository-query:miss-table:0:' . self::HASH));
+        $key = 'repositories:repository-query:miss-table:' . self::generation('file', 'miss-table') . ':' . self::HASH;
+
+        self::assertSame(CachePayloadEncoder::miss(), Cache::store('file')->get($key));
     }
 
     /**
@@ -298,26 +301,26 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that flushTable bumps the table's generational version on each call,
-     * orphaning entries stored under the previous version while leaving newer
-     * entries reachable - an O(1) invalidation with no tracked key set.
+     * Test that flushTable replaces the table's generation token on each call
+     * with one never used before, orphaning entries stored under the previous
+     * token while leaving newer entries reachable.
      *
      * @return void
      */
-    public function testFlushTableBumpsGenerationalVersionOnNonTaggableStore(): void
+    public function testFlushTableReplacesTheGenerationOnNonTaggableStore(): void
     {
-        $store      = new CacheStore(Cache::store('file'), 'versioned-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
-        $versionKey = 'repositories:repository-cache-version:versioned-table';
+        $store = new CacheStore(Cache::store('file'), 'versioned-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
 
         Log::shouldReceive('error')->never();
 
         $store->put(self::HASH, collect(['first']), 1);
 
-        self::assertNull($store->getStore()->get($versionKey));
+        $first = self::generation('file', 'versioned-table');
 
         $store->flushTable();
 
-        self::assertSame(1, $store->getStore()->get($versionKey));
+        $second = self::generation('file', 'versioned-table');
+
         self::assertNull($store->fetch(self::HASH));
 
         $store->put(self::HASH, collect(['second']), 1);
@@ -326,8 +329,9 @@ final class CacheStoreTest extends IntegrationTestCase
 
         $store->flushTable();
 
-        self::assertSame(2, $store->getStore()->get($versionKey));
         self::assertNull($store->fetch(self::HASH));
+        self::assertCount(3, array_unique([$first, $second, self::generation('file', 'versioned-table')]));
+        self::assertSame(32, strlen($second));
     }
 
     /**
@@ -514,19 +518,19 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that non-taggable keys embed the table, the generational version,
-     * and the fingerprint in the documented order, pinning the physical key
-     * layout that version bumps rely on.
+     * Test that non-taggable keys embed the table, the generation token, and
+     * the fingerprint in the documented order, pinning the physical key layout
+     * that replacing the token relies on.
      *
      * @return void
      */
-    public function testNonTaggableKeysEmbedTableVersionAndFingerprint(): void
+    public function testNonTaggableKeysEmbedTableGenerationAndFingerprint(): void
     {
         $store = new CacheStore(Cache::store('file'), 'key-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
 
         $store->put(self::HASH, collect(['item']), 1);
 
-        self::assertNotNull($store->getStore()->get('repositories:repository-query:key-table:0:' . self::HASH));
+        self::assertNotNull($store->getStore()->get('repositories:repository-query:key-table:' . self::generation('file', 'key-table') . ':' . self::HASH));
     }
 
     /**
@@ -571,188 +575,134 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a failed version increment falls back to bumping the memoised
-     * version locally, so the instance still stops serving pre-flush entries.
+     * Test that a generation the store refuses to replace is still used by this
+     * instance, so it stops serving pre-flush entries, and the refusal is
+     * logged since other processes never observe it.
      *
      * @return void
      */
-    public function testFailedVersionIncrementFallsBackToBumpingTheMemoisedVersion(): void
+    public function testARefusedGenerationIsUsedLocallyAndLogged(): void
     {
-        $store = \Mockery::mock(Store::class)->shouldIgnoreMissing();
-        $store->shouldReceive('increment')->andReturn(false);
-        $store->shouldReceive('get')
-            ->with('repositories:repository-cache-version:increment-table')
-            ->andReturn(3);
-        $store->shouldReceive('get')
-            ->with('repositories:repository-query:increment-table:4:' . self::HASH)
-            ->andReturn(CachePayloadEncoder::encode('post-bump'));
+        $cacheStore = $this->generationStore('refusing', static function (mixed $store): void {
+            $store->shouldReceive('forever')->andReturn(false);
+        });
 
-        Cache::extend('incrementless', fn (): Repository => new Repository($store));
-        Config::set('cache.stores.incrementless', ['driver' => 'incrementless']);
-
-        $cacheStore = new CacheStore(Cache::store('incrementless'), 'increment-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
-
-        $cacheStore->flushTable();
-
-        self::assertSame('post-bump', $cacheStore->fetch(self::HASH));
-    }
-
-    /**
-     * Test that a store which throws on increment takes the same local bump as
-     * one that merely refuses it, so a post-write flush still stops this
-     * instance serving the entries it was meant to drop.
-     *
-     * @return void
-     */
-    public function testVersionBumpFallsBackLocallyWhenTheStoreIncrementThrows(): void
-    {
-        $entries = [
-            'repositories:repository-cache-version:throwing-table'         => 3,
-            'repositories:repository-query:throwing-table:3:' . self::HASH => CachePayloadEncoder::encode('pre-flush'),
-            'repositories:repository-query:throwing-table:4:' . self::HASH => CachePayloadEncoder::encode('post-bump'),
-        ];
-
-        $store = \Mockery::mock(Store::class)->shouldIgnoreMissing();
-        $store->shouldReceive('increment')->andThrow(new \RuntimeException(self::STORE_FAILURE)); // @phpstan-ignore method.notFound
-        $store->shouldReceive('get')->andReturnUsing(static fn (string $key): mixed => $entries[$key] ?? null); // @phpstan-ignore method.notFound
-
-        Cache::extend('throwing-increment', fn (): Repository => new Repository($store));
-        Config::set('cache.stores.throwing-increment', ['driver' => 'throwing-increment']);
-
-        $cacheStore = new CacheStore(Cache::store('throwing-increment'), 'throwing-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
-
-        // Memoise version 3 before the flush, so the fallback has a generation
-        // to bump rather than starting from zero.
         self::assertSame('pre-flush', $cacheStore->fetch(self::HASH));
 
         Log::shouldReceive('error')
             ->once()
-            ->with('Table version increment failed with a store error', \Mockery::on(
-                static fn (array $context): bool => $context['table'] === 'throwing-table'
-                    && $context['version_key']                        === 'repositories:repository-cache-version:throwing-table'
+            ->with('Table generation could not be replaced', [
+                'table'          => 'generation-table',
+                'generation_key' => 'repositories:repository-cache-version:generation-table',
+            ]);
+
+        $cacheStore->flushTable();
+
+        self::assertNull($cacheStore->fetch(self::HASH));
+    }
+
+    /**
+     * Test that a store which throws on replacing the generation takes the same
+     * local fallback as one that refuses it, so a post-write flush still stops
+     * this instance serving the entries it was meant to drop.
+     *
+     * @return void
+     */
+    public function testAGenerationTheStoreFailsToWriteIsUsedLocallyAndLogged(): void
+    {
+        $cacheStore = $this->generationStore('throwing', static function (mixed $store): void {
+            $store->shouldReceive('forever')->andThrow(new \RuntimeException(self::STORE_FAILURE));
+        });
+
+        self::assertSame('pre-flush', $cacheStore->fetch(self::HASH));
+
+        Log::shouldReceive('error')
+            ->once()
+            ->with('Table generation could not be stored due to a store error', \Mockery::on(
+                static fn (array $context): bool => $context['table'] === 'generation-table'
+                    && $context['generation_key']                     === 'repositories:repository-cache-version:generation-table'
                     && $context['exception'] instanceof \RuntimeException,
             ));
 
         $cacheStore->flushTable();
 
-        self::assertSame('post-bump', $cacheStore->fetch(self::HASH));
+        self::assertNull($cacheStore->fetch(self::HASH));
     }
 
     /**
-     * Test that the local fallback starts at the first generation when the
-     * store throws before this instance has read a version, so the bumped keys
-     * cannot collide with the generation the flush was meant to orphan.
+     * Test that an evicted generation token is replaced with a fresh one rather
+     * than read as a fixed value, so entries stored before an earlier write
+     * never become reachable again.
      *
      * @return void
      */
-    public function testVersionBumpStartsAtTheFirstGenerationWhenNothingWasRead(): void
+    public function testAnEvictedGenerationNeverRevivesOlderEntries(): void
     {
-        $entries = ['repositories:repository-query:unread-table:1:' . self::HASH => CachePayloadEncoder::encode('post-bump')];
+        $options = new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10);
 
-        $store = \Mockery::mock(Store::class)->shouldIgnoreMissing();
-        $store->shouldReceive('increment')->andThrow(new \RuntimeException(self::STORE_FAILURE)); // @phpstan-ignore method.notFound
-        $store->shouldReceive('get')->andReturnUsing(static fn (string $key): mixed => $entries[$key] ?? null); // @phpstan-ignore method.notFound
+        (new CacheStore(Cache::store('file'), 'evicted-table', $options))->put(self::HASH, collect(['stale']), 1);
 
-        Cache::extend('unread-increment', fn (): Repository => new Repository($store));
-        Config::set('cache.stores.unread-increment', ['driver' => 'unread-increment']);
+        CacheStore::invalidateTable('file', 'evicted-table', registryEnabled: true);
+        Cache::store('file')->forget('repositories:repository-cache-version:evicted-table');
 
-        $cacheStore = new CacheStore(Cache::store('unread-increment'), 'unread-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
-
-        $cacheStore->flushTable();
-
-        self::assertSame('post-bump', $cacheStore->fetch(self::HASH));
+        self::assertNull((new CacheStore(Cache::store('file'), 'evicted-table', $options))->fetch(self::HASH));
     }
 
     /**
-     * Test that a version bump seeds the version key when the store cannot
-     * increment a missing entry, so invalidation still takes effect for other
-     * instances instead of silently degrading to TTL expiry.
+     * Test that a generation minted for a table that has none is stored before
+     * this instance uses it, so other instances share it.
      *
      * @return void
      */
-    public function testFlushSeedsVersionKeyWhenIncrementCannotCreateIt(): void
+    public function testAMintedGenerationIsSharedWithOtherInstances(): void
     {
-        $strictStore = $this->strictIncrementStore();
+        $options = new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10);
 
-        Cache::extend('seedable', fn (): Repository => new Repository($strictStore));
-        Config::set('cache.stores.seedable', ['driver' => 'seedable']);
+        (new CacheStore(Cache::store('file'), 'shared-table', $options))->put(self::HASH, collect(['item']), 1);
 
-        $cacheStore = new CacheStore(Cache::store('seedable'), 'seed-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
-
-        $cacheStore->flushTable();
-
-        self::assertSame(1, $cacheStore->getStore()->get('repositories:repository-cache-version:seed-table'));
+        self::assertNotNull((new CacheStore(Cache::store('file'), 'shared-table', $options))->fetch(self::HASH));
     }
 
     /**
-     * Test that the static table invalidation seeds the version key when the
-     * store cannot increment a missing entry.
+     * Test that the static table invalidation stores a fresh generation token.
      *
      * @return void
      */
-    public function testInvalidateTableSeedsVersionKeyWhenIncrementCannotCreateIt(): void
+    public function testInvalidateTableStoresAFreshGeneration(): void
     {
-        $strictStore = $this->strictIncrementStore();
+        CacheStore::invalidateTable('file', 'static-table', registryEnabled: true);
 
-        Cache::extend('seedable-static', fn (): Repository => new Repository($strictStore));
-        Config::set('cache.stores.seedable-static', ['driver' => 'seedable-static']);
+        $first = self::generation('file', 'static-table');
 
-        CacheStore::invalidateTable('seedable-static', 'seed-table', registryEnabled: true);
+        CacheStore::invalidateTable('file', 'static-table', registryEnabled: true);
 
-        self::assertSame(1, Cache::store('seedable-static')->get('repositories:repository-cache-version:seed-table'));
+        self::assertSame(32, strlen($first));
+        self::assertNotSame($first, self::generation('file', 'static-table'));
     }
 
     /**
-     * Test that a persistently failing version increment (both the initial call
-     * and the post-seed retry fail, as on a genuine store outage) is logged at
-     * error level from the instance flush path, so a process other than the
-     * writer can discover that its invalidation was never persisted.
+     * Test that a generation the store refuses to replace is logged from the
+     * static invalidateTable() path, mirroring the instance flush path.
      *
      * @return void
      */
-    public function testFlushTableLogsErrorWhenVersionIncrementPersistentlyFails(): void
+    public function testInvalidateTableLogsAGenerationTheStoreRefuses(): void
     {
         $store = \Mockery::mock(Store::class)->shouldIgnoreMissing();
-        $store->shouldReceive('increment')->andReturn(false);
+        $store->shouldReceive('forever')->andReturn(false); // @phpstan-ignore method.notFound
 
-        Cache::extend('persistently-failing', fn (): Repository => new Repository($store));
-        Config::set('cache.stores.persistently-failing', ['driver' => 'persistently-failing']);
-
-        $cacheStore = new CacheStore(Cache::store('persistently-failing'), 'failing-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
+        Cache::extend('refusing-static', fn (): Repository => new Repository($store));
+        Config::set('cache.stores.refusing-static', ['driver' => 'refusing-static']);
 
         Log::shouldReceive('error')
             ->once()
-            ->with('Table version increment failed after seed retry', \Mockery::on(
-                static fn (array $context): bool => $context['table'] === 'failing-table'
-                    && $context['version_key']                        === 'repositories:repository-cache-version:failing-table',
-            ));
+            ->with('Table generation could not be replaced', [
+                'store'          => 'refusing-static',
+                'table'          => 'failing-table',
+                'generation_key' => 'repositories:repository-cache-version:failing-table',
+            ]);
 
-        $cacheStore->flushTable();
-    }
-
-    /**
-     * Test that a persistently failing version increment is logged at error
-     * level from the static invalidateTable() path, mirroring the instance
-     * flush path's observability.
-     *
-     * @return void
-     */
-    public function testInvalidateTableLogsErrorWhenVersionIncrementPersistentlyFails(): void
-    {
-        $store = \Mockery::mock(Store::class)->shouldIgnoreMissing();
-        $store->shouldReceive('increment')->andReturn(false);
-
-        Cache::extend('persistently-failing-static', fn (): Repository => new Repository($store));
-        Config::set('cache.stores.persistently-failing-static', ['driver' => 'persistently-failing-static']);
-
-        Log::shouldReceive('error')
-            ->once()
-            ->with('Table version increment failed after seed retry', \Mockery::on(
-                static fn (array $context): bool => $context['store'] === 'persistently-failing-static'
-                    && $context['table']                              === 'failing-table',
-            ));
-
-        CacheStore::invalidateTable('persistently-failing-static', 'failing-table', registryEnabled: true);
+        CacheStore::invalidateTable('refusing-static', 'failing-table', registryEnabled: true);
     }
 
     /**
@@ -775,40 +725,45 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Build a non-taggable store stub whose increment() fails on missing keys,
-     * mirroring the database driver's behaviour.
+     * Read the generation token a non-taggable store holds for a table.
      *
-     * @return \Illuminate\Contracts\Cache\Store
+     * @param  string  $store
+     * @param  string  $table
+     * @return string
      */
-    private function strictIncrementStore(): Store
+    private static function generation(string $store, string $table): string
     {
-        /** @var array<string, array<string, int>|int> $storage */
-        $storage = [];
+        $generation = Cache::store($store)->get('repositories:repository-cache-version:' . $table);
 
-        $store = \Mockery::mock(Store::class);
+        self::assertIsString($generation);
 
-        $store->shouldReceive('increment')->andReturnUsing(static function (string $key, int $value = 1) use (&$storage): bool|int {
-            $current = $storage[$key] ?? null;
+        return $generation;
+    }
 
-            if (!is_int($current)) {
-                return false;
-            }
+    /**
+     * Build a cache store over a stub holding a pre-flush entry under the
+     * "current" generation, with its generation writes configured by the
+     * caller.
+     *
+     * @param  string  $driver
+     * @param  \Closure(\Mockery\MockInterface): void  $configure
+     * @return \SineMacula\Repositories\Concerns\CacheStore
+     */
+    private function generationStore(string $driver, \Closure $configure): CacheStore
+    {
+        $entries = [
+            'repositories:repository-cache-version:generation-table'               => 'current',
+            'repositories:repository-query:generation-table:current:' . self::HASH => CachePayloadEncoder::encode('pre-flush'),
+        ];
 
-            $storage[$key] = $current + $value;
+        $store = \Mockery::mock(Store::class)->shouldIgnoreMissing();
+        $store->shouldReceive('get')->andReturnUsing(static fn (string $key): mixed => $entries[$key] ?? null); // @phpstan-ignore method.notFound
 
-            return $storage[$key];
-        });
+        $configure($store);
 
-        $store->shouldReceive('get')->andReturnUsing(static function (string $key) use (&$storage): array|int|null {
-            return $storage[$key] ?? null;
-        });
+        Cache::extend($driver, fn (): Repository => new Repository($store));
+        Config::set('cache.stores.' . $driver, ['driver' => $driver]);
 
-        $store->shouldReceive('put', 'forever')->andReturnUsing(static function (string $key, array|int $value) use (&$storage): bool {
-            $storage[$key] = $value;
-
-            return true;
-        });
-
-        return $store;
+        return new CacheStore(Cache::store($driver), 'generation-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
     }
 }
