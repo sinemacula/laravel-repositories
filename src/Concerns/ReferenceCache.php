@@ -133,7 +133,7 @@ final class ReferenceCache implements CacheInvalidator
     {
         $this->memo = [];
 
-        if (!$this->store->forever($this->generationKey, Str::random(32))) {
+        if (!$this->store->forever($this->generationKey, self::newGeneration())) {
             Log::error('Reference snapshot generation could not be replaced', [
                 'table'          => $this->table,
                 'generation_key' => $this->generationKey,
@@ -234,7 +234,11 @@ final class ReferenceCache implements CacheInvalidator
     }
 
     /**
-     * Get the current generation token, or an empty one before the first write.
+     * Get the current generation token, minting one when the store holds none.
+     *
+     * A missing token is never read as a fixed value, since an evicted token
+     * would then make the snapshots stored before the first write reachable
+     * again.
      *
      * @return string
      */
@@ -242,7 +246,25 @@ final class ReferenceCache implements CacheInvalidator
     {
         $generation = $this->store->get($this->generationKey);
 
-        return is_string($generation) ? $generation : '';
+        if (is_string($generation)) {
+            return $generation;
+        }
+
+        $generation = self::newGeneration();
+
+        $this->store->forever($this->generationKey, $generation);
+
+        return $generation;
+    }
+
+    /**
+     * Mint a generation token no earlier snapshot can have been stored under.
+     *
+     * @return string
+     */
+    private static function newGeneration(): string
+    {
+        return Str::random(32);
     }
 
     /**

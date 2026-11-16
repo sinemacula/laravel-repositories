@@ -246,7 +246,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
      */
     public function testReloadsASnapshotThatDoesNotReadBack(): void
     {
-        Cache::store('file')->getStore()->put(self::snapshotKey(), Tag::query()->get(), 3600);
+        Cache::store('file')->getStore()->put(self::snapshotKey(store: 'file'), Tag::query()->get(), 3600);
 
         $reference = new ReferenceCache(Cache::store('file'), 'tags', 3600, new CacheSizeGuard(null, null));
 
@@ -257,7 +257,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
         self::assertInstanceOf(Collection::class, $tags);
         self::assertSame(['php', 'laravel'], $tags->pluck('name')->all());
         self::assertCount(1, DB::getQueryLog());
-        self::assertIsArray(Cache::store('file')->get(self::snapshotKey()));
+        self::assertIsArray(Cache::store('file')->get(self::snapshotKey(store: 'file')));
 
         DB::disableQueryLog();
     }
@@ -570,6 +570,26 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
+     * Test that an evicted generation token never makes a snapshot stored
+     * before an earlier write reachable again.
+     *
+     * @return void
+     */
+    public function testAnEvictedGenerationNeverRevivesAnOlderSnapshot(): void
+    {
+        $this->referenceCache->all(new Tag);
+
+        Tag::create(['name' => 'vue']);
+
+        $this->referenceCache->flushTable();
+        $this->referenceCache->getStore()->forget('repositories:repository-cache-version:tags');
+
+        $fresh = new ReferenceCache(Cache::store('array'), 'tags', 3600, new CacheSizeGuard(null, null));
+
+        self::assertSame(['php', 'laravel', 'vue'], $fresh->all(new Tag)->pluck('name')->all());
+    }
+
+    /**
      * Test that a write through a reference-mode repository invalidates every
      * variant on a non-taggable store even with the version registry disabled.
      *
@@ -664,16 +684,26 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Resolve the snapshot key of the unscoped tags table before the first
-     * write.
+     * Resolve the snapshot key of the unscoped tags table under the current
+     * generation, seeding one when the store holds none.
      *
      * @param  string  $table
+     * @param  string  $store
      * @return string
      *
      * @throws \SineMacula\Repositories\Exceptions\UnfingerprintableQueryException
      */
-    private static function snapshotKey(string $table = 'tags'): string
+    private static function snapshotKey(string $table = 'tags', string $store = 'array'): string
     {
-        return 'repositories:repository-cache:' . $table . '::' . QueryFingerprint::for(Tag::query());
+        $generationKey = 'repositories:repository-cache-version:' . $table;
+        $generation    = Cache::store($store)->get($generationKey);
+
+        if (!is_string($generation)) {
+            $generation = 'seeded';
+
+            Cache::store($store)->forever($generationKey, $generation);
+        }
+
+        return 'repositories:repository-cache:' . $table . ':' . $generation . ':' . QueryFingerprint::for(Tag::query());
     }
 }

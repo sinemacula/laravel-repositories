@@ -1322,7 +1322,10 @@ final class CacheableTest extends IntegrationTestCase
         /** @var \Illuminate\Cache\CacheManager $cacheManager */
         $cacheManager = app('cache');
 
-        self::assertTrue($cacheManager->store('array')->has('repositories:repository-cache:tags:testing::memory:::' . QueryFingerprint::for(Tag::query())));
+        $generation = $cacheManager->store('array')->get('repositories:repository-cache-version:tags:testing::memory:');
+
+        self::assertIsString($generation);
+        self::assertTrue($cacheManager->store('array')->has('repositories:repository-cache:tags:testing::memory::' . $generation . ':' . QueryFingerprint::for(Tag::query())));
     }
 
     /**
