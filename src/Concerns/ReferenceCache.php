@@ -5,10 +5,14 @@ declare(strict_types = 1);
 namespace SineMacula\Repositories\Concerns;
 
 use Illuminate\Contracts\Cache\Repository as CacheContract;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use SineMacula\Repositories\Contracts\CacheInvalidator;
 use SineMacula\Repositories\Enums\CacheKeys;
+use SineMacula\Repositories\Exceptions\UnfingerprintableQueryException;
 
 /**
  * Whole-table reference cache for repositories whose backing table is small,
@@ -21,6 +25,11 @@ use SineMacula\Repositories\Enums\CacheKeys;
  * cached payload nor scan it linearly. Whole-table caching semantics, including
  * cross-request persistence, are preserved as an explicit opt-in.
  *
+ * The model's global scopes apply to the snapshot query, so each variant they
+ * produce (a tenant, say) is keyed by its query fingerprint and held as its own
+ * snapshot. Every snapshot key embeds a generation token that a write replaces,
+ * so one write invalidates every variant at once.
+ *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
  *
@@ -28,17 +37,14 @@ use SineMacula\Repositories\Enums\CacheKeys;
  */
 final class ReferenceCache implements CacheInvalidator
 {
-    /** @var string The resolved cache key for the whole-table snapshot. */
-    private readonly string $cacheKey;
-
     /** @var string The resolved cache key for the reference metadata. */
     private readonly string $metaKey;
 
-    /** @var \Illuminate\Support\Collection<int, \Illuminate\Database\Eloquent\Model>|null The request-local snapshot memo. */
-    private ?Collection $memo = null;
+    /** @var string The resolved cache key holding the snapshot generation token. */
+    private readonly string $generationKey;
 
-    /** @var \Illuminate\Support\Collection<int|string, \Illuminate\Database\Eloquent\Model>|null The key-indexed snapshot for O(1) lookups. */
-    private ?Collection $index = null;
+    /** @var array<string, array{\Illuminate\Support\Collection<int, \Illuminate\Database\Eloquent\Model>, \Illuminate\Support\Collection<int|string, \Illuminate\Database\Eloquent\Model>}> The request-local snapshots and their key indexes, by query fingerprint. */
+    private array $memo = [];
 
     /**
      * Create a new reference cache instance.
@@ -63,8 +69,8 @@ final class ReferenceCache implements CacheInvalidator
         /** The guard that limits the size of cached snapshots. */
         private readonly CacheSizeGuard $sizeGuard,
     ) {
-        $this->cacheKey = CacheKeys::REPOSITORY_CACHE->resolveKey([$this->table]);
-        $this->metaKey  = CacheKeys::REPOSITORY_CACHE_META->resolveKey([$this->table]);
+        $this->metaKey       = CacheKeys::REPOSITORY_CACHE_META->resolveKey([$this->table]);
+        $this->generationKey = CacheKeys::REPOSITORY_CACHE_VERSION->resolveKey([$this->table]);
     }
 
     /**
@@ -72,18 +78,12 @@ final class ReferenceCache implements CacheInvalidator
      *
      * @param  \Illuminate\Database\Eloquent\Model  $model
      * @return \Illuminate\Support\Collection<int, \Illuminate\Database\Eloquent\Model>
+     *
+     * @phpstan-impure
      */
     public function all(Model $model): Collection
     {
-        if ($this->memo !== null) {
-            return $this->memo;
-        }
-
-        $cached = $this->snapshot();
-
-        return $cached !== null
-            ? $this->remember($cached, $model)
-            : $this->load($model);
+        return $this->resolve($model)[0];
     }
 
     /**
@@ -96,45 +96,58 @@ final class ReferenceCache implements CacheInvalidator
      * @param  \Illuminate\Database\Eloquent\Model  $model
      * @param  array<int, int|string>|int|string  $id
      * @return \Illuminate\Database\Eloquent\Model|\Illuminate\Support\Collection<int, \Illuminate\Database\Eloquent\Model>|null
+     *
+     * @phpstan-impure
      */
     public function find(Model $model, array|int|string $id): Collection|Model|null
     {
-        $rows = $this->all($model);
+        [$rows, $index] = $this->resolve($model);
 
         if (is_array($id)) {
             return $rows->whereIn($model->getKeyName(), $id)->values();
         }
 
-        // Over-large tables are not memoised, so there is no key index; fall
-        // back to scanning the freshly-queried collection.
-        if ($this->index === null) {
+        // A snapshot that is not memoised has no key index; scan the freshly
+        // queried collection instead.
+        if ($index === null) {
             return $rows->firstWhere($model->getKeyName(), $id);
         }
 
         /** @var \Illuminate\Database\Eloquent\Model|null */
-        return $this->index->get($id);
+        return $index->get($id);
     }
 
     /**
-     * Invalidate the whole-table snapshot.
+     * Invalidate every snapshot of the table.
+     *
+     * The generation token is replaced rather than the snapshots forgotten,
+     * since a snapshot per scope variant leaves no fixed set of keys to forget.
+     * A fresh random token, unlike a counter, never returns to a value an
+     * earlier snapshot was stored under, so concurrent writes on a store
+     * without atomic increments cannot make a stale snapshot reachable again.
      *
      * @return void
      */
     #[\Override]
     public function flushTable(): void
     {
-        // The index must be cleared alongside the memo: a subsequent load that
-        // trips the size guard skips remember(), so a surviving index would be
-        // served stale by find().
-        $this->memo  = null;
-        $this->index = null;
+        $this->memo = [];
 
-        $this->store->forget($this->cacheKey);
+        if (!$this->store->forever($this->generationKey, Str::random(32))) {
+            Log::error('Reference snapshot generation could not be replaced', [
+                'table'          => $this->table,
+                'generation_key' => $this->generationKey,
+            ]);
+        }
+
         $this->store->put($this->metaKey, ['invalidated_at' => now()->timestamp], $this->ttl);
     }
 
     /**
      * Get the current reference cache status.
+     *
+     * The status reflects stored metadata rather than a guaranteed snapshot:
+     * the store can evict a snapshot without going through flushTable().
      *
      * @return \SineMacula\Repositories\Concerns\CacheStatus
      */
@@ -142,7 +155,7 @@ final class ReferenceCache implements CacheInvalidator
     {
         /** @var array{populated_at?: int, invalidated_at?: int}|null $meta */
         $meta      = $this->store->get($this->metaKey);
-        $populated = $this->store->has($this->cacheKey);
+        $populated = isset($meta['populated_at']) && !isset($meta['invalidated_at']);
 
         return CacheStatus::fromMeta($meta, $populated);
     }
@@ -158,65 +171,93 @@ final class ReferenceCache implements CacheInvalidator
     }
 
     /**
-     * Load the whole-table snapshot from the database, caching and memoising it
-     * unless it exceeds the size guard.
+     * Resolve the snapshot for the model's current scope variant, with its key
+     * index when it is memoised.
+     *
+     * A variant that cannot be fingerprinted is queried on every read and never
+     * stored, since no key would keep it apart from another variant.
      *
      * @param  \Illuminate\Database\Eloquent\Model  $model
-     * @return \Illuminate\Support\Collection<int, \Illuminate\Database\Eloquent\Model>
+     * @return array{\Illuminate\Support\Collection<int, \Illuminate\Database\Eloquent\Model>, \Illuminate\Support\Collection<int|string, \Illuminate\Database\Eloquent\Model>|null}
      */
-    private function load(Model $model): Collection
+    private function resolve(Model $model): array
     {
-        /** @var \Illuminate\Support\Collection<int, \Illuminate\Database\Eloquent\Model> $rows */
-        $rows = $model->newQuery()->get();
+        $query = $model->newQuery();
 
-        $payload = CachePayloadEncoder::encode($rows);
+        try {
+            $fingerprint = QueryFingerprint::for($query);
+        } catch (UnfingerprintableQueryException $exception) {
 
-        // Skip caching a table over the size guard, or one holding a value the
-        // cache cannot store: each read then queries rather than holding (or
-        // memoising) the snapshot. Any earlier memo state is dropped so no
-        // stale index can outlive the snapshot.
-        if ($payload === null || !$this->sizeGuard->allows($payload, $rows->count())) {
+            Log::debug('Reference snapshot fingerprinting unavailable; executing read uncached', [
+                'table'     => $this->table,
+                'exception' => $exception,
+            ]);
 
-            $this->memo  = null;
-            $this->index = null;
-
-            return $rows;
+            return [$query->get(), null];
         }
 
-        $this->store->put($this->cacheKey, $payload, $this->ttl);
-        $this->store->put($this->metaKey, ['populated_at' => now()->timestamp], $this->ttl);
-
-        return $this->remember($rows, $model);
+        return $this->memo[$fingerprint] ?? $this->load($fingerprint, $query, $model);
     }
 
     /**
-     * Memoise the snapshot on the instance and index it by key for O(1)
-     * lookups, returning the snapshot to the caller.
+     * Load the snapshot for a scope variant from the cache, or from the
+     * database on a miss, memoising it with its key index.
      *
-     * @param  \Illuminate\Support\Collection<int, \Illuminate\Database\Eloquent\Model>  $rows
+     * A snapshot over the size guard, or one holding a value the cache cannot
+     * store, is neither cached nor memoised, so each read queries for it.
+     *
+     * @param  string  $fingerprint
+     * @param  \Illuminate\Database\Eloquent\Builder<\Illuminate\Database\Eloquent\Model>  $query
      * @param  \Illuminate\Database\Eloquent\Model  $model
-     * @return \Illuminate\Support\Collection<int, \Illuminate\Database\Eloquent\Model>
+     * @return array{\Illuminate\Support\Collection<int, \Illuminate\Database\Eloquent\Model>, \Illuminate\Support\Collection<int|string, \Illuminate\Database\Eloquent\Model>|null}
      */
-    private function remember(Collection $rows, Model $model): Collection
+    private function load(string $fingerprint, Builder $query, Model $model): array
     {
-        $this->memo  = $rows;
-        $this->index = $rows->keyBy($model->getKeyName());
+        $key  = CacheKeys::REPOSITORY_CACHE->resolveKey([$this->table . ':' . $this->generation() . ':' . $fingerprint]);
+        $rows = $this->snapshot($key);
 
-        return $rows;
+        if ($rows === null) {
+
+            /** @var \Illuminate\Support\Collection<int, \Illuminate\Database\Eloquent\Model> $rows */
+            $rows    = $query->get();
+            $payload = CachePayloadEncoder::encode($rows);
+
+            if ($payload === null || !$this->sizeGuard->allows($payload, $rows->count())) {
+                return [$rows, null];
+            }
+
+            $this->store->put($key, $payload, $this->ttl);
+            $this->store->put($this->metaKey, ['populated_at' => now()->timestamp], $this->ttl);
+        }
+
+        return $this->memo[$fingerprint] = [$rows, $rows->keyBy($model->getKeyName())];
     }
 
     /**
-     * Get the cached whole-table snapshot, or null on a miss.
+     * Get the current generation token, or an empty one before the first write.
+     *
+     * @return string
+     */
+    private function generation(): string
+    {
+        $generation = $this->store->get($this->generationKey);
+
+        return is_string($generation) ? $generation : '';
+    }
+
+    /**
+     * Get the cached snapshot stored under the given key, or null on a miss.
      *
      * A snapshot that does not read back as a collection, such as one an
      * earlier version stored as objects, is a miss, so the table is loaded
      * again and the snapshot overwritten.
      *
+     * @param  string  $key
      * @return \Illuminate\Support\Collection<int, \Illuminate\Database\Eloquent\Model>|null
      */
-    private function snapshot(): ?Collection
+    private function snapshot(string $key): ?Collection
     {
-        $snapshot = CachePayloadDecoder::decode($this->store->get($this->cacheKey));
+        $snapshot = CachePayloadDecoder::decode($this->store->get($key));
 
         /** @var \Illuminate\Support\Collection<int, \Illuminate\Database\Eloquent\Model>|null */
         return $snapshot instanceof Collection ? $snapshot : null;

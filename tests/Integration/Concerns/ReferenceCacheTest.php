@@ -5,16 +5,27 @@ declare(strict_types = 1);
 namespace Tests\Integration\Concerns;
 
 use Carbon\Carbon;
+use Illuminate\Cache\Repository;
+use Illuminate\Contracts\Cache\Store;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Repositories\Concerns\CachePayloadEncoder;
 use SineMacula\Repositories\Concerns\CacheSizeGuard;
 use SineMacula\Repositories\Concerns\CacheStatus;
+use SineMacula\Repositories\Concerns\QueryFingerprint;
 use SineMacula\Repositories\Concerns\ReferenceCache;
+use SineMacula\Repositories\Exceptions\UnfingerprintableQueryException;
 use Tests\Integration\IntegrationTestCase;
+use Tests\Support\Concerns\InteractsWithPosts;
+use Tests\Support\Models\Post;
 use Tests\Support\Models\Tag;
+use Tests\Support\Models\TreeNode;
+use Tests\Support\Repositories\ReferencePostRepository;
 
 /**
  * Tests for the ReferenceCache collaborator.
@@ -28,11 +39,10 @@ use Tests\Support\Models\Tag;
 #[CoversClass(ReferenceCache::class)]
 final class ReferenceCacheTest extends IntegrationTestCase
 {
+    use InteractsWithPosts;
+
     /** @var string The resolved reference metadata cache key for the tags table. */
     private const string META_KEY = 'repositories:repository-cache-meta:tags';
-
-    /** @var string The resolved snapshot cache key for the tags table. */
-    private const string SNAPSHOT_KEY = 'repositories:repository-cache:tags';
 
     /** @var \SineMacula\Repositories\Concerns\ReferenceCache The reference cache under test. */
     private ReferenceCache $referenceCache;
@@ -104,6 +114,8 @@ final class ReferenceCacheTest extends IntegrationTestCase
      * backing store is evicted, proving the snapshot is deserialized once.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\UnfingerprintableQueryException
      */
     public function testReusesInstanceMemoAfterBackingStoreEviction(): void
     {
@@ -111,7 +123,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
 
         // Evict the backing store directly, bypassing flushTable (which would
         // also clear the instance memo), so only the memo can serve the read.
-        $this->referenceCache->getStore()->forget('repositories:repository-cache:tags');
+        $this->referenceCache->getStore()->forget(self::snapshotKey());
 
         DB::enableQueryLog();
 
@@ -229,10 +241,12 @@ final class ReferenceCacheTest extends IntegrationTestCase
      * miss, so the table is loaded again and the snapshot overwritten.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\UnfingerprintableQueryException
      */
     public function testReloadsASnapshotThatDoesNotReadBack(): void
     {
-        Cache::store('file')->getStore()->put(self::SNAPSHOT_KEY, Tag::query()->get(), 3600);
+        Cache::store('file')->getStore()->put(self::snapshotKey(), Tag::query()->get(), 3600);
 
         $reference = new ReferenceCache(Cache::store('file'), 'tags', 3600, new CacheSizeGuard(null, null));
 
@@ -243,7 +257,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
         self::assertInstanceOf(Collection::class, $tags);
         self::assertSame(['php', 'laravel'], $tags->pluck('name')->all());
         self::assertCount(1, DB::getQueryLog());
-        self::assertIsArray(Cache::store('file')->get(self::SNAPSHOT_KEY));
+        self::assertIsArray(Cache::store('file')->get(self::snapshotKey()));
 
         DB::disableQueryLog();
     }
@@ -253,10 +267,12 @@ final class ReferenceCacheTest extends IntegrationTestCase
      * as a miss.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\UnfingerprintableQueryException
      */
     public function testReloadsASnapshotThatIsNotACollection(): void
     {
-        Cache::store('array')->put(self::SNAPSHOT_KEY, CachePayloadEncoder::miss(), 3600);
+        Cache::store('array')->put(self::snapshotKey(), CachePayloadEncoder::miss(), 3600);
 
         DB::enableQueryLog();
 
@@ -334,13 +350,35 @@ final class ReferenceCacheTest extends IntegrationTestCase
      * so two reference caches for different tables never collide.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\UnfingerprintableQueryException
      */
     public function testCacheKeysAreScopedToTable(): void
     {
         $this->referenceCache->all(new Tag);
 
-        self::assertTrue($this->referenceCache->getStore()->has('repositories:repository-cache:tags'));
+        self::assertTrue($this->referenceCache->getStore()->has(self::snapshotKey()));
         self::assertTrue($this->referenceCache->getStore()->has(self::META_KEY));
+    }
+
+    /**
+     * Test that a snapshot stored after a write is keyed by the table, the
+     * generation token that write left, and the snapshot query's fingerprint.
+     *
+     * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\UnfingerprintableQueryException
+     */
+    public function testASnapshotIsKeyedByTheCurrentGeneration(): void
+    {
+        $this->referenceCache->flushTable();
+        $this->referenceCache->all(new Tag);
+
+        $generation = $this->referenceCache->getStore()->get('repositories:repository-cache-version:tags');
+
+        self::assertIsString($generation);
+        self::assertSame(32, strlen($generation));
+        self::assertTrue($this->referenceCache->getStore()->has('repositories:repository-cache:tags:' . $generation . ':' . QueryFingerprint::for(Tag::query())));
     }
 
     /**
@@ -351,6 +389,8 @@ final class ReferenceCacheTest extends IntegrationTestCase
      * allow.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\UnfingerprintableQueryException
      */
     public function testDistinctConnectionsYieldDistinctReferenceSnapshotKeys(): void
     {
@@ -359,8 +399,8 @@ final class ReferenceCacheTest extends IntegrationTestCase
 
         $connectionA->all(new Tag);
 
-        self::assertTrue(Cache::store('array')->has('repositories:repository-cache:tags:mysql:tenant_a'));
-        self::assertFalse(Cache::store('array')->has('repositories:repository-cache:tags:pgsql:tenant_b'));
+        self::assertTrue(Cache::store('array')->has(self::snapshotKey('tags:mysql:tenant_a')));
+        self::assertFalse(Cache::store('array')->has(self::snapshotKey('tags:pgsql:tenant_b')));
         self::assertFalse($connectionB->getStatus()->isPopulated());
     }
 
@@ -432,5 +472,208 @@ final class ReferenceCacheTest extends IntegrationTestCase
 
         self::assertInstanceOf(Tag::class, $found);
         self::assertSame('vue', $found->getAttribute('name'));
+    }
+
+    /**
+     * Test that each global-scope variant of the table is held as its own
+     * snapshot, so one tenant is never served another's rows.
+     *
+     * @return void
+     */
+    public function testEachScopeVariantHoldsItsOwnSnapshot(): void
+    {
+        $this->seedPosts();
+
+        $reference = new ReferenceCache(Cache::store('array'), 'posts', 3600, new CacheSizeGuard(null, null));
+
+        self::assertSame(['live'], $reference->all(new Post)->pluck('title')->all());
+
+        $this->actAsTenant('two');
+
+        self::assertSame(['other'], $reference->all(new Post)->pluck('title')->all());
+        self::assertNull($reference->find(new Post, 1));
+
+        $this->actAsTenant('one');
+
+        DB::enableQueryLog();
+
+        self::assertInstanceOf(Post::class, $reference->find(new Post, 1));
+        self::assertCount(0, DB::getQueryLog());
+
+        DB::disableQueryLog();
+    }
+
+    /**
+     * @return iterable<string, array{string}>
+     */
+    public static function stores(): iterable
+    {
+        yield 'a taggable store' => ['array'];
+        yield 'a non-taggable store' => ['file'];
+    }
+
+    /**
+     * Test that one flush invalidates every variant's snapshot for every
+     * instance sharing the store, not only the one that flushed.
+     *
+     * @param  string  $store
+     * @return void
+     */
+    #[DataProvider('stores')]
+    public function testAFlushInvalidatesEveryVariantAcrossInstances(string $store): void
+    {
+        $this->seedPosts();
+
+        $reference = static fn (): ReferenceCache => new ReferenceCache(Cache::store($store), 'posts', 3600, new CacheSizeGuard(null, null));
+
+        $warm = $reference();
+        $warm->all(new Post);
+        $this->actAsTenant('two');
+        $warm->all(new Post);
+
+        DB::table('posts')->insert([
+            ['id' => 4, 'tenant' => 'one', 'title' => 'new one'],
+            ['id' => 5, 'tenant' => 'two', 'title' => 'new two'],
+        ]);
+
+        $reference()->flushTable();
+
+        $fresh = $reference();
+
+        self::assertSame(['other', 'new two'], $fresh->all(new Post)->pluck('title')->all());
+
+        $this->actAsTenant('one');
+
+        self::assertSame(['live', 'new one'], $fresh->all(new Post)->pluck('title')->all());
+    }
+
+    /**
+     * Test that every flush invalidates the snapshot, not only the first, so a
+     * snapshot stored after one write never survives the next.
+     *
+     * @return void
+     */
+    public function testEveryFlushInvalidatesTheSnapshot(): void
+    {
+        $reference = static fn (): ReferenceCache => new ReferenceCache(Cache::store('file'), 'tags', 3600, new CacheSizeGuard(null, null));
+
+        foreach (['vue', 'react'] as $name) {
+
+            $reference()->all(new Tag);
+
+            Tag::create(['name' => $name]);
+
+            $reference()->flushTable();
+        }
+
+        self::assertSame(['php', 'laravel', 'vue', 'react'], $reference()->all(new Tag)->pluck('name')->all());
+    }
+
+    /**
+     * Test that a write through a reference-mode repository invalidates every
+     * variant on a non-taggable store even with the version registry disabled.
+     *
+     * @return void
+     */
+    public function testARepositoryWriteInvalidatesEveryVariantWithTheRegistryDisabled(): void
+    {
+        $this->seedPosts();
+
+        Config::set('repositories.cache.store', 'file');
+        Config::set('repositories.cache.registry_enabled', false);
+
+        self::assertNotNull($this->app);
+
+        $posts = fn (): ReferencePostRepository => $this->app->make(ReferencePostRepository::class);
+
+        $posts()->get(); // @phpstan-ignore staticMethod.dynamicCall
+        $this->actAsTenant('two');
+        $posts()->get(); // @phpstan-ignore staticMethod.dynamicCall
+
+        $posts()->create(['tenant' => 'two', 'title' => 'new two']); // @phpstan-ignore staticMethod.dynamicCall
+
+        DB::table('posts')->insert(['tenant' => 'one', 'title' => 'new one']);
+
+        self::assertSame(['other', 'new two'], $this->titles($posts()->get())); // @phpstan-ignore staticMethod.dynamicCall
+
+        $this->actAsTenant('one');
+
+        self::assertSame(['live', 'new one'], $this->titles($posts()->get())); // @phpstan-ignore staticMethod.dynamicCall
+    }
+
+    /**
+     * Test that a variant whose snapshot query cannot be fingerprinted is
+     * queried on every read and never stored.
+     *
+     * @return void
+     */
+    public function testAnUnfingerprintableVariantIsQueriedOnEveryReadAndNeverStored(): void
+    {
+        $this->seedPosts();
+
+        $reference = new ReferenceCache(Cache::store('array'), 'tree_nodes', 3600, new CacheSizeGuard(null, null));
+
+        Log::shouldReceive('debug')
+            ->twice()
+            ->with('Reference snapshot fingerprinting unavailable; executing read uncached', \Mockery::on(
+                static fn (array $context): bool => $context['table'] === 'tree_nodes' && $context['exception'] instanceof UnfingerprintableQueryException,
+            ));
+
+        $reference->all(new TreeNode);
+
+        DB::enableQueryLog();
+
+        self::assertInstanceOf(TreeNode::class, $reference->find(new TreeNode, 2));
+        self::assertNotEmpty(DB::getQueryLog());
+        self::assertFalse($reference->getStatus()->isPopulated());
+
+        DB::disableQueryLog();
+    }
+
+    /**
+     * Test that a generation token the store refuses to replace is logged,
+     * since other processes keep serving the old snapshots.
+     *
+     * @return void
+     */
+    public function testFlushLogsAGenerationTheStoreRefusesToReplace(): void
+    {
+        $store = \Mockery::mock(Store::class)->shouldIgnoreMissing();
+        $store->shouldReceive('forever')->andReturn(false); // @phpstan-ignore method.notFound
+
+        Log::shouldReceive('error')
+            ->once()
+            ->with('Reference snapshot generation could not be replaced', [
+                'table'          => 'tags',
+                'generation_key' => 'repositories:repository-cache-version:tags',
+            ]);
+
+        (new ReferenceCache(new Repository($store), 'tags', 3600, new CacheSizeGuard(null, null)))->flushTable();
+    }
+
+    /**
+     * Get the titles of the given posts.
+     *
+     * @param  \Illuminate\Support\Collection<int, \Illuminate\Database\Eloquent\Model>  $posts
+     * @return array<int, string>
+     */
+    private function titles(Collection $posts): array
+    {
+        /** @var array<int, string> */
+        return $posts->pluck('title')->all();
+    }
+
+    /**
+     * Resolve the snapshot key of the unscoped tags table before the first
+     * write.
+     *
+     * @param  string  $table
+     * @return string
+     *
+     * @throws \SineMacula\Repositories\Exceptions\UnfingerprintableQueryException
+     */
+    private static function snapshotKey(string $table = 'tags'): string
+    {
+        return 'repositories:repository-cache:' . $table . '::' . QueryFingerprint::for(Tag::query());
     }
 }
