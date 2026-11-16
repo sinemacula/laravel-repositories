@@ -211,7 +211,7 @@ trait Cacheable
         }
 
         if ($this->cacheReferenceMode) {
-            return $this->isReferenceRead($method) && !$this->hasActiveComposition()
+            return $this->isReferenceRead($method, $arguments) && !$this->hasActiveComposition()
                 ? $this->resolveReferenceRead($method, $arguments)
                 : parent::__call($method, $arguments);
         }
@@ -382,14 +382,30 @@ trait Cacheable
     }
 
     /**
-     * Determine whether the given verb can be served from the reference cache.
+     * Determine whether the given read can be served from the reference cache.
+     *
+     * The snapshot holds every column, so only a get() or find() that selects
+     * every column is served from it. Any other argument shape - a narrower or
+     * null column list, named or extra arguments - executes a real query rather
+     * than return columns the caller did not ask for.
      *
      * @param  string  $method
+     * @param  array<int, mixed>  $arguments
      * @return bool
      */
-    private function isReferenceRead(string $method): bool
+    private function isReferenceRead(string $method, array $arguments): bool
     {
-        return in_array($method, ['get', 'find'], true);
+        if (!in_array($method, ['get', 'find'], true)) {
+            return false;
+        }
+
+        $position = $method === 'find' ? 1 : 0;
+
+        if (!array_is_list($arguments) || count($arguments) > $position + 1) {
+            return false;
+        }
+
+        return !array_key_exists($position, $arguments) || in_array($arguments[$position], ['*', ['*']], true);
     }
 
     /**
