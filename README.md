@@ -121,9 +121,18 @@ A repository instance carries its registered configuration, so bind repositories
 
 Caching is fully opt-in: add the `Cacheable` trait to a repository and its read verbs (`get`, `all`, `find`, `first`,
 `firstWhere`, `firstOrFail`, `findOrFail`, `sole`, `value`, `pluck`) are served from a cache keyed by a fingerprint of
-the executed query. A cache hit executes zero database queries. Because the fingerprint folds in the compiled SQL, the
-bindings, the read verb, its arguments, and the registered eager loads, a filtered or by-id read never collides with
-the full-table collection.
+the executed query. A cache hit executes zero database queries. The fingerprint is the SQL Eloquent runs: the root
+query with its global scopes applied, plus each eager-loaded relation's query with its constraint run and the related
+model's global scopes applied. A filtered or by-id read never collides with the full-table collection, and reads that
+differ only by a global scope (`withTrashed()`, a tenant scope) or by what a constraint reads when it runs (such as the
+authenticated user) are cached per value.
+
+Global scopes and eager-load constraints therefore run once more per read, on cache hits too, and must be
+deterministic. A read whose result is shaped outside SQL runs uncached: one eager loading a `MorphTo` relation or a
+relation class other than the framework's own, one with an `afterQuery()` callback (other than the one `chaperone()`
+registers), one with a callable `withDefault()`, or one whose eager loads nest more than 16 levels deep (a model whose
+`$with` loads itself). Eager-loaded rows are cached with their parent and invalidated by writes to the parent's table
+only.
 
 ```php
 use SineMacula\Repositories\Attributes\Model;
@@ -189,8 +198,11 @@ The snapshot always represents the unfiltered table, so reference reads only ser
 composition pending: when criteria or scopes are active, `get`, `all`, and `find` execute a real (uncached) query so a
 filtered read is never answered with the whole table. A scope registered with `pushScope()` counts as active for this
 purpose, because the snapshot is built straight from the model and would otherwise answer a registered constraint with
-unfiltered rows. Eloquent global scopes (such as soft deletes) are part of the
-snapshot query and always apply.
+unfiltered rows.
+
+Eloquent global scopes (such as soft deletes or a tenant scope) are part of the snapshot query and always apply. Each
+variant they produce is held as its own snapshot, keyed by the fingerprint of the snapshot query, and a write
+invalidates every variant at once on any store, whatever `registry_enabled` is set to.
 
 #### Cache configuration
 
@@ -212,10 +224,8 @@ store never evict repository caches, and vice versa.
 
 #### Consistency notes
 
-The per-query fingerprint folds in the connection name and database name, so multi-connection applications are
-isolated automatically. Reference-mode snapshot keys, however, default to the table name alone: when two connections
-expose the same table name (e.g. per-tenant databases), set a distinct `$cacheKeyPrefix` per repository so the
-snapshots cannot collide.
+The per-query fingerprint and the reference-mode snapshot key both fold in the connection name and database name, so
+multi-connection applications are isolated automatically.
 
 Like any look-aside cache, a read that misses, queries the database, and stores its result can interleave with a
 concurrent write on taggable stores and in reference mode: the freshly stored entry may predate the write, and is

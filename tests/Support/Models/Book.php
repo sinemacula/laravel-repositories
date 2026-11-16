@@ -6,6 +6,7 @@ namespace Tests\Support\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
  * Fixture book model written by an author.
@@ -34,5 +35,15 @@ final class Book extends Model
     public function author(): BelongsTo
     {
         return $this->belongsTo(Author::class);
+    }
+
+    /**
+     * The posts reviewing the book.
+     *
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany<\Tests\Support\Models\Post, $this>
+     */
+    public function posts(): HasMany
+    {
+        return $this->hasMany(Post::class);
     }
 }

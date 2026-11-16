@@ -7,6 +7,12 @@ namespace Tests\Integration\Concerns;
 use Carbon\Carbon;
 use Illuminate\Container\Container;
 use Illuminate\Contracts\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Query\Builder as QueryBuilder;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
@@ -14,19 +20,27 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Repositories\Concerns\QueryFingerprint;
 use SineMacula\Repositories\Exceptions\UnfingerprintableQueryException;
 use Tests\Integration\IntegrationTestCase;
-use Tests\Support\Closures\AlignedConstraintA;
-use Tests\Support\Closures\AlignedConstraintB;
-use Tests\Support\Closures\BoundConstraint;
+use Tests\Support\Builders\InertBuilder;
+use Tests\Support\Concerns\InteractsWithNonPublicMembers;
 use Tests\Support\Enums\Status;
+use Tests\Support\Models\Author;
+use Tests\Support\Models\Book;
+use Tests\Support\Models\Post;
+use Tests\Support\Models\Shelf;
 use Tests\Support\Models\Tag;
 use Tests\Support\Models\TagAlias;
+use Tests\Support\Models\TreeNode;
+use Tests\Support\Scopes\TenantScope;
 
 /**
- * Tests for the QueryFingerprint helper's query, binding, eager-load, and
- * closure-identity folding.
+ * Tests for the QueryFingerprint helper's query, binding, scope and eager-load
+ * folding.
  *
- * Distinct and stable comparisons are grouped behind data providers so each
- * fingerprinting concern stays covered without one method per scenario.
+ * Distinct, stable and unfingerprintable comparisons are grouped behind data
+ * providers so each fingerprinting concern stays covered without one method per
+ * scenario.
+ *
+ * @SuppressWarnings("php:S1448")
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -37,20 +51,335 @@ use Tests\Support\Models\TagAlias;
 #[CoversClass(UnfingerprintableQueryException::class)]
 final class QueryFingerprintTest extends IntegrationTestCase
 {
+    use InteractsWithNonPublicMembers;
+
     /** @var string A representative moment used for date-bound fingerprints. */
     private const string MOMENT = '2026-01-01 00:00:00';
+
+    /** @var string The refusal of a builder that is not an Eloquent builder. */
+    private const string NOT_ELOQUENT = 'Only an Eloquent builder can be fingerprinted.';
+
+    /** @var string The refusal of a query whose fingerprinting failed. */
+    private const string UNABLE = 'Unable to fingerprint the given query.';
+
+    /** @var string The refusal of an eager load of an unsupported relation. */
+    private const string UNSUPPORTED_RELATION = 'An eager load of this relation type cannot be fingerprinted.';
+
+    /** @var string The refusal of a query with after-query callbacks. */
+    private const string AFTER_QUERY = 'A query with after-query callbacks cannot be fingerprinted.';
+
+    /** @var string The refusal of a relation with a callable default. */
+    private const string CALLABLE_DEFAULT = 'A relation with a callable default cannot be fingerprinted.';
+
+    /** @var string The refusal of eager loads nested past the depth limit. */
+    private const string TOO_DEEP = 'Eager loads nested this deep cannot be fingerprinted.';
+
+    /**
+     * Set up the test environment.
+     *
+     * @return void
+     */
+    #[\Override]
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        self::actAsTenant('one');
+    }
 
     /**
      * @return iterable<string, array{\Closure(): string, \Closure(): string}>
      */
     public static function distinctFingerprintProvider(): iterable
     {
-        $captureFingerprint = static fn (string $name): string => QueryFingerprint::for(Tag::query()->with(['related' => static function ($query) use ($name): void {
-            $query->where('name', $name);
-        }]));
+        yield from self::distinctQueryProvider();
+        yield from self::distinctScopeProvider();
+        yield from self::distinctEagerLoadProvider();
+        yield from self::distinctRelationKeyProvider();
+    }
 
-        $internalConstraint = spl_object_id(...);
+    /**
+     * Test that fingerprinting scenarios which must never collide - differing
+     * SQL, bindings, verbs, arguments, connections, models, scopes, casts or
+     * eager loads - each yield a distinct fingerprint.
+     *
+     * @param  \Closure(): string  $first
+     * @param  \Closure(): string  $second
+     * @return void
+     */
+    #[DataProvider('distinctFingerprintProvider')]
+    public function testDistinctScenariosYieldDistinctFingerprints(\Closure $first, \Closure $second): void
+    {
+        self::assertNotSame($first(), $second());
+    }
 
+    /**
+     * Test that the default, trashed-inclusive and trashed-only reads of a
+     * soft-deleting model yield three distinct fingerprints.
+     *
+     * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\UnfingerprintableQueryException
+     */
+    public function testEachTrashedVisibilityYieldsItsOwnFingerprint(): void
+    {
+        $fingerprints = [
+            QueryFingerprint::for(Post::query()),
+            QueryFingerprint::for(Post::query()->withTrashed()), // @phpstan-ignore method.notFound
+            QueryFingerprint::for(Post::query()->onlyTrashed()), // @phpstan-ignore method.notFound
+        ];
+
+        self::assertCount(3, array_unique($fingerprints));
+    }
+
+    /**
+     * @return iterable<string, array{\Closure(): string, \Closure(): string}>
+     */
+    public static function stableFingerprintProvider(): iterable
+    {
+        yield 'identical queries' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->where('name', 'php')),
+            fn (): string => QueryFingerprint::for(Tag::query()->where('name', 'php')),
+        ];
+
+        yield 'Carbon binding stability' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->where('created_at', '>', Carbon::parse(self::MOMENT))),
+            fn (): string => QueryFingerprint::for(Tag::query()->where('created_at', '>', Carbon::parse(self::MOMENT))),
+        ];
+
+        yield 'enum raw value matches its backing case' => [
+            fn (): string => QueryFingerprint::for(Tag::query(), 'find', [Status::ACTIVE->value]),
+            fn (): string => QueryFingerprint::for(Tag::query(), 'find', [Status::ACTIVE]),
+        ];
+
+        yield 'identical verb and arguments' => [
+            fn (): string => QueryFingerprint::for(Tag::query(), 'find', [1]),
+            fn (): string => QueryFingerprint::for(Tag::query(), 'find', [1]),
+        ];
+
+        yield 'a date binding matches the string the connection sends for it' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->where('created_at', new \DateTimeImmutable('2026-01-01 12:00:00', new \DateTimeZone('UTC')))),
+            fn (): string => QueryFingerprint::for(Tag::query()->where('created_at', '2026-01-01 12:00:00')),
+        ];
+
+        yield 'eager load registration order does not affect the fingerprint' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->with(['children', 'aliases']), 'get'),
+            fn (): string => QueryFingerprint::for(Tag::query()->with(['aliases', 'children']), 'get'),
+        ];
+
+        yield 'distinct constraint closures producing the same SQL' => [
+            fn (): string => QueryFingerprint::for(Book::query()->with(['posts' => static fn (Builder $query): Builder => $query->where('title', 'live')])),
+            fn (): string => QueryFingerprint::for(Book::query()->with(['posts' => static fn (Builder $query): Builder => $query->where('title', 'live')])),
+        ];
+
+        yield 'a constraint that changes nothing matches the unconstrained load' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->with(['children' => static fn (Builder $query): Builder => $query])),
+            fn (): string => QueryFingerprint::for(Tag::query()->with('children')),
+        ];
+
+        yield 'a nested load without its parent is never loaded' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->setEagerLoads(['children.aliases' => static fn (): null => null])),
+            fn (): string => QueryFingerprint::for(Tag::query()),
+        ];
+
+        yield 'a chaperoned eager load' => [
+            fn (): string => QueryFingerprint::for(Author::query()->with('books')),
+            fn (): string => QueryFingerprint::for(Author::query()->with('books')),
+        ];
+    }
+
+    /**
+     * Test that fingerprinting scenarios which must always collide - repeat
+     * reads, equivalent bindings, reordered eager loads, or constraints that
+     * produce the same SQL - each yield a stable fingerprint.
+     *
+     * @param  \Closure(): string  $first
+     * @param  \Closure(): string  $second
+     * @return void
+     */
+    #[DataProvider('stableFingerprintProvider')]
+    public function testStableScenariosYieldSameFingerprint(\Closure $first, \Closure $second): void
+    {
+        self::assertSame($first(), $second());
+    }
+
+    /**
+     * @return iterable<string, array{\Closure(): string, string}>
+     */
+    public static function unfingerprintableProvider(): iterable
+    {
+        yield 'a builder that is not an Eloquent builder' => [
+            fn (): string => QueryFingerprint::for(new InertBuilder),
+            self::NOT_ELOQUENT,
+        ];
+
+        yield 'a closure argument' => [
+            fn (): string => QueryFingerprint::for(Tag::query(), 'firstWhere', [static fn (Builder $query): Builder => $query->where('name', 'php')]),
+            self::UNABLE,
+        ];
+
+        yield 'a MorphTo eager load' => [
+            fn (): string => QueryFingerprint::for(Post::query()->with('subject')),
+            self::UNSUPPORTED_RELATION,
+        ];
+
+        yield 'a relation class of the application\'s own' => [
+            fn (): string => QueryFingerprint::for(Post::query()->with('rankedComments')),
+            self::UNSUPPORTED_RELATION,
+        ];
+
+        yield 'an after-query callback on the root' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->afterQuery(self::unchanged(...))),
+            self::AFTER_QUERY,
+        ];
+
+        yield 'an after-query callback on the base query' => [
+            function (): string {
+                $query = Tag::query();
+                $query->getQuery()->afterQuery(self::unchanged(...));
+
+                return QueryFingerprint::for($query);
+            },
+            self::AFTER_QUERY,
+        ];
+
+        yield 'an after-query callback added by a global scope' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->withGlobalScope('after', static fn (Builder $query): Builder => $query->afterQuery(self::unchanged(...)))),
+            self::AFTER_QUERY,
+        ];
+
+        yield 'an after-query callback on a relation query' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->with(['children' => static fn (Builder $query): Builder => $query->afterQuery(self::unchanged(...))])),
+            self::AFTER_QUERY,
+        ];
+
+        yield 'an after-query callback on a chaperoned relation query' => [
+            fn (): string => QueryFingerprint::for(Author::query()->with(['books' => static fn (Builder $query): Builder => $query->afterQuery(self::unchanged(...))])),
+            self::AFTER_QUERY,
+        ];
+
+        yield 'a callable relation default' => [
+            fn (): string => QueryFingerprint::for(Post::query()->with([
+                'book' => static fn (BelongsTo $relation): BelongsTo => $relation->withDefault(static fn (): null => null),
+            ])),
+            self::CALLABLE_DEFAULT,
+        ];
+
+        yield 'an unknown relation' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->with('missing')), // @phpstan-ignore larastan.relationExistence
+            self::UNABLE,
+        ];
+
+        yield 'a constraint that throws' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->with(['children' => static fn (): never => throw new \RuntimeException('constraint failed')])),
+            self::UNABLE,
+        ];
+
+        yield 'a model that eager loads itself' => [
+            fn (): string => QueryFingerprint::for(TreeNode::query()),
+            self::TOO_DEEP,
+        ];
+    }
+
+    /**
+     * Test that a read whose result is shaped outside SQL, or whose arguments
+     * have no stable representation, cannot be fingerprinted.
+     *
+     * @param  \Closure(): string  $fingerprint
+     * @param  string  $message
+     * @return void
+     */
+    #[DataProvider('unfingerprintableProvider')]
+    public function testUnfingerprintableScenariosThrow(\Closure $fingerprint, string $message): void
+    {
+        $this->expectException(UnfingerprintableQueryException::class);
+        $this->expectExceptionMessage($message);
+
+        $fingerprint();
+    }
+
+    /**
+     * Test that the chaperone callback of another relation is not taken for the
+     * relation's own, so the read cannot be fingerprinted.
+     *
+     * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\UnfingerprintableQueryException
+     */
+    public function testAChaperoneCallbackOfAnotherRelationCannotBeFingerprinted(): void
+    {
+        $callbacks = $this->getProperty((new Author)->books()->getQuery(), 'afterQueryCallbacks');
+
+        self::assertIsArray($callbacks);
+        self::assertInstanceOf(\Closure::class, $callbacks[0]);
+
+        $foreign = $callbacks[0];
+
+        $this->expectException(UnfingerprintableQueryException::class);
+        $this->expectExceptionMessage(self::AFTER_QUERY);
+
+        QueryFingerprint::for(Author::query()->with(['books' => static fn (HasMany $books): HasMany => $books->afterQuery($foreign)]));
+    }
+
+    /**
+     * Test that an eager-load chain just inside the depth limit is still
+     * fingerprinted.
+     *
+     * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\UnfingerprintableQueryException
+     */
+    public function testEagerLoadsNestedUpToTheDepthLimitAreFingerprinted(): void
+    {
+        $path = implode('.', array_fill(0, 16, 'children'));
+
+        self::assertNotSame('', QueryFingerprint::for(Tag::query()->with($path)));
+
+        $this->expectException(UnfingerprintableQueryException::class);
+        $this->expectExceptionMessage(self::TOO_DEEP);
+
+        QueryFingerprint::for(Tag::query()->with($path . '.children'));
+    }
+
+    /**
+     * @return iterable<string, array{\Closure(): \Illuminate\Database\Eloquent\Builder<covariant \Illuminate\Database\Eloquent\Model>}>
+     */
+    public static function preparedBuilderProvider(): iterable
+    {
+        yield 'with registered global scopes' => [static fn (): EloquentBuilder => Post::query()->with('comments')];
+        yield 'without registered global scopes' => [static fn (): EloquentBuilder => Tag::query()->with('children')];
+    }
+
+    /**
+     * Test that fingerprinting leaves the prepared builder as it was: its
+     * scopes pending, its before-query callbacks queued and its eager loads
+     * registered.
+     *
+     * @param  \Closure(): \Illuminate\Database\Eloquent\Builder<covariant \Illuminate\Database\Eloquent\Model>  $prepare
+     * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\UnfingerprintableQueryException
+     */
+    #[DataProvider('preparedBuilderProvider')]
+    public function testFingerprintingLeavesThePreparedBuilderUntouched(\Closure $prepare): void
+    {
+        $query = $prepare();
+        $query->getQuery()->beforeQuery(static fn (QueryBuilder $base): QueryBuilder => $base->where('id', '>', 0));
+
+        $eagerLoads = array_keys($query->getEagerLoads());
+
+        QueryFingerprint::for($query);
+
+        self::assertSame([], $query->getQuery()->wheres);
+        self::assertCount(1, $query->getQuery()->beforeQueryCallbacks);
+        self::assertSame($eagerLoads, array_keys($query->getEagerLoads()));
+    }
+
+    /**
+     * @return iterable<string, array{\Closure(): string, \Closure(): string}>
+     */
+    private static function distinctQueryProvider(): iterable
+    {
         yield 'differing SQL' => [
             fn (): string => QueryFingerprint::for(Tag::query()),
             fn (): string => QueryFingerprint::for(Tag::query()->where('name', 'php')),
@@ -102,45 +431,13 @@ final class QueryFingerprintTest extends IntegrationTestCase
         ];
 
         yield 'differing connection database' => [
-            function (): string {
-                Config::set('database.connections.alternative', [
-                    'driver'   => 'sqlite',
-                    'database' => sys_get_temp_dir() . '/laravel-repositories-fingerprint-alt.sqlite',
-                    'prefix'   => '',
-                ]);
-
-                return QueryFingerprint::for(Tag::query());
-            },
-            function (): string {
-                Config::set('database.connections.alternative', [
-                    'driver'   => 'sqlite',
-                    'database' => sys_get_temp_dir() . '/laravel-repositories-fingerprint-alt.sqlite',
-                    'prefix'   => '',
-                ]);
-
-                return QueryFingerprint::for((new Tag)->setConnection('alternative')->newQuery());
-            },
+            fn (): string => QueryFingerprint::for(Tag::query()),
+            fn (): string => QueryFingerprint::for(self::alternativeConnectionQuery('alternative', sys_get_temp_dir() . '/laravel-repositories-fingerprint-alt.sqlite')),
         ];
 
         yield 'differing connection name' => [
-            function (): string {
-                Config::set('database.connections.testing_two', [
-                    'driver'   => 'sqlite',
-                    'database' => ':memory:',
-                    'prefix'   => '',
-                ]);
-
-                return QueryFingerprint::for(Tag::query());
-            },
-            function (): string {
-                Config::set('database.connections.testing_two', [
-                    'driver'   => 'sqlite',
-                    'database' => ':memory:',
-                    'prefix'   => '',
-                ]);
-
-                return QueryFingerprint::for((new Tag)->setConnection('testing_two')->newQuery());
-            },
+            fn (): string => QueryFingerprint::for(Tag::query()),
+            fn (): string => QueryFingerprint::for(self::alternativeConnectionQuery('testing_two', ':memory:')),
         ];
 
         yield 'expression arguments' => [
@@ -153,292 +450,177 @@ final class QueryFingerprintTest extends IntegrationTestCase
             fn (): string => QueryFingerprint::for(TagAlias::query()),
         ];
 
-        yield 'eager load presence' => [
-            fn (): string => QueryFingerprint::for(Tag::query()->with('children'), 'get'),
-            fn (): string => QueryFingerprint::for(Tag::query(), 'get'),
+        yield 'a date binding and its ATOM string, which the connection sends apart' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->where('created_at', new \DateTimeImmutable('2026-01-01 12:00:00', new \DateTimeZone('UTC')))),
+            fn (): string => QueryFingerprint::for(Tag::query()->where('created_at', '2026-01-01T12:00:00+00:00')),
         ];
 
-        yield 'eager-load constraints with differing bodies' => [
-            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => static function ($query): void {
-                $query->where('active', true);
-            }])),
-            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => static function ($query): void {
-                $query->where('active', false);
-            }])),
-        ];
-
-        yield 'eager-load constraints with differing captures' => [
-            fn (): string => $captureFingerprint('php'),
-            fn (): string => $captureFingerprint('laravel'),
-        ];
-
-        yield 'eager-load constraints defined in different files on the same line' => [
-            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => AlignedConstraintA::make()])),
-            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => AlignedConstraintB::make()])),
-        ];
-
-        yield 'eager-load constraints bound to instances with differing state' => [
-            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => (new BoundConstraint('php'))->make()])),
-            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => (new BoundConstraint('laravel'))->make()])),
-        ];
-
-        yield 'internal function constraint differs from an unconstrained read' => [
-            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => $internalConstraint])),
+        yield 'differing casts' => [
             fn (): string => QueryFingerprint::for(Tag::query()),
+            fn (): string => QueryFingerprint::for(Tag::query()->withCasts(['name' => 'array'])),
         ];
-    }
-
-    /**
-     * Test that fingerprinting scenarios which must never collide - differing
-     * SQL, bindings, verbs, arguments, connections, models, or eager-load
-     * identity - each yield a distinct fingerprint.
-     *
-     * @param  \Closure(): string  $first
-     * @param  \Closure(): string  $second
-     * @return void
-     */
-    #[DataProvider('distinctFingerprintProvider')]
-    public function testDistinctScenariosYieldDistinctFingerprints(\Closure $first, \Closure $second): void
-    {
-        self::assertNotSame($first(), $second());
     }
 
     /**
      * @return iterable<string, array{\Closure(): string, \Closure(): string}>
      */
-    public static function stableFingerprintProvider(): iterable
+    private static function distinctScopeProvider(): iterable
     {
-        $sharedConstraint = static function ($query): void {
-            $query->where('active', true);
-        };
-
-        $internalConstraint = spl_object_id(...);
-
-        yield 'identical queries' => [
-            fn (): string => QueryFingerprint::for(Tag::query()->where('name', 'php')),
-            fn (): string => QueryFingerprint::for(Tag::query()->where('name', 'php')),
-        ];
-
-        yield 'Carbon binding stability' => [
-            fn (): string => QueryFingerprint::for(Tag::query()->where('created_at', '>', Carbon::parse(self::MOMENT))),
-            fn (): string => QueryFingerprint::for(Tag::query()->where('created_at', '>', Carbon::parse(self::MOMENT))),
-        ];
-
-        yield 'enum raw value matches its backing case' => [
-            fn (): string => QueryFingerprint::for(Tag::query(), 'find', [Status::ACTIVE->value]),
-            fn (): string => QueryFingerprint::for(Tag::query(), 'find', [Status::ACTIVE]),
-        ];
-
-        yield 'identical verb and arguments' => [
-            fn (): string => QueryFingerprint::for(Tag::query(), 'find', [1]),
-            fn (): string => QueryFingerprint::for(Tag::query(), 'find', [1]),
-        ];
-
-        yield 'DateTime matches its ATOM string representation' => [
+        yield 'a global scope reading a different tenant' => [
+            fn (): string => QueryFingerprint::for(Post::query()),
             function (): string {
-                $moment = new \DateTimeImmutable('2026-01-01 12:00:00', new \DateTimeZone('UTC'));
+                self::actAsTenant('two');
 
-                return QueryFingerprint::for(Tag::query()->where('created_at', $moment));
+                return QueryFingerprint::for(Post::query());
             },
+        ];
+
+        yield 'a removed global scope' => [
+            fn (): string => QueryFingerprint::for(Post::query()),
+            fn (): string => QueryFingerprint::for(Post::query()->withoutGlobalScope(TenantScope::class)),
+        ];
+
+        yield 'an eager load added by a global scope' => [
+            fn (): string => QueryFingerprint::for(Tag::query()),
+            fn (): string => QueryFingerprint::for(Tag::query()->withGlobalScope('children', static fn (Builder $query): Builder => $query->with('children'))),
+        ];
+    }
+
+    /**
+     * @return iterable<string, array{\Closure(): string, \Closure(): string}>
+     */
+    private static function distinctEagerLoadProvider(): iterable
+    {
+        $state        = new \stdClass;
+        $state->title = 'live';
+
+        $constraint = static fn (Builder $query): Builder => $query->where('title', $state->title);
+
+        yield 'eager load presence' => [
+            fn (): string => QueryFingerprint::for(Tag::query()->with('children'), 'get'),
+            fn (): string => QueryFingerprint::for(Tag::query(), 'get'),
+        ];
+
+        yield 'a constraint reading state at run time' => [
+            fn (): string => QueryFingerprint::for(Book::query()->with(['posts' => $constraint])),
+            function () use ($state, $constraint): string {
+                $state->title = 'removed';
+
+                return QueryFingerprint::for(Book::query()->with(['posts' => $constraint]));
+            },
+        ];
+
+        yield 'a global scope of the related model' => [
+            fn (): string => QueryFingerprint::for(Book::query()->with('posts')),
             function (): string {
-                $moment = new \DateTimeImmutable('2026-01-01 12:00:00', new \DateTimeZone('UTC'));
+                self::actAsTenant('two');
 
-                return QueryFingerprint::for(Tag::query()->where('created_at', $moment->format(\DateTimeInterface::ATOM)));
+                return QueryFingerprint::for(Book::query()->with('posts'));
             },
         ];
 
-        yield 'eager load registration order does not affect the fingerprint' => [
-            fn (): string => QueryFingerprint::for(Tag::query()->with(['children', 'aliases']), 'get'),
-            fn (): string => QueryFingerprint::for(Tag::query()->with(['aliases', 'children']), 'get'),
+        yield 'a nested constraint' => [
+            fn (): string => QueryFingerprint::for(Book::query()->with(['posts.comments' => static fn (Builder $query): Builder => $query->where('body', 'mine')])),
+            fn (): string => QueryFingerprint::for(Book::query()->with(['posts.comments' => static fn (Builder $query): Builder => $query->where('body', 'theirs')])),
         ];
 
-        yield 'unconstrained eager loads fingerprint stably' => [
+        yield 'casts set inside a constraint' => [
+            fn (): string => QueryFingerprint::for(Book::query()->with('posts')),
+            fn (): string => QueryFingerprint::for(Book::query()->with(['posts' => static fn (Builder $query): Builder => $query->withCasts(['title' => 'array'])])),
+        ];
+
+        yield 'pivot columns selected inside a constraint' => [
             fn (): string => QueryFingerprint::for(Tag::query()->with('related')),
-            fn (): string => QueryFingerprint::for(Tag::query()->with('related')),
+            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => static fn (BelongsToMany $relation): BelongsToMany => $relation->withPivot('weight')])),
         ];
 
-        yield 'the same closure instance fingerprints stably across calls' => [
-            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => $sharedConstraint])),
-            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => $sharedConstraint])),
+        yield 'a relation default set inside a constraint' => [
+            fn (): string => QueryFingerprint::for(Post::query()->with('book')),
+            fn (): string => QueryFingerprint::for(Post::query()->with(['book' => static fn (BelongsTo $relation): BelongsTo => $relation->withDefault(['title' => 'none'])])),
         ];
 
-        yield 'an internal function constraint fingerprints stably across calls' => [
-            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => $internalConstraint])),
-            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => $internalConstraint])),
-        ];
-
-        $mutableCapture       = new \stdClass;
-        $mutableCapture->name = 'first capture';
-
-        $memoisedConstraint = static function ($query) use ($mutableCapture): void {
-            $query->where('name', $mutableCapture->name);
-        };
-
-        yield 'a closure fingerprint is memoised against its first captured state' => [
-            fn (): string => QueryFingerprint::for(Tag::query()->with(['related' => $memoisedConstraint])),
-            function () use ($mutableCapture, $memoisedConstraint): string {
-                $mutableCapture->name = 'second capture';
-
-                return QueryFingerprint::for(Tag::query()->with(['related' => $memoisedConstraint]));
-            },
+        yield 'a chaperone removed inside a constraint' => [
+            fn (): string => QueryFingerprint::for(Author::query()->with('books')),
+            fn (): string => QueryFingerprint::for(Author::query()->with(['books' => static fn (HasMany $relation): HasMany => $relation->withoutChaperone()])),
         ];
     }
 
     /**
-     * Test that fingerprinting scenarios which must always collide - repeat
-     * reads, equivalent bindings, reordered eager loads, or the same closure
-     * fingerprinted more than once - each yield a stable fingerprint.
+     * Return a query result unchanged, as an after-query callback.
      *
-     * @param  \Closure(): string  $first
-     * @param  \Closure(): string  $second
-     * @return void
+     * @param  \Illuminate\Support\Collection<int, object>  $result
+     * @return \Illuminate\Support\Collection<int, object>
      */
-    #[DataProvider('stableFingerprintProvider')]
-    public function testStableScenariosYieldSameFingerprint(\Closure $first, \Closure $second): void
+    private static function unchanged(Collection $result): Collection
     {
-        self::assertSame($first(), $second());
+        return $result;
     }
 
     /**
-     * @return iterable<string, array{\Illuminate\Container\Container, \Illuminate\Container\Container, bool}>
+     * @return iterable<string, array{\Closure(): string, \Closure(): string}>
      */
-    public static function definitionPathNormalisationProvider(): iterable
+    private static function distinctRelationKeyProvider(): iterable
     {
-        $fixtureDirectory = dirname((string) realpath(dirname(__DIR__, 2) . '/Support/Closures/AlignedConstraintA.php'));
-
-        yield 'a doubled trailing separator on the base path collapses to none' => [
-            self::containerWithBasePath($fixtureDirectory),
-            self::containerWithBasePath($fixtureDirectory . '//'),
-            true,
+        $relations = [
+            'owner'    => ['owner_id', 'keeper_id'],
+            'books'    => ['shelf_id', 'stack_id'],
+            'comments' => ['shelf_id', 'stack_id'],
+            'labels'   => ['labelable_type', 'labelable_kind'],
+            'genres'   => ['shelf_id', 'stack_id'],
+            'tags'     => ['taggable', 'markable'],
         ];
 
-        yield 'a single trailing separator on the base path behaves like none at all' => [
-            self::containerWithBasePath($fixtureDirectory),
-            self::containerWithBasePath($fixtureDirectory . \DIRECTORY_SEPARATOR),
-            true,
-        ];
-
-        yield 'a base path that is not a prefix of the definition site leaves it unchanged' => [
-            self::containerWithBasePath($fixtureDirectory),
-            self::containerWithBasePath('/definitely-not-a-real-application-base-path'),
-            false,
-        ];
-
-        yield 'an empty base path strips only a leading separator, not the definition directory' => [
-            self::containerWithBasePath($fixtureDirectory),
-            self::containerWithBasePath(''),
-            false,
-        ];
-
-        yield 'no bound application behaves like a base path that is not a prefix' => [
-            new Container,
-            self::containerWithBasePath('/definitely-not-a-real-application-base-path'),
-            true,
-        ];
-    }
-
-    /**
-     * Test that a closure's definition-site file path is normalised relative to
-     * the application base path, so an unchanged file fingerprints identically
-     * across releases regardless of how the base path is written, while a base
-     * path that does not actually prefix the definition site - or the absence
-     * of a bound application altogether - leaves the path, and therefore the
-     * fingerprint, unchanged.
-     *
-     * @param  \Illuminate\Container\Container  $first
-     * @param  \Illuminate\Container\Container  $second
-     * @param  bool  $expectSameFingerprint
-     * @return void
-     *
-     * @throws \SineMacula\Repositories\Exceptions\UnfingerprintableQueryException
-     */
-    #[DataProvider('definitionPathNormalisationProvider')]
-    public function testDefinitionPathIsNormalisedRelativeToTheApplicationBasePath(Container $first, Container $second, bool $expectSameFingerprint): void
-    {
-        $previous = Container::getInstance();
-
-        try {
-            Container::setInstance($first);
-
-            $firstFingerprint = QueryFingerprint::for(self::queryConstrainedByAlignedConstraintA());
-
-            Container::setInstance($second);
-
-            $secondFingerprint = QueryFingerprint::for(self::queryConstrainedByAlignedConstraintA());
-        } finally {
-            Container::setInstance($previous);
-        }
-
-        if ($expectSameFingerprint) {
-            self::assertSame($firstFingerprint, $secondFingerprint);
-        } else {
-            self::assertNotSame($firstFingerprint, $secondFingerprint);
+        foreach ($relations as $relation => [$first, $second]) {
+            yield 'the ' . $relation . ' relation keyed on a different column' => [
+                fn (): string => self::fingerprintShelfWith($relation, $first),
+                fn (): string => self::fingerprintShelfWith($relation, $second),
+            ];
         }
     }
 
     /**
-     * Test that a closure passed as a verb argument cannot be fingerprinted,
-     * since two distinct closures have no stable representation and must never
-     * collide on one cache key.
+     * Fingerprint a shelf query eager loading the given relation, built while
+     * the relation keys on the given column.
      *
-     * @return void
+     * @param  string  $relation
+     * @param  string  $key
+     * @return string
      *
      * @throws \SineMacula\Repositories\Exceptions\UnfingerprintableQueryException
      */
-    public function testClosureArgumentsCannotBeFingerprinted(): void
+    private static function fingerprintShelfWith(string $relation, string $key): string
     {
-        $this->expectException(UnfingerprintableQueryException::class);
-        $this->expectExceptionMessage('Unable to fingerprint the given query.');
+        Config::set(Shelf::KEY, $key);
 
-        QueryFingerprint::for(Tag::query(), 'firstWhere', [static function ($query): void {
-            $query->where('name', 'php');
-        }]);
+        return QueryFingerprint::for(Shelf::query()->with($relation));
     }
 
     /**
-     * Build a container that reports a fixed value for its base path, so
-     * closure definition-path normalisation can be exercised against a known
-     * prefix without a bound Laravel application.
+     * Make the given tenant the current one.
      *
-     * @param  string  $path
-     * @return \Illuminate\Container\Container
+     * @param  string  $tenant
+     * @return void
      */
-    private static function containerWithBasePath(string $path): Container
+    private static function actAsTenant(string $tenant): void
     {
-        return new class ($path) extends Container {
-            /**
-             * @param  string  $path
-             * @return void
-             */
-            public function __construct(
-
-                /** The value returned for every base path lookup. */
-                private readonly string $path,
-            ) {}
-
-            /**
-             * @param  string  $path
-             * @return string
-             */
-            public function basePath(string $path = ''): string
-            {
-                return $this->path;
-            }
-        };
+        Container::getInstance()->instance(TenantScope::BINDING, $tenant);
     }
 
     /**
-     * Build a tag query whose only eager load is the aligned constraint
-     * fixture, registered directly so the fingerprinted closure is the fixture
-     * itself rather than a framework-generated wrapper around it.
+     * Build a tag query on a freshly configured alternative connection.
      *
-     * @return \Illuminate\Contracts\Database\Eloquent\Builder
+     * @param  string  $connection
+     * @param  string  $database
+     * @return \Illuminate\Database\Eloquent\Builder<\Tests\Support\Models\Tag>
      */
-    private static function queryConstrainedByAlignedConstraintA(): Builder
+    private static function alternativeConnectionQuery(string $connection, string $database): EloquentBuilder
     {
-        $query = Tag::query();
-        $query->setEagerLoads(['related' => AlignedConstraintA::make()]);
+        Config::set('database.connections.' . $connection, [
+            'driver'   => 'sqlite',
+            'database' => $database,
+            'prefix'   => '',
+        ]);
 
-        return $query;
+        return (new Tag)->setConnection($connection)->newQuery();
     }
 }

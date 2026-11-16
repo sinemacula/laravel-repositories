@@ -2,6 +2,25 @@
 
 This document provides migration guidance for consumer-visible changes between versions.
 
+## Cache keys follow global scopes and eager-load constraints
+
+A cacheable read is now keyed by the SQL Eloquent runs, global scopes and eager-load constraints included, and a
+reference-mode repository keeps one snapshot per global-scope variant.
+
+**Why:** the key used to be taken before global scopes applied, and an eager-load constraint was identified by where it
+was defined rather than by what it queried. Reads that ran different SQL (a `withTrashed()` read and a default one, two
+tenants under a tenant scope, a constraint reading the authenticated user) shared one entry, so one request was served
+another's rows until the TTL expired.
+
+**Who is affected:**
+
+- Every existing cache entry misses once after the upgrade, since the keys change.
+- Global scopes and eager-load constraints run once more per read, on cache hits too. A scope or constraint with side
+  effects, or one returning different SQL on each call (a timestamp, a random value), is not supported.
+- A read eager loading a `MorphTo` relation or a relation class of your own, one with an `afterQuery()` callback other
+  than the one `chaperone()` registers, one with a callable `withDefault()`, or one whose eager loads nest more than 16
+  levels deep, now runs uncached rather than risk serving another read's rows.
+
 ## Composing a query now returns a copy
 
 Composing a query no longer mutates the repository. `addScope()`, `withCriteria()`, `useCriteria()`,

@@ -20,6 +20,7 @@ use SineMacula\Repositories\Concerns\CacheSizeGuard;
 use SineMacula\Repositories\Concerns\CacheStore;
 use SineMacula\Repositories\Concerns\CacheStoreOptions;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
+use SineMacula\Repositories\Concerns\QueryFingerprint;
 use SineMacula\Repositories\Concerns\ReferenceCache;
 use Tests\Integration\IntegrationTestCase;
 use Tests\Support\Builders\InertBuilder;
@@ -1301,11 +1302,14 @@ final class CacheableTest extends IntegrationTestCase
 
     /**
      * Test that the reference-mode snapshot cache key is composed from the
-     * exact prefix, connection name, and database name in that order, so
-     * dropping or reordering any component of that composition is observable as
-     * a missing key.
+     * exact prefix, connection name, and database name in that order, then the
+     * generation and the snapshot query's fingerprint, so dropping or
+     * reordering any component of that composition is observable as a missing
+     * key.
      *
      * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\UnfingerprintableQueryException
      */
     public function testReferenceModeCacheKeyIncludesPrefixConnectionAndDatabase(): void
     {
@@ -1318,7 +1322,10 @@ final class CacheableTest extends IntegrationTestCase
         /** @var \Illuminate\Cache\CacheManager $cacheManager */
         $cacheManager = app('cache');
 
-        self::assertTrue($cacheManager->store('array')->has('repositories:repository-cache:tags:testing::memory:'));
+        $generation = $cacheManager->store('array')->get('repositories:repository-cache-version:tags:testing::memory:');
+
+        self::assertIsString($generation);
+        self::assertTrue($cacheManager->store('array')->has('repositories:repository-cache:tags:testing::memory::' . $generation . ':' . QueryFingerprint::for(Tag::query())));
     }
 
     /**
