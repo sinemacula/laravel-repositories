@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/), and this project adheres
 to [Semantic Versioning](https://semver.org/).
 
+## [3.2.3](https://github.com/sinemacula/laravel-repositories/compare/v3.2.2...v3.2.3) (2026-11-16)
+
+
+### Bug Fixes
+
+* invalidate non-taggable caches with a generation token ([#124](https://github.com/sinemacula/laravel-repositories/issues/124)) ([ee1d0fb](https://github.com/sinemacula/laravel-repositories/commit/ee1d0fb92c9f091e7d0205da6ae48b15ccb97af4))
+* key cached reads by the SQL Eloquent runs ([#121](https://github.com/sinemacula/laravel-repositories/issues/121)) ([8bf20d0](https://github.com/sinemacula/laravel-repositories/commit/8bf20d0fc57b8590ea0f400edf51bd70631e026f))
+* query reference reads that select only some columns ([#123](https://github.com/sinemacula/laravel-repositories/issues/123)) ([eb70c1e](https://github.com/sinemacula/laravel-repositories/commit/eb70c1e93553a76c06c82badf471072c7801c48b))
+
 ## [3.2.2](https://github.com/sinemacula/laravel-repositories/compare/v3.2.1...v3.2.2) (2026-11-10)
 
 
