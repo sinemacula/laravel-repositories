@@ -9,7 +9,7 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in this package, please report it responsibly. **Do not open a public issue.**
+Report vulnerabilities privately. **Do not open a public issue.**
 
 Email **security@sinemacula.co.uk** with:
 
@@ -17,11 +17,11 @@ Email **security@sinemacula.co.uk** with:
 - Steps to reproduce or a proof of concept
 - The affected version(s)
 
-You will receive an acknowledgement within 48 hours. We will work with you to understand the issue and coordinate a fix
-before any public disclosure.
+You will receive an acknowledgement within 48 hours, and a fix will be coordinated with you before any public
+disclosure.
 
 ## Disclosure Policy
 
-- Vulnerabilities will be patched in a timely manner and released as a new version
+- Fixes are released as a new version
 - Credit will be given to the reporter unless they prefer to remain anonymous
 - Public disclosure will be coordinated with the reporter after a fix is available
