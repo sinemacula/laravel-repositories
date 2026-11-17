@@ -6,6 +6,7 @@ namespace Tests\Integration;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\CoversTrait;
+use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
 use SineMacula\Repositories\Repository;
 use Tests\Support\Concerns\InteractsWithUserRepository;
@@ -13,22 +14,10 @@ use Tests\Support\Criteria\ActiveUsersCriterion;
 use Tests\Support\Criteria\NamedUsersCriterion;
 
 /**
- * Criteria flag state machine tests.
+ * Tests for the criteria flag state machine across every flag combination.
  *
- * Verifies the behavioral specification of the four-flag criteria state machine
- * across all 16 combinations of {$disableCriteria, $skipCriteria,
- * $forceUseCriteria, transient criteria present}.
- *
- * Flag precedence rules under test:
- * 1. $skipCriteria overrides all other flags (no criteria applied)
- * 2. $forceUseCriteria overrides $disableCriteria for persistent criteria
- * 3. $disableCriteria does NOT gate transient criteria
- *
- * Test data: 3 users seeded — Alice (active), Bob (inactive), Carol (active).
- * - No criteria applied → 3 results
- * - ActiveUsersCriterion (persistent) only → 2 results (Alice, Carol)
- * - NamedUsersCriterion('Alice') (transient) only → 1 result (Alice)
- * - Both criteria → 1 result (Alice)
+ * Skip overrides every other flag, force overrides disable for persistent
+ * criteria, and disable never gates transient criteria.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -41,362 +30,69 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
 {
     use InteractsWithUserRepository;
 
-    // -------------------------------------------------------------------------
-    // Group A: Criteria enabled ($disableCriteria=false), no skip
-    // -------------------------------------------------------------------------
-
     /**
-     * State 1: D=false, S=false, F=false, T=empty.
+     * Provide every disable, skip, force and transient combination with the
+     * number of users it returns.
      *
-     * Persistent criteria applied. No transient criteria present.
-     *
-     * @return void
-     *
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     * @return iterable<string, array{bool, bool, bool, bool, int}>
      */
-    public function testState01EnabledNoSkipNoForceNoTransient(): void
+    public static function flagStates(): iterable
     {
-        $this->seedUsers();
-
-        $repository = $this->repository();
-        $repository->pushCriteria(new ActiveUsersCriterion);
-
-        self::assertCount(2, $repository->query()->get());
+        yield 'no flags' => [false, false, false, false, 2];
+        yield 'transient' => [false, false, false, true, 1];
+        yield 'force' => [false, false, true, false, 2];
+        yield 'force, transient' => [false, false, true, true, 1];
+        yield 'skip' => [false, true, false, false, 3];
+        yield 'skip, transient' => [false, true, false, true, 3];
+        yield 'skip, force' => [false, true, true, false, 3];
+        yield 'skip, force, transient' => [false, true, true, true, 3];
+        yield 'disable' => [true, false, false, false, 3];
+        yield 'disable, transient' => [true, false, false, true, 1];
+        yield 'disable, force' => [true, false, true, false, 2];
+        yield 'disable, force, transient' => [true, false, true, true, 1];
+        yield 'disable, skip' => [true, true, false, false, 3];
+        yield 'disable, skip, transient' => [true, true, false, true, 3];
+        yield 'disable, skip, force' => [true, true, true, false, 3];
+        yield 'every flag' => [true, true, true, true, 3];
     }
 
     /**
-     * State 2: D=false, S=false, F=false, T=present.
+     * Test that the flags decide which criteria apply to the query.
      *
-     * Both persistent and transient criteria applied.
-     *
+     * @param  bool  $disable
+     * @param  bool  $skip
+     * @param  bool  $force
+     * @param  bool  $transient
+     * @param  int  $expected
      * @return void
      *
      * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
-    public function testState02EnabledNoSkipNoForceWithTransient(): void
+    #[DataProvider('flagStates')]
+    public function testFlagsDecideWhichCriteriaApply(bool $disable, bool $skip, bool $force, bool $transient, int $expected): void
     {
         $this->seedUsers();
 
         $repository = $this->repository();
         $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository->forceTransientCriteria($this->criteria(new NamedUsersCriterion('Alice')));
 
-        // Both applied: active AND named Alice → 1 result
-        self::assertCount(1, $repository->query()->get());
-    }
+        if ($disable) {
+            $repository->disableCriteria();
+        }
 
-    // -------------------------------------------------------------------------
-    // Group B: Skip active ($skipCriteria=true) — overrides everything
-    // -------------------------------------------------------------------------
+        if ($force && $transient) {
+            $repository = $repository->withCriteria(new NamedUsersCriterion('Alice'));
+        } elseif ($force) {
+            $repository = $repository->useCriteria();
+        } elseif ($transient) {
+            $repository->forceTransientCriteria($this->criteria(new NamedUsersCriterion('Alice')));
+        }
 
-    /**
-     * State 3: D=false, S=false, F=true, T=empty.
-     *
-     * Persistent criteria applied. $forceUseCriteria is redundant when criteria
-     * are not disabled.
-     *
-     * @return void
-     *
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
-     */
-    public function testState03EnabledNoSkipForceNoTransient(): void
-    {
-        $this->seedUsers();
+        if ($skip) {
+            $repository = $repository->skipCriteria();
+        }
 
-        $repository = $this->repository();
-        $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository = $repository->useCriteria();
-
-        self::assertCount(2, $repository->query()->get());
-    }
-
-    /**
-     * State 4: D=false, S=false, F=true, T=present.
-     *
-     * Both persistent and transient criteria applied. This is the typical state
-     * after calling withCriteria().
-     *
-     * @return void
-     *
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
-     */
-    public function testState04EnabledNoSkipForceWithTransient(): void
-    {
-        $this->seedUsers();
-
-        $repository = $this->repository();
-        $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository = $repository->withCriteria(new NamedUsersCriterion('Alice'));
-
-        self::assertCount(1, $repository->query()->get());
-    }
-
-    /**
-     * State 5: D=false, S=true, F=false, T=empty.
-     *
-     * Skip overrides: no criteria applied despite persistent being present.
-     *
-     * @return void
-     *
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
-     */
-    public function testState05EnabledSkipNoForceNoTransient(): void
-    {
-        $this->seedUsers();
-
-        $repository = $this->repository();
-        $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository = $repository->skipCriteria();
-
-        self::assertCount(3, $repository->query()->get());
-    }
-
-    /**
-     * State 6: D=false, S=true, F=false, T=present.
-     *
-     * Skip overrides: both persistent and transient are skipped.
-     *
-     * @return void
-     *
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
-     */
-    public function testState06EnabledSkipNoForceWithTransient(): void
-    {
-        $this->seedUsers();
-
-        $repository = $this->repository();
-        $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository->forceTransientCriteria($this->criteria(new NamedUsersCriterion('Alice')));
-        $repository = $repository->skipCriteria();
-
-        self::assertCount(3, $repository->query()->get());
-    }
-
-    // -------------------------------------------------------------------------
-    // Group C: Criteria disabled ($disableCriteria=true), no skip
-    // -------------------------------------------------------------------------
-
-    /**
-     * State 7: D=false, S=true, F=true, T=empty.
-     *
-     * Skip overrides force: no criteria applied.
-     *
-     * @return void
-     *
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
-     */
-    public function testState07EnabledSkipForceNoTransient(): void
-    {
-        $this->seedUsers();
-
-        $repository = $this->repository();
-        $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository = $repository->useCriteria();
-        $repository = $repository->skipCriteria();
-
-        self::assertCount(3, $repository->query()->get());
-    }
-
-    /**
-     * State 8: D=false, S=true, F=true, T=present.
-     *
-     * Skip overrides everything: all criteria skipped.
-     *
-     * @return void
-     *
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
-     */
-    public function testState08EnabledSkipForceWithTransient(): void
-    {
-        $this->seedUsers();
-
-        $repository = $this->repository();
-        $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository = $repository->withCriteria(new NamedUsersCriterion('Alice'));
-        $repository = $repository->skipCriteria();
-
-        self::assertCount(3, $repository->query()->get());
-    }
-
-    /**
-     * State 9: D=true, S=false, F=false, T=empty.
-     *
-     * Persistent criteria NOT applied (disabled). No transient present.
-     *
-     * @return void
-     *
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
-     */
-    public function testState09DisabledNoSkipNoForceNoTransient(): void
-    {
-        $this->seedUsers();
-
-        $repository = $this->repository();
-        $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository->disableCriteria();
-
-        self::assertCount(3, $repository->query()->get());
-    }
-
-    /**
-     * State 10: D=true, S=false, F=false, T=present.
-     *
-     * KEY BEHAVIOR: $disableCriteria does NOT gate transient criteria.
-     * Persistent NOT applied, but transient IS applied.
-     *
-     * @return void
-     *
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
-     */
-    public function testState10DisabledNoSkipNoForceWithTransientTransientStillApplied(): void
-    {
-        $this->seedUsers();
-
-        $repository = $this->repository();
-        $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository->disableCriteria();
-        $repository->forceTransientCriteria($this->criteria(new NamedUsersCriterion('Alice')));
-
-        // Transient applied (Alice only), persistent NOT applied → 1 result
-        self::assertCount(1, $repository->query()->get());
-    }
-
-    // -------------------------------------------------------------------------
-    // Group D: Disabled + Skip (disableCriteria and skipCriteria both true)
-    // -------------------------------------------------------------------------
-
-    /**
-     * State 11: D=true, S=false, F=true, T=empty.
-     *
-     * $forceUseCriteria overrides $disableCriteria for persistent criteria.
-     *
-     * @return void
-     *
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
-     */
-    public function testState11DisabledNoSkipForceNoTransientForceOverridesDisable(): void
-    {
-        $this->seedUsers();
-
-        $repository = $this->repository();
-        $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository->disableCriteria();
-        $repository = $repository->useCriteria();
-
-        self::assertCount(2, $repository->query()->get());
-    }
-
-    /**
-     * State 12: D=true, S=false, F=true, T=present.
-     *
-     * Force overrides disable for persistent; transient always applied when not
-     * skipped. Both criteria applied.
-     *
-     * @return void
-     *
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
-     */
-    public function testState12DisabledNoSkipForceWithTransientBothApplied(): void
-    {
-        $this->seedUsers();
-
-        $repository = $this->repository();
-        $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository->disableCriteria();
-        $repository = $repository->withCriteria(new NamedUsersCriterion('Alice'));
-
-        self::assertCount(1, $repository->query()->get());
-    }
-
-    /**
-     * State 13: D=true, S=true, F=false, T=empty.
-     *
-     * Skip overrides: no criteria applied. Disable is redundant.
-     *
-     * @return void
-     *
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
-     */
-    public function testState13DisabledSkipNoForceNoTransient(): void
-    {
-        $this->seedUsers();
-
-        $repository = $this->repository();
-        $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository->disableCriteria();
-        $repository = $repository->skipCriteria();
-
-        self::assertCount(3, $repository->query()->get());
-    }
-
-    /**
-     * State 14: D=true, S=true, F=false, T=present.
-     *
-     * Skip overrides disable and suppresses transient criteria.
-     *
-     * @return void
-     *
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
-     */
-    public function testState14DisabledSkipNoForceWithTransientSkipSuppressesAll(): void
-    {
-        $this->seedUsers();
-
-        $repository = $this->repository();
-        $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository->disableCriteria();
-        $repository->forceTransientCriteria($this->criteria(new NamedUsersCriterion('Alice')));
-        $repository = $repository->skipCriteria();
-
-        self::assertCount(3, $repository->query()->get());
-    }
-
-    // -------------------------------------------------------------------------
-    // Flag reset verification
-    // -------------------------------------------------------------------------
-
-    /**
-     * State 15: D=true, S=true, F=true, T=empty.
-     *
-     * Skip overrides both disable and force: no criteria applied.
-     *
-     * @return void
-     *
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
-     */
-    public function testState15DisabledSkipForceNoTransientSkipOverridesBoth(): void
-    {
-        $this->seedUsers();
-
-        $repository = $this->repository();
-        $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository->disableCriteria();
-        $repository = $repository->useCriteria();
-        $repository = $repository->skipCriteria();
-
-        self::assertCount(3, $repository->query()->get());
-    }
-
-    /**
-     * State 16: D=true, S=true, F=true, T=present.
-     *
-     * All flags active. Skip wins: no criteria applied.
-     *
-     * @return void
-     *
-     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
-     */
-    public function testState16AllFlagsActiveSkipWins(): void
-    {
-        $this->seedUsers();
-
-        $repository = $this->repository();
-        $repository->pushCriteria(new ActiveUsersCriterion);
-        $repository->disableCriteria();
-        $repository = $repository->withCriteria(new NamedUsersCriterion('Alice'));
-        $repository = $repository->skipCriteria();
-
-        self::assertCount(3, $repository->query()->get());
+        self::assertCount($expected, $repository->query()->get());
     }
 
     /**
@@ -422,8 +118,7 @@ final class CriteriaFlagStateTest extends IntegrationTestCase
     }
 
     /**
-     * Verify the force-use criteria flag resets to false after a query
-     * executes.
+     * Verify the force-use criteria flag resets after a query executes.
      *
      * @return void
      *

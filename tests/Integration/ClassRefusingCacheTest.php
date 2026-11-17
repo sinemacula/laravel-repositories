@@ -26,9 +26,7 @@ use Tests\Support\Repositories\ReferenceAuthorRepository;
  * End-to-end tests of the repository cache under a store that unserializes no
  * class, as Laravel's serializable_classes setting refuses them by default.
  *
- * One repository warms the cache and a fresh one reads it back, as the next
- * process would, so every result the first stores must survive being read
- * without its classes.
+ * Each warm read runs through a fresh repository, as the next process would.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -99,8 +97,7 @@ final class ClassRefusingCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a read from a warm cache in a fresh repository returns what the
-     * read that warmed it returned, without querying the database.
+     * Test that a warm read matches the cold read without querying.
      *
      * @param  string  $store
      * @param  bool  $withGraph
@@ -127,8 +124,7 @@ final class ClassRefusingCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that the warm read keeps the classes, relations and shared instances
-     * of the graph the cold read returned.
+     * Test that a warm read rebuilds the relation graph the cold read returned.
      *
      * @return void
      */
@@ -153,8 +149,7 @@ final class ClassRefusingCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a result holding a value the cache cannot store is still
-     * returned, and is read from the database each time.
+     * Test that a result the cache cannot store is queried on every read.
      *
      * @return void
      */
@@ -171,8 +166,7 @@ final class ClassRefusingCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a per-query entry an earlier version stored as objects is read
-     * as a miss, then recomputed and overwritten.
+     * Test that a per-query entry held as objects is recomputed and replaced.
      *
      * @return void
      */
@@ -202,8 +196,7 @@ final class ClassRefusingCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a reference-mode snapshot read back in a fresh repository
-     * equals the table, and serves lookups without querying the database.
+     * Test that a warm reference snapshot equals the table and serves lookups.
      *
      * @return void
      */
@@ -225,8 +218,7 @@ final class ClassRefusingCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a reference-mode snapshot an earlier version stored as objects
-     * is read as a miss, then reloaded and overwritten.
+     * Test that a reference snapshot held as objects is reloaded and replaced.
      *
      * @return void
      */

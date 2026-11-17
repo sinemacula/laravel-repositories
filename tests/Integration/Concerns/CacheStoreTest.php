@@ -92,8 +92,7 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a negative entry expires after the shorter negative TTL while a
-     * positive entry stored at the same moment survives on the full TTL.
+     * Test that a negative entry expires on the negative TTL, not the full TTL.
      *
      * @return void
      */
@@ -104,8 +103,7 @@ final class CacheStoreTest extends IntegrationTestCase
 
         self::assertInstanceOf(CacheMiss::class, $this->cacheStore->fetch(self::HASH));
 
-        // 11 seconds on: past the 10s negative TTL but well within the 3600s
-        // TTL.
+        // Past the 10s negative TTL, well within the 3600s TTL.
         Carbon::setTestNow(Carbon::parse('2026-03-09 12:00:11'));
 
         self::assertNull($this->cacheStore->fetch(self::HASH));
@@ -113,8 +111,7 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a negative entry is invalidated by a table flush, so a write
-     * does not leave a stale "not found" behind.
+     * Test that a table flush invalidates a negative entry.
      *
      * @return void
      */
@@ -163,8 +160,7 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that the size guard skips storing when the row count exceeds the
-     * configured ceiling, while a fetch still misses.
+     * Test that the size guard skips storing a result over the row ceiling.
      *
      * @return void
      */
@@ -178,8 +174,7 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that the size guard skips storing when the serialized byte size
-     * exceeds the configured ceiling.
+     * Test that the size guard skips storing a result over the byte ceiling.
      *
      * @return void
      */
@@ -193,8 +188,8 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that the size guard weighs the payload the store holds, which can be
-     * admitted under a ceiling the result itself would exceed.
+     * Test that the size guard weighs the encoded payload rather than the
+     * result.
      *
      * @return void
      */
@@ -214,8 +209,7 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a result holding a value the cache cannot store is left
-     * uncached and the skip is logged.
+     * Test that a result the cache cannot store is left uncached and logged.
      *
      * @return void
      */
@@ -232,8 +226,8 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that an entry which does not read back, such as one an earlier
-     * version stored as objects, is fetched as absent.
+     * Test that an entry stored as objects by an earlier version reads as
+     * absent.
      *
      * @return void
      */
@@ -251,8 +245,7 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a negative entry is stored as a plain payload under the table's
-     * generation.
+     * Test that a miss is stored as a plain payload under the table generation.
      *
      * @return void
      */
@@ -282,12 +275,11 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that flushTable invalidates a stored entry via a generational
-     * version bump on a non-taggable store.
+     * Test that flushTable invalidates a stored entry on a non-taggable store.
      *
      * @return void
      */
-    public function testFlushTableInvalidatesEntryViaVersionBumpOnNonTaggableStore(): void
+    public function testFlushTableInvalidatesEntryOnNonTaggableStore(): void
     {
         $store = new CacheStore(Cache::store('file'), 'test-table', new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10));
 
@@ -301,9 +293,8 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that flushTable replaces the table's generation token on each call
-     * with one never used before, orphaning entries stored under the previous
-     * token while leaving newer entries reachable.
+     * Test that each flush replaces the generation with a token never used
+     * before.
      *
      * @return void
      */
@@ -335,8 +326,8 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that, with invalidation disabled, flushTable leaves a non-taggable
-     * entry in place so staleness is governed by TTL only.
+     * Test that flushTable keeps a non-taggable entry with the registry
+     * disabled.
      *
      * @return void
      */
@@ -426,9 +417,8 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a taggable store flushes through its tag even when the key
-     * registry is disabled, proving the tag path is selected for taggable
-     * stores rather than the registry.
+     * Test that a taggable store flushes via its tag with the registry
+     * disabled.
      *
      * @return void
      */
@@ -446,8 +436,7 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that the per-table tag isolates entries between tables, so flushing
-     * one table never invalidates another table's cached entries.
+     * Test that flushing one table never invalidates another table's entries.
      *
      * @return void
      */
@@ -466,9 +455,8 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that invalidateTable flushes a taggable store's table tag and,
-     * because the taggable path returns early, never bumps the generational
-     * version.
+     * Test that invalidateTable flushes a taggable store without storing a
+     * generation.
      *
      * @return void
      */
@@ -483,13 +471,12 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that invalidateTable bumps the generational version on a
-     * non-taggable store when the registry is enabled, so a previously cached
-     * entry reads back as a miss.
+     * Test that invalidateTable drops a non-taggable entry with the registry
+     * enabled.
      *
      * @return void
      */
-    public function testInvalidateTableBumpsVersionOnNonTaggableStoreWhenRegistryEnabled(): void
+    public function testInvalidateTableDropsNonTaggableEntryWhenRegistryEnabled(): void
     {
         $options = new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10);
         (new CacheStore(Cache::store('file'), 'file-table', $options))->put(self::HASH, collect(['a']), 1);
@@ -502,12 +489,12 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that invalidateTable leaves a non-taggable store's entry intact when
-     * the registry is disabled, because it cannot bump the version.
+     * Test that invalidateTable keeps a non-taggable entry with the registry
+     * disabled.
      *
      * @return void
      */
-    public function testInvalidateTableLeavesEntryOnNonTaggableStoreWhenRegistryDisabled(): void
+    public function testInvalidateTableKeepsNonTaggableEntryWhenRegistryDisabled(): void
     {
         $options = new CacheStoreOptions(3600, new CacheSizeGuard(1000, 262144), true, 10);
         (new CacheStore(Cache::store('file'), 'file-table', $options))->put(self::HASH, collect(['a']), 1);
@@ -518,9 +505,8 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that non-taggable keys embed the table, the generation token, and
-     * the fingerprint in the documented order, pinning the physical key layout
-     * that replacing the token relies on.
+     * Test that non-taggable keys embed table, generation and fingerprint in
+     * order.
      *
      * @return void
      */
@@ -534,9 +520,8 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that an instance keeps serving entries under its memoised version
-     * after an external version bump, honouring the request-scoped snapshot
-     * contract, while a fresh instance observes the bump and misses.
+     * Test that an instance keeps its memoised generation until it is
+     * discarded.
      *
      * @return void
      */
@@ -554,8 +539,7 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that taggable entries are scoped to the canonical per-table tag, so
-     * a cross-cutting flush of that tag evicts them.
+     * Test that flushing the canonical per-table tag evicts taggable entries.
      *
      * @return void
      */
@@ -575,9 +559,7 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a generation the store refuses to replace is still used by this
-     * instance, so it stops serving pre-flush entries, and the refusal is
-     * logged since other processes never observe it.
+     * Test that a generation the store refuses is used locally and logged.
      *
      * @return void
      */
@@ -602,9 +584,7 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a store which throws on replacing the generation takes the same
-     * local fallback as one that refuses it, so a post-write flush still stops
-     * this instance serving the entries it was meant to drop.
+     * Test that a generation write that throws falls back like a refused one.
      *
      * @return void
      */
@@ -630,9 +610,8 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that an evicted generation token is replaced with a fresh one rather
-     * than read as a fixed value, so entries stored before an earlier write
-     * never become reachable again.
+     * Test that an evicted generation never makes older entries reachable
+     * again.
      *
      * @return void
      */
@@ -649,8 +628,7 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a generation minted for a table that has none is stored before
-     * this instance uses it, so other instances share it.
+     * Test that a newly minted generation is shared with other instances.
      *
      * @return void
      */
@@ -681,8 +659,7 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a generation the store refuses to replace is logged from the
-     * static invalidateTable() path, mirroring the instance flush path.
+     * Test that invalidateTable logs a generation the store refuses to replace.
      *
      * @return void
      */
@@ -706,8 +683,7 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Test that fetch() distinguishes an absent entry, a negative-cache marker,
-     * and a cached value in a single lookup.
+     * Test that fetch distinguishes absent, negative and cached entries.
      *
      * @return void
      */
@@ -741,9 +717,8 @@ final class CacheStoreTest extends IntegrationTestCase
     }
 
     /**
-     * Build a cache store over a stub holding a pre-flush entry under the
-     * "current" generation, with its generation writes configured by the
-     * caller.
+     * Build a cache store over a stub holding a pre-flush entry, with its
+     * generation writes configured by the caller.
      *
      * @param  string  $driver
      * @param  \Closure(\Mockery\MockInterface): void  $configure

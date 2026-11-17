@@ -268,8 +268,7 @@ final class CachePayloadDecoderTest extends IntegrationTestCase
     }
 
     /**
-     * Test that the instance state a model can carry beyond what the other
-     * tests set is restored.
+     * Test that a model's key, paging and persistence state is restored.
      *
      * @return void
      */
@@ -295,8 +294,8 @@ final class CachePayloadDecoderTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a stored value that contains itself, as a reference in the
-     * serialized form can make it, is rejected rather than read without end.
+     * Test that a stored value that contains itself is rejected rather than
+     * read without end.
      *
      * @return void
      */

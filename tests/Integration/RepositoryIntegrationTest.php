@@ -8,7 +8,6 @@ use Illuminate\Contracts\Container\BindingResolutionException;
 use Illuminate\Contracts\Database\Eloquent\Builder as BuilderContract;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\CoversTrait;
@@ -16,6 +15,7 @@ use SineMacula\Repositories\Concerns\ManagesCriteria;
 use SineMacula\Repositories\Concerns\ResetsTransientState;
 use SineMacula\Repositories\Repository;
 use Tests\Support\Builders\InertBuilder;
+use Tests\Support\Concerns\InteractsWithUserRepository;
 use Tests\Support\Criteria\ActiveUsersCriterion;
 use Tests\Support\Criteria\NamedUsersCriterion;
 use Tests\Support\Exceptions\CompositionFailure;
@@ -38,6 +38,8 @@ use Tests\Support\Repositories\TestUserRepository;
 #[CoversTrait(ResetsTransientState::class)]
 final class RepositoryIntegrationTest extends IntegrationTestCase
 {
+    use InteractsWithUserRepository;
+
     /** @var string The message carried by a fixture scope that fails. */
     private const string SCOPE_FAILURE = 'Scope composition failed.';
 
@@ -272,7 +274,7 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
     }
 
     /**
-     * Verify resetScopes() clears all registered scopes.
+     * Verify resetScopes() returns a copy without the composing scopes.
      *
      * @return void
      */
@@ -294,9 +296,7 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a forwarded call which throws leaves no dirty builder or scope
-     * state behind, so the next query composes from a clean slate instead of
-     * inheriting the failed call's constraints.
+     * Test that a forwarded call that throws leaves no transient state behind.
      *
      * @return void
      */
@@ -326,13 +326,11 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
     }
 
     /**
-     * Verify a secondary model re-resolution failure during failure cleanup is
-     * logged and swallowed, leaving the model null while the original exception
-     * still propagates to the caller.
+     * Verify a re-resolution failure in cleanup is logged and nulls the model.
      *
      * @return void
      */
-    public function testFailedForwardedCallLogsAndNullsModelWhenReResolutionAlsoFails(): void
+    public function testFailedCallLogsAndNullsModelWhenReResolutionFails(): void
     {
         $this->seedUsers();
 
@@ -370,9 +368,7 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a query() composition which throws leaves no dirty builder or
-     * scope state behind, so the next query composes from a clean slate instead
-     * of inheriting the abandoned composition's constraints.
+     * Test that a query() composition that throws leaves no transient state.
      *
      * @return void
      *
@@ -414,15 +410,13 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
     }
 
     /**
-     * Verify a non-resolution throwable raised during failure cleanup is logged
-     * and swallowed, leaving the model null while the original exception still
-     * propagates to the caller.
+     * Verify an unexpected cleanup throwable is logged and nulls the model.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testFailedQueryLogsAndNullsModelWhenCleanupThrowsUnexpectedly(): void
+    public function testFailedQueryLogsAndNullsModelWhenCleanupThrows(): void
     {
         $repository = $this->repository();
         $calls      = 0;
@@ -466,8 +460,7 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
     }
 
     /**
-     * Verify all() delegates to the get() pipeline so criteria apply
-     * identically to a directly forwarded get() call.
+     * Verify all() applies criteria through the get() pipeline.
      *
      * @return void
      *
@@ -483,31 +476,5 @@ final class RepositoryIntegrationTest extends IntegrationTestCase
 
         self::assertInstanceOf(Collection::class, $users);
         self::assertCount(2, $users);
-    }
-
-    /**
-     * Resolve the repository under test.
-     *
-     * @return \Tests\Support\Repositories\TestUserRepository
-     */
-    private function repository(): TestUserRepository
-    {
-        self::assertNotNull($this->app);
-
-        return $this->app->make(TestUserRepository::class);
-    }
-
-    /**
-     * Seed baseline users for repository integration scenarios.
-     *
-     * @return void
-     */
-    private function seedUsers(): void
-    {
-        DB::table('test_users')->insert([
-            ['id' => 1, 'name' => 'Alice', 'active' => true],
-            ['id' => 2, 'name' => 'Bob', 'active' => false],
-            ['id' => 3, 'name' => 'Carol', 'active' => true],
-        ]);
     }
 }

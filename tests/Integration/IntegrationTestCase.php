@@ -22,10 +22,10 @@ use SineMacula\Repositories\RepositoryServiceProvider;
  */
 abstract class IntegrationTestCase extends TestCase
 {
-    /** @var string|null The per-test isolated file-cache directory, if one was provisioned. */
+    /** @var string|null The per-test file cache directory. */
     private ?string $fileCachePath = null;
 
-    /** @var array<int, string> The cache keys written with a value that does not read back without its classes. */
+    /** @var array<int, string> Keys of cache writes that do not read back without their classes. */
     private array $unreadableCacheWrites = [];
 
     /**
@@ -110,10 +110,7 @@ abstract class IntegrationTestCase extends TestCase
             'foreign_key_constraints' => true,
         ]);
 
-        // Isolate the file cache per test so parallel test runs (each mutant is
-        // a separate process during mutation testing) never collide on a shared
-        // cache directory, which otherwise makes TTL/expiry-sensitive cache
-        // assertions flap and the mutation score non-deterministic.
+        // A per-test cache directory stops parallel mutant runs from colliding.
         $this->fileCachePath = sys_get_temp_dir() . '/laravel-repositories-test-cache-' . getmypid() . '-' . uniqid('', true);
         $app['config']->set('cache.stores.file.path', $this->fileCachePath);
 
@@ -121,11 +118,9 @@ abstract class IntegrationTestCase extends TestCase
     }
 
     /**
-     * Record a cache write whose value does not read back unchanged once
-     * serialized and unserialized with every class refused.
+     * Record a cache write that does not survive a class-refusing round trip.
      *
-     * The write is recorded before the value is serialized, so a value that
-     * cannot be serialized at all stays recorded when serializing it throws.
+     * It is recorded first so a value that fails to serialize stays recorded.
      *
      * @param  \Illuminate\Cache\Events\KeyWritten  $event
      * @return void
