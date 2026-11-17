@@ -9,32 +9,24 @@ return [
     | Repository Cache Configuration
     |---------------------------------------------------------------------------
     |
-    | This section configures the opt-in repository cache (enabled per
-    | repository via the Cacheable trait). The default mode keys cache entries
-    | per executed query, so a filtered or by-id read never returns the full
-    | table. The 'prefix' namespaces every cache entry to avoid key collisions
-    | with other parts of your application. Each option may be overridden per
-    | repository via a property:
+    | Configures the opt-in repository cache, enabled per repository with the
+    | Cacheable trait. The 'prefix' namespaces every cache key. Each option may
+    | be overridden per repository via a property:
     |
-    |   - `ttl`             - `protected int $cacheTtl`
-    |   - `store`           - `protected ?string $cacheStoreName`
-    |   - `max_rows`        - `protected ?int $cacheMaxRows`
-    |   - `max_bytes`       - `protected ?int $cacheMaxBytes`
-    |   - `reference_ttl`   - `protected int $cacheReferenceTtl`
-    |   - `negative_ttl`    - `protected ?int $cacheNegativeTtl`
-    |   - (key prefix)      - `protected ?string $cacheKeyPrefix`
-    |   - (reference mode)  - `protected bool $cacheReferenceTable`
+    |   - `ttl`              - `protected int $cacheTtl`
+    |   - `store`            - `protected ?string $cacheStoreName`
+    |   - `max_rows`         - `protected ?int $cacheMaxRows`
+    |   - `max_bytes`        - `protected ?int $cacheMaxBytes`
+    |   - `reference_ttl`    - `protected int $cacheReferenceTtl`
+    |   - `negative_ttl`     - `protected ?int $cacheNegativeTtl`
+    |   - `registry_enabled` - `protected bool $cacheRegistryEnabled`
+    |   - (key prefix)       - `protected ?string $cacheKeyPrefix`
+    |   - (reference mode)   - `protected bool $cacheReferenceTable`
     |
-    | `max_rows` and `max_bytes` form the size guard: results larger than either
-    | limit are still fetched and returned, but not stored. Set either to null
-    | to disable that bound. `registry_enabled` controls how non-taggable stores
-    | invalidate per-query entries: when true a generation token is replaced
-    | on every write, orphaning existing entries in a single write; when false
-    | invalidation falls back to TTL expiry only (a
-    | documented degraded behaviour). `negative_ttl` is the shorter lifetime
-    | applied to negatively cached null/miss reads, bounding how long a stale
-    | "not found" is served and how much memory probe-fill can occupy; it
-    | defaults to 10 seconds.
+    | Results over `max_rows` or `max_bytes` are returned but not stored; null
+    | disables that bound. With `registry_enabled` false, writes do not
+    | invalidate per-query entries on a non-taggable store, so they live until
+    | their TTL. `negative_ttl` is the lifetime of a cached "not found" read.
     |
     */
 

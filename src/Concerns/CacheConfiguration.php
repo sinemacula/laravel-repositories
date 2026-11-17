@@ -7,13 +7,8 @@ namespace SineMacula\Repositories\Concerns;
 use Illuminate\Support\Facades\Config;
 
 /**
- * Resolves the tuning configuration for a cacheable repository from its
- * overridable property values and the package configuration, in that precedence
- * order.
- *
- * Constructed once per repository instance in bootCacheable(), from the
- * already-extracted overridable property values, so CacheStoreOptions is always
- * built from named values rather than a positional parameter list.
+ * Resolves a cacheable repository's configuration from its property overrides,
+ * falling back to the package configuration.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.

@@ -7,12 +7,7 @@ namespace SineMacula\Repositories;
 use Illuminate\Support\ServiceProvider;
 
 /**
- * Repository service provider.
- *
- * Merges the package configuration and offers it for publishing. The provider
- * registers no bindings of its own: repositories are resolved directly from the
- * container and the cache collaborators are constructed at boot by the
- * Cacheable concern.
+ * Merges the package configuration and offers it for publishing.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.

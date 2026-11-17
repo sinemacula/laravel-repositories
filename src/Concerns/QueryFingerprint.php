@@ -23,30 +23,13 @@ use Illuminate\Database\Eloquent\Relations\Relation;
 use SineMacula\Repositories\Exceptions\UnfingerprintableQueryException;
 
 /**
- * Derives a stable fingerprint for a prepared query builder and the read verb
- * applied to it, so that reads which run different SQL map to different cache
- * keys.
+ * Fingerprints the SQL a prepared query and its eager loads run, with the read
+ * verb, so reads that run different SQL get different cache keys.
  *
- * The fingerprint is taken from the builder Eloquent actually executes: global
- * scopes are applied, so a removed scope (e.g. withTrashed()) or a scope that
- * reads run-time state changes the key. Each eager load is compiled the way
- * Eloquent loads it - the relation is built, its constraint is run, and the
- * relation query is fingerprinted recursively with the related model's own
- * scopes - so a constraint is keyed by the SQL it produces rather than by its
- * identity. Scopes and constraints therefore run once more per read, and must
- * be deterministic: one that has side effects, or that inspects the parent key
- * constraints Eloquent adds once the parents are loaded, is unsupported.
- *
- * Anything that shapes the result outside SQL cannot be fingerprinted, and
- * fingerprinting fails: a MorphTo eager load, an after-query callback other
- * than the framework's own chaperone, a callable relation default, a relation
- * class other than the framework's own, an unknown relation, a constraint that
- * throws, eager loads nested deeper than the depth limit, and verb arguments
- * with no stable representation such as closures.
- *
- * The digest is produced with xxh128: a fast, non-cryptographic 128-bit hash.
- * Accidental collisions are negligible at this width, but it offers no
- * guarantee against a deliberate second-preimage.
+ * Global scopes and eager-load constraints run once more per read, so they must
+ * be deterministic. A query shaped outside SQL, such as by a MorphTo eager load
+ * or an after-query callback, cannot be fingerprinted. The xxh128 digest is not
+ * collision resistant against a deliberate attack.
  *
  * @phpstan-type SupportedRelation (
  *     \Illuminate\Database\Eloquent\Relations\BelongsTo<\Illuminate\Database\Eloquent\Model, \Illuminate\Database\Eloquent\Model>
@@ -105,9 +88,8 @@ final class QueryFingerprint
      * Describe the query Eloquent executes for the given builder, including
      * every eager load nested beneath it.
      *
-     * The builder is cloned before its scopes apply, since applyScopes()
-     * returns its receiver when there are none and compiling the SQL drains the
-     * before-query callbacks.
+     * The builder is cloned since applyScopes() can return its receiver and
+     * compiling the SQL drains the before-query callbacks.
      *
      * @param  \Illuminate\Database\Eloquent\Builder<\Illuminate\Database\Eloquent\Model>  $query
      * @param  int  $depth
@@ -142,9 +124,8 @@ final class QueryFingerprint
     /**
      * Describe the top-level eager loads of a scoped builder, in name order.
      *
-     * Each relation is built and constrained exactly as Eloquent eager loads
-     * it, minus the parent key constraints, whose values come from rows the
-     * parent query already keys. Nested loads travel on the relation query.
+     * Each relation is built and constrained as Eloquent eager loads it, minus
+     * the parent key constraints the parent query already keys.
      *
      * @param  \Illuminate\Database\Eloquent\Builder<\Illuminate\Database\Eloquent\Model>  $scoped
      * @param  int  $depth
@@ -187,9 +168,8 @@ final class QueryFingerprint
      * Assert that a relation is one whose eager load is fully described by its
      * query and configuration.
      *
-     * A MorphTo builds one query per parent type only once the parents load,
-     * and any other class, a subclass included, may match its results in ways
-     * the description cannot see.
+     * A MorphTo or a relation subclass may match results in ways the
+     * description cannot see.
      *
      * @param  mixed  $relation
      * @return void
@@ -206,10 +186,8 @@ final class QueryFingerprint
     }
 
     /**
-     * Describe the configuration of a relation that shapes its eager load but
-     * never reaches the relation query's SQL: the default it returns for a
-     * missing model, and the keys, morph type and pivot it constrains on and
-     * hydrates once the parents load.
+     * Describe the relation configuration that shapes its eager load outside
+     * the relation query's SQL.
      *
      * @param  SupportedRelation  $relation
      * @return string
@@ -294,9 +272,7 @@ final class QueryFingerprint
 
     /**
      * Determine whether a callback is the one the framework registers when a
-     * relation is chaperoned: a closure bound to that relation and defined
-     * where chaperone() is. It links each result back to its parent under the
-     * inverse relation name the relation description keys.
+     * relation is chaperoned.
      *
      * @param  mixed  $callback
      * @param  \Illuminate\Database\Eloquent\Relations\Relation<\Illuminate\Database\Eloquent\Model, \Illuminate\Database\Eloquent\Model, *>|null  $relation
@@ -347,8 +323,7 @@ final class QueryFingerprint
     }
 
     /**
-     * Normalise a value list into a stable string representation, falling back
-     * to serialisation when the values are not JSON-encodable.
+     * Normalise a value list into a stable string representation.
      *
      * @param  array<int|string, mixed>  $values
      * @return string
@@ -367,10 +342,8 @@ final class QueryFingerprint
     /**
      * Normalise a single value into a comparable scalar form.
      *
-     * Objects without a dedicated normalisation are serialized so that two
-     * distinct instances (e.g. raw query expressions) never collapse to the
-     * same representation; serialization throws for closures, which have no
-     * stable representation at all.
+     * Serializing an object keeps distinct instances apart, and throws for a
+     * closure, which has no stable form.
      *
      * @param  mixed  $value
      * @return mixed

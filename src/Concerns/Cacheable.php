@@ -14,21 +14,10 @@ use SineMacula\Repositories\Contracts\CacheInvalidator;
 use SineMacula\Repositories\Exceptions\UnfingerprintableQueryException;
 
 /**
- * Provides opt-in transparent caching for repositories.
+ * Provides opt-in caching for repository reads, keyed per executed query.
  *
- * When used by a Repository subclass, this trait intercepts read operations
- * before execution and serves matching results from a per-query cache,
- * guaranteeing zero database queries on a cache hit. Each executed query is
- * keyed by its fingerprint, so a filtered or by-id read never returns the
- * full-table collection. Write operations invalidate the whole table.
- *
- * withoutCache() returns a copy whose next read bypasses the cache, leaving the
- * instance it was called on untouched. Every copy of a repository shares these
- * cache collaborators, so flushCache() and getCacheStatus() mean the same thing
- * through any handle.
- *
- * Overridable configuration properties (declare in the consuming class to
- * change defaults):
+ * A write invalidates every cached read of the table. Overridable configuration
+ * properties (declare in the consuming class to change defaults):
  *
  *   - `protected int $cacheTtl = 3600` - cache duration in seconds
  *   - `protected ?string $cacheStoreName = null` - Laravel cache store
@@ -38,7 +27,7 @@ use SineMacula\Repositories\Exceptions\UnfingerprintableQueryException;
  *   - `protected int $cacheReferenceTtl` - reference-mode cache duration
  *   - `protected ?int $cacheNegativeTtl` - null/miss cache duration
  *   - `protected bool $cacheReferenceTable` - set true for whole-table mode
- *   - `protected bool $cacheRegistryEnabled = true` - non-taggable version bump
+ *   - `protected bool $cacheRegistryEnabled = true` - non-taggable invalidation
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -92,8 +81,7 @@ trait Cacheable
     /**
      * Create a new query with active repository criteria and scopes applied.
      *
-     * A raw builder is never served from the cache, so a pending withoutCache()
-     * is consumed here rather than left to bypass an unrelated later read.
+     * Consumes a pending withoutCache(); a raw builder never reads the cache.
      *
      * @return \Illuminate\Contracts\Database\Eloquent\Builder
      *
@@ -108,11 +96,7 @@ trait Cacheable
     }
 
     /**
-     * Bypass the cache for the next read operation.
-     *
-     * Returns a copy carrying the bypass; this instance is left untouched. The
-     * bypass composes the next read, so it travels with the copy rather than
-     * surviving on the instance it was requested from.
+     * Return a copy whose next read bypasses the cache.
      *
      * @return static
      *
@@ -153,10 +137,6 @@ trait Cacheable
     /**
      * Boot the cacheable concern.
      *
-     * Invoked by Repository::bootConcerns() rather than overriding boot()
-     * directly, so the concern can coexist with other bootable concerns without
-     * a fatal trait collision.
-     *
      * @return void
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
@@ -183,10 +163,7 @@ trait Cacheable
 
         $this->cacheReferenceMode = $configuration->referenceMode;
 
-        // The reference-mode snapshot key is qualified with the connection
-        // identity (unlike the per-query key, which folds it into the query
-        // fingerprint instead), so two connections exposing the same table name
-        // never share a whole-table snapshot.
+        // Two connections exposing the same table must not share a snapshot.
         $connection      = $model->getConnection();
         $referencePrefix = $configuration->prefix . ':' . $connection->getName() . ':' . $connection->getDatabaseName();
 
@@ -233,8 +210,7 @@ trait Cacheable
      */
     private function forwardAndFlush(string $method, array $arguments): mixed
     {
-        // A pending withoutCache() applies to the next read; consume it here so
-        // it cannot leak past the write onto an unrelated later read.
+        // A pending withoutCache() must not outlive the write.
         $this->bypassCache = false;
 
         $outcome = parent::__call($method, $arguments);
@@ -242,9 +218,7 @@ trait Cacheable
         try {
             $this->activeStore()->flushTable();
         } catch (\Throwable $exception) { // @phpstan-ignore catch.neverThrown
-            // Best-effort: the write is already committed, so a cache-store
-            // outage must not surface as a write failure (the caller could
-            // retry and duplicate). Stale-until-TTL is the safe degraded state.
+            // The write has committed; failing it now would invite a retry.
             Log::error('Cache flush after write failed', ['exception' => $exception]);
         }
 
@@ -252,13 +226,9 @@ trait Cacheable
     }
 
     /**
-     * Resolve a cacheable read via pre-execution interception.
+     * Resolve a cacheable read from the per-query cache.
      *
-     * The cache entry is resolved with a single fetch: an absent entry, a
-     * negative-cache marker, and a cached value are distinguished in one round
-     * trip, so an entry expiring mid-read can never be mistaken for a negative
-     * hit. Reads whose arguments cannot be fingerprinted (e.g. closures)
-     * execute uncached rather than risk colliding with another query's entry.
+     * A read that cannot be fingerprinted runs uncached.
      *
      * @param  string  $method
      * @param  array<int, mixed>  $arguments
@@ -330,12 +300,8 @@ trait Cacheable
     /**
      * Resolve a read from the whole-table reference cache.
      *
-     * Consumes the one-shot criteria flags exactly as a normal query pipeline
-     * would, so a skipCriteria()/useCriteria() intended for this read cannot
-     * leak onto a later, unrelated query. The flags are only consumed on the
-     * branches that actually serve the snapshot: an unsupported find() id falls
-     * back to the real query pipeline instead, which must see the flags
-     * untouched so parent::__call() can consume them itself.
+     * The one-shot criteria flags are consumed only when the snapshot serves
+     * the read; a fallback query consumes them itself.
      *
      * @param  string  $method
      * @param  array<int, mixed>  $arguments
@@ -384,10 +350,8 @@ trait Cacheable
     /**
      * Determine whether the given read can be served from the reference cache.
      *
-     * The snapshot holds every column, so only a get() or find() that selects
-     * every column is served from it. Any other argument shape - a narrower or
-     * null column list, named or extra arguments - executes a real query rather
-     * than return columns the caller did not ask for.
+     * The snapshot holds every column, so only a get() or find() selecting
+     * every column, with no named or extra arguments, is served from it.
      *
      * @param  string  $method
      * @param  array<int, mixed>  $arguments
@@ -409,17 +373,8 @@ trait Cacheable
     }
 
     /**
-     * Determine whether repository-level query composition is pending, in which
-     * case a reference read must execute a real query rather than serve the
-     * unfiltered whole-table snapshot.
-     *
-     * Scopes are Cacheable's own concern; the criteria precedence itself is
-     * owned by ManagesCriteria::hasPendingComposition() so applyCriteria() and
-     * this check can never silently diverge.
-     *
-     * Registered scopes count too, even though they are configuration rather
-     * than composition: the snapshot is built straight from the model, so it
-     * would answer a registered constraint with unfiltered rows.
+     * Determine whether any criteria or scope would constrain the next query,
+     * which the unfiltered snapshot cannot answer.
      *
      * @return bool
      */
@@ -429,10 +384,8 @@ trait Cacheable
     }
 
     /**
-     * Resolve the primary key argument for a reference-mode find().
-     *
-     * Returns null when the argument is not a supported key shape, signalling
-     * the caller to fall back to a real query rather than coerce the value.
+     * Resolve the primary key argument for a reference-mode find(), or null
+     * when it is not a supported key shape.
      *
      * @param  array<int, mixed>  $arguments
      * @return array<int, int|string>|int|string|null
@@ -468,8 +421,7 @@ trait Cacheable
     }
 
     /**
-     * Determine whether the next read should bypass the cache, consuming the
-     * transient flag.
+     * Determine whether the next read bypasses the cache, consuming the flag.
      *
      * @return bool
      */
@@ -496,17 +448,15 @@ trait Cacheable
     }
 
     /**
-     * Resolve an overridable property declared on the consuming repository.
-     *
-     * A value of a type no override takes is treated as undeclared, so the
-     * package configuration applies.
+     * Resolve an overridable property declared on the consuming repository,
+     * treating a value of a type no override takes as undeclared.
      *
      * @param  string  $name
      * @return bool|int|string|null
      */
     private function resolveProperty(string $name): bool|int|string|null
     {
-        // @phpstan-ignore property.dynamicName (guarded by property_exists; reads optional overridable config props)
+        // @phpstan-ignore property.dynamicName
         $value = property_exists($this, $name) ? $this->{$name} : null;
 
         return is_bool($value) || is_int($value) || is_string($value) ? $value : null;

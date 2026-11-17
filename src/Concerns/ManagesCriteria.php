@@ -13,26 +13,11 @@ use SineMacula\Repositories\Contracts\DeclaresFieldSelection;
 use SineMacula\Repositories\Contracts\DeclaresRelationshipCounts;
 
 /**
- * Shared criteria-state lifecycle for repositories, including persistent and
- * transient criteria application with runtime control toggles.
+ * Manages the persistent and transient criteria a repository applies.
  *
- * Flag precedence:
- * - $skipCriteria overrides all other flags; when true, no criteria (persistent
- *   or transient) are applied. Both $skipCriteria and $forceUseCriteria are
- *   reset after the query, and transient criteria are cleared.
- * - $forceUseCriteria overrides $disableCriteria for persistent criteria,
- *   allowing useCriteria()/withCriteria() to temporarily re-enable criteria
- *   even when globally disabled.
- * - $disableCriteria does not gate transient criteria; only persistent criteria
- *   are suppressed. Use skipCriteria() to suppress all criteria including
- *   transient.
- *
- * Application ordering:
- * - Transient criteria first (insertion order, then cleared)
- * - Persistent criteria second (insertion order, retained)
- * - Supplementary capabilities (eager-loading, field selection, counts,
- *   metadata) are collected from each criterion after its apply() method
- *   executes, in the same order.
+ * $skipCriteria suppresses every criterion, $forceUseCriteria overrides
+ * $disableCriteria, and $disableCriteria suppresses persistent criteria only.
+ * Transient criteria apply before persistent ones, each in insertion order.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -46,19 +31,9 @@ use SineMacula\Repositories\Contracts\DeclaresRelationshipCounts;
 trait ManagesCriteria
 {
     /**
-     * Temporarily applies specified criteria to the next request only.
+     * Return a copy that applies the given criteria to the next query only.
      *
-     * This method allows you to specify criteria that are applied once to the
-     * next operation involving data retrieval or manipulation and then
-     * automatically discarded.
-     *
-     * Each call replaces any transient criteria from a previous withCriteria()
-     * call rather than appending to them; pass an array to apply several
-     * criteria to the next query.
-     *
-     * Returns a copy carrying the criteria; this instance is left untouched, so
-     * a composition abandoned before a query is built cannot reach a later,
-     * unrelated query.
+     * Each call replaces the transient criteria rather than appending to them.
      *
      * @param  array<int, TCriterion>|TCriterion  $criteria
      * @return static
@@ -79,15 +54,8 @@ trait ManagesCriteria
     }
 
     /**
-     * Temporarily enables the application of criteria in queries.
-     *
-     * Use this method to temporarily override a `disableCriteria()` setting,
-     * allowing criteria to be applied just for the next query. This does not
-     * affect the permanent enabled/disabled state.
-     *
-     * Returns a copy carrying the flag; this instance is left untouched. The
-     * one-shot flags compose the next query, so they travel with the copy
-     * rather than surviving on the instance they were set from.
+     * Return a copy that applies criteria to the next query even when they are
+     * disabled.
      *
      * @return static
      *
@@ -108,10 +76,7 @@ trait ManagesCriteria
     }
 
     /**
-     * Persistently applies specified criteria to all requests.
-     *
-     * Add criteria that will be applied to all future operations until
-     * explicitly removed or the repository is reset.
+     * Apply the given criteria to every query until removed.
      *
      * @param  array<int, TCriterion>|TCriterion  $criteria
      * @return static
@@ -127,13 +92,8 @@ trait ManagesCriteria
     }
 
     /**
-     * Removes specified criteria from the repository.
-     *
-     * This method removes previously added criteria, either added for all
-     * requests or just for the next request. It affects both persistent and
-     * transient criteria settings, on the handle it is called on: transient
-     * criteria live on the copy a withCriteria() call returned, so removing one
-     * means calling this on that copy.
+     * Remove the criteria matching the given instances or class names from this
+     * handle.
      *
      * @param  array<int, string|TCriterion>|string|TCriterion  $criteria
      * @return static
@@ -153,24 +113,19 @@ trait ManagesCriteria
     }
 
     /**
-     * Retrieves a collection of all active criteria that will be applied in the
-     * next query.
+     * Get the criteria the next query applies.
      *
      * @return \Illuminate\Support\Collection<int, TCriterion>
      */
     #[\Override]
     public function getCriteria(): Collection
     {
-        /** @phpstan-ignore return.type (trait template resolution - reported and actual types are identical) */
+        /** @phpstan-ignore return.type */
         return $this->persistentCriteria->merge($this->transientCriteria);
     }
 
     /**
-     * Permanently enables the application of criteria in queries.
-     *
-     * This method ensures that criteria are applied to all queries going
-     * forward, until explicitly disabled. Note that a query composed with
-     * `skipCriteria()` overrides this for that query.
+     * Enable persistent criteria for every query.
      *
      * @return static
      */
@@ -183,11 +138,7 @@ trait ManagesCriteria
     }
 
     /**
-     * Permanently disables the application of criteria in queries.
-     *
-     * This method turns off the use of criteria in all future queries until
-     * criteria are explicitly re-enabled. Note that a query composed with
-     * `useCriteria()` or `withCriteria()` overrides this for that query.
+     * Disable persistent criteria for every query.
      *
      * @return static
      */
@@ -200,13 +151,7 @@ trait ManagesCriteria
     }
 
     /**
-     * Temporarily disables the application of criteria in queries.
-     *
-     * Use this method to temporarily bypass all criteria for the next query,
-     * even if `enableCriteria()` has been called. This does not affect the
-     * permanent enabled/disabled state.
-     *
-     * Returns a copy carrying the flag; this instance is left untouched.
+     * Return a copy whose next query applies no criteria.
      *
      * @return static
      *
@@ -224,10 +169,7 @@ trait ManagesCriteria
     }
 
     /**
-     * Clears all criteria from the repository.
-     *
-     * This method resets the repository to its original state with no criteria
-     * applied.
+     * Clear every criterion from the repository.
      *
      * @return static
      */
@@ -241,16 +183,13 @@ trait ManagesCriteria
     }
 
     /**
-     * Apply the criteria to the current query.
-     *
-     * Called after prepareQueryBuilder() has normalized $model to a Builder.
+     * Apply the criteria to the current query, consuming the one-shot flags.
      *
      * @return static
      *
      * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      *
-     * @internal Use the public criteria management API
-     *           (pushCriteria, withCriteria, etc.).
+     * @internal
      */
     protected function applyCriteria(): static
     {
@@ -291,14 +230,8 @@ trait ManagesCriteria
     }
 
     /**
-     * Determine whether the registered criteria would change the next query if
-     * applyCriteria() ran now.
-     *
-     * Mirrors applyCriteria()'s own precedence exactly, without consuming any
-     * of the one-shot flags, so a caller can decide how to serve the next read
-     * before committing to executing it. This is the single owner of that
-     * precedence; collaborators must delegate here rather than re-deriving it
-     * from the underlying criteria state.
+     * Determine whether applyCriteria() would change the next query, without
+     * consuming the one-shot flags.
      *
      * @return bool
      */
@@ -313,8 +246,7 @@ trait ManagesCriteria
     }
 
     /**
-     * Get the query the next criterion applies to, starting one from the
-     * repository's model when the model has not been normalized to a builder.
+     * Get the query the next criterion applies to.
      *
      * @return \Illuminate\Contracts\Database\Eloquent\Builder
      *
@@ -327,8 +259,7 @@ trait ManagesCriteria
     }
 
     /**
-     * Sanitize the given array of criteria to ensure they are valid criteria
-     * instances.
+     * Drop anything that is not a criterion from the given array.
      *
      * @param  array<int, mixed>  $criteria
      * @return array<int, TCriterion>
@@ -342,15 +273,7 @@ trait ManagesCriteria
      * Reset the per-query criteria state to what a completed applyCriteria()
      * leaves behind.
      *
-     * The failure path has to consume the one-shot flags and discard the
-     * collected declarations exactly as a successful application does. A
-     * surviving skipCriteria() would silently drop every criterion from the
-     * next, unrelated query, and a surviving forceUseCriteria() would override
-     * a standing disableCriteria().
-     *
      * @return void
-     *
-     * @internal cleanup step in the query pipeline's failure path
      */
     private function resetCriteriaState(): void
     {
@@ -362,7 +285,7 @@ trait ManagesCriteria
     }
 
     /**
-     * Clears all transient criteria.
+     * Clear the transient criteria.
      *
      * @return static
      */
@@ -374,7 +297,7 @@ trait ManagesCriteria
     }
 
     /**
-     * Clears all persistent criteria.
+     * Clear the persistent criteria.
      *
      * @return static
      */
@@ -389,8 +312,6 @@ trait ManagesCriteria
      * Reset all collected capability declarations.
      *
      * @return void
-     *
-     * @internal called at the start of applyCriteria()
      */
     private function resetCollectedCapabilities(): void
     {
@@ -405,8 +326,6 @@ trait ManagesCriteria
      *
      * @param  \SineMacula\Repositories\Contracts\CriteriaInterface<TModel>  $criterion
      * @return void
-     *
-     * @internal called during applyCriteria() for each applied criterion
      */
     private function collectCapabilities(CriteriaInterface $criterion): void
     {

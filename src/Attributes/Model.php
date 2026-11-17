@@ -7,11 +7,6 @@ namespace SineMacula\Repositories\Attributes;
 /**
  * Declares the Eloquent model a repository targets.
  *
- * Read by the default Repository::model() implementation, which looks for the
- * declaration on the repository and then on each of its ancestors. A repository
- * that overrides model() never reaches the attribute, so the two cannot
- * disagree.
- *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
  */

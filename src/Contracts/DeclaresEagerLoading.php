@@ -5,16 +5,8 @@ declare(strict_types = 1);
 namespace SineMacula\Repositories\Contracts;
 
 /**
- * Supplementary capability contract for criteria that declare eager-loading
- * relationships.
- *
- * Criteria implementing this contract can declare which relationships should be
- * eager-loaded when the query executes. The repository collects these
- * declarations at criteria application time, making them available to the code
- * that composes the final query.
- *
- * This is an opt-in contract: criteria that only implement CriteriaInterface
- * are unaffected.
+ * Lets a criterion declare relationships to eager load, which the repository
+ * collects when it applies.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -22,10 +14,7 @@ namespace SineMacula\Repositories\Contracts;
 interface DeclaresEagerLoading
 {
     /**
-     * Return the relationships to eager-load.
-     *
-     * Keys are relationship names. Values are optional constraint closures
-     * (null for unconstrained eager-loading).
+     * Return the relationships to eager load, each with an optional constraint.
      *
      * @return array<string, (\Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void)|null>
      */
