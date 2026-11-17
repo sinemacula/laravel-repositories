@@ -12,8 +12,8 @@ use Tests\Support\Collections\AuthorCollection;
 use Tests\Support\Models\Author;
 
 /**
- * Trait providing the author fixture graph and a cache store that refuses every
- * class, for tests of what the repository cache stores.
+ * Author fixture graph and a cache store that refuses every class, for tests of
+ * what the repository cache stores.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -103,9 +103,8 @@ trait InteractsWithAuthors
     }
 
     /**
-     * Point the repository cache at a store that serializes every value and, as
-     * Laravel's serializable_classes setting does by default, unserializes no
-     * class.
+     * Point the repository cache at a store that serializes every value and
+     * unserializes no class, as the serializable_classes default does.
      *
      * @return void
      */

@@ -21,7 +21,7 @@ use SineMacula\Repositories\Contracts\CriteriaInterface;
 final class NamedTagsCriterion implements CriteriaInterface
 {
     /**
-     * Constructor.
+     * Create a new named tags criterion.
      *
      * @param  string  $name
      * @return void
@@ -34,9 +34,6 @@ final class NamedTagsCriterion implements CriteriaInterface
 
     /**
      * Apply the name condition.
-     *
-     * The repository guarantees Builder input; the assertion narrows the type
-     * for static analysis only.
      *
      * @param  \Illuminate\Contracts\Database\Eloquent\Builder|\Tests\Support\Models\Tag  $model
      * @return \Illuminate\Contracts\Database\Eloquent\Builder

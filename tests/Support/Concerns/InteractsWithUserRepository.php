@@ -10,11 +10,7 @@ use SineMacula\Repositories\Contracts\CriteriaInterface;
 use Tests\Support\Repositories\TestUserRepository;
 
 /**
- * Trait providing shared helpers for integration tests that use the test user
- * repository.
- *
- * Extracts common seeding and repository resolution logic shared across
- * multiple integration test classes.
+ * Seeding and resolution helpers for tests of the test user repository.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -24,9 +20,7 @@ use Tests\Support\Repositories\TestUserRepository;
 trait InteractsWithUserRepository
 {
     /**
-     * Seed baseline users for integration test scenarios.
-     *
-     * Seeds three users: Alice (active), Bob (inactive), Carol (active).
+     * Seed Alice (active), Bob (inactive) and Carol (active).
      *
      * @return void
      */

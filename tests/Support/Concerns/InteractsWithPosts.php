@@ -10,9 +10,8 @@ use Illuminate\Support\Facades\Schema;
 use Tests\Support\Scopes\TenantScope;
 
 /**
- * Trait providing tenant-scoped, soft-deleting post fixtures and a way to
- * switch the current tenant, for tests of how global scopes reach the cache
- * key.
+ * Tenant-scoped, soft-deleting post fixtures and a tenant switch, for tests of
+ * how global scopes reach the cache key.
  *
  * Tenant one owns a live post, a trashed post and a comment on each tenant's
  * post; tenant two owns one live post.

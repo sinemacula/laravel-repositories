@@ -23,9 +23,6 @@ final class ActiveUsersCriterion implements CriteriaInterface
     /**
      * Apply the active-user condition.
      *
-     * The repository guarantees Builder input; the assertion narrows the type
-     * for static analysis only.
-     *
      * @param  \Illuminate\Contracts\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Model  $model
      * @return \Illuminate\Contracts\Database\Eloquent\Builder
      */

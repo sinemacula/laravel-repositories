@@ -27,9 +27,6 @@ final class FailingUsersCriterion implements CriteriaInterface
     /**
      * Mutate the builder and then raise a failure.
      *
-     * The mutation happens first so the failure leaves a partially constrained
-     * builder behind, which is the state the failure path has to discard.
-     *
      * @param  \Illuminate\Contracts\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Model  $model
      * @return \Illuminate\Contracts\Database\Eloquent\Builder
      *
