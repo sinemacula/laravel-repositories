@@ -26,9 +26,10 @@ use SineMacula\Repositories\Exceptions\UnfingerprintableQueryException;
  * Fingerprints the SQL a prepared query and its eager loads run, with the read
  * verb, so reads that run different SQL get different cache keys.
  *
- * Global scopes and eager-load constraints run once more per read, so they must
- * be deterministic. A query shaped outside SQL, such as by a MorphTo eager load
- * or an after-query callback, cannot be fingerprinted. The xxh128 digest is not
+ * Global scopes and eager-load constraints run once more per read, without the
+ * parent key constraints, so they must be deterministic and must not inspect
+ * those. A query shaped outside SQL, such as by a MorphTo eager load or an
+ * after-query callback, cannot be fingerprinted. The xxh128 digest is not
  * collision resistant against a deliberate attack.
  *
  * @phpstan-type SupportedRelation (

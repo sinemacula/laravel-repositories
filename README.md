@@ -204,8 +204,9 @@ Every option except `prefix` may be overridden per repository via a property:
 | `registry_enabled` | `REPOSITORY_CACHE_REGISTRY_ENABLED` | `$cacheRegistryEnabled` | `true`         |
 
 `prefix` namespaces every key the package writes. Within it, a repository's entries are keyed and invalidated under
-`$cacheKeyPrefix`, which defaults to the model's table name; two repositories that share a `$cacheKeyPrefix` share
-invalidation. `protected bool $cacheReferenceTable` (default `false`) switches a repository to reference mode.
+`$cacheKeyPrefix`, which defaults to the model's table name; two per-query repositories on the same store that share a
+`$cacheKeyPrefix` share invalidation. `protected bool $cacheReferenceTable` (default `false`) switches a repository to
+reference mode.
 
 Using a dedicated cache store (`REPOSITORY_CACHE_STORE`) is recommended so application-wide flushes of the default
 store never evict repository caches, and vice versa.
@@ -216,8 +217,9 @@ The per-query fingerprint and the reference-mode snapshot key both fold in the c
 multi-connection applications are isolated automatically.
 
 Like any look-aside cache, a read that misses, queries the database, and stores its result can interleave with a
-concurrent write on taggable stores and in reference mode: the freshly stored entry may predate the write, and is
-served until the TTL expires or the next write flushes it. The staleness window is bounded and self-healing. On
+concurrent write on taggable stores and in reference mode: the freshly stored entry may predate the write, and is served
+until the TTL expires or the next write flushes it. The staleness window is bounded and self-healing. A reference-mode
+repository also keeps serving the snapshot it memoised until it is discarded, whatever another instance writes. On
 non-taggable stores a repository captures the generation token before its first database read and keeps it for its
 lifetime, so a late store lands under the old token and is never served to a repository resolved after the write; a
 repository that captured the token before the write keeps serving its own entries until it is discarded.

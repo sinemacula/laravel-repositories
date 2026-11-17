@@ -55,7 +55,7 @@ interface RepositoryCriteriaInterface
     public function removeCriteria(array|CriteriaInterface|string $criteria): static;
 
     /**
-     * Get the criteria the next query applies.
+     * Get the persistent and transient criteria registered on this handle.
      *
      * @return \Illuminate\Support\Collection<int, TCriterion>
      */
