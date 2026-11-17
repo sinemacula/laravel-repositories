@@ -13,9 +13,6 @@ use Tests\Support\Models\TestUser;
 /**
  * Repository test double for exercising repository internals.
  *
- * Uses the exported InspectsRepository trait for state observation and
- * mutation, eliminating the need for custom shadow API methods.
- *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
  *
@@ -48,10 +45,6 @@ final class TestUserRepository extends Repository
     /**
      * Register a name scope and then abort.
      *
-     * Mimics a repository method that fails after it has already composed part
-     * of the next query. The composed copy is abandoned, so nothing reaches the
-     * instance the caller holds.
-     *
      * @param  string  $name
      * @return self
      *
@@ -63,18 +56,13 @@ final class TestUserRepository extends Repository
             $query->where('name', $name);
         });
 
-        // The copy really did compose; the exception carries how many scopes it
-        // holds so a test can prove the abandoned work existed and still never
-        // reached the instance the caller holds.
+        // The count proves the abandoned copy really composed.
         throw new CompositionFailure(self::ABORT_MESSAGE, $composed->scopesCount());
     }
 
     /**
-     * Apply the registered criteria from inside the subclass.
-     *
-     * Mirrors a repository that drives composition itself rather than going
-     * through query(), which is why applyCriteria() is protected rather than
-     * private.
+     * Apply the registered criteria from inside the subclass, as a repository
+     * that bypasses query() would.
      *
      * @return void
      *

@@ -79,8 +79,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that the whole table is loaded with a single query for repeated
-     * reads.
+     * Test that repeated reads load the table with a single query.
      *
      * @return void
      */
@@ -110,8 +109,8 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that repeated reads are served from the instance memo even after the
-     * backing store is evicted, proving the snapshot is deserialized once.
+     * Test that repeated reads are served from the instance memo after
+     * eviction.
      *
      * @return void
      *
@@ -121,8 +120,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
     {
         $first = $this->referenceCache->all(new Tag);
 
-        // Evict the backing store directly, bypassing flushTable (which would
-        // also clear the instance memo), so only the memo can serve the read.
+        // flushTable() would also clear the memo, so evict the store directly.
         $this->referenceCache->getStore()->forget(self::snapshotKey());
 
         DB::enableQueryLog();
@@ -136,14 +134,11 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a fresh instance sharing the same backing store remembers an
-     * already-cached snapshot without re-querying the database, proving the
-     * cache-hit path memoises and indexes the stored snapshot rather than only
-     * the freshly-loaded one.
+     * Test that a fresh instance remembers and indexes an existing snapshot.
      *
      * @return void
      */
-    public function testAllRemembersAnExistingCachedSnapshotWithoutRequeryingDatabase(): void
+    public function testAllRemembersAnExistingCachedSnapshot(): void
     {
         $this->referenceCache->all(new Tag);
 
@@ -158,8 +153,6 @@ final class ReferenceCacheTest extends IntegrationTestCase
 
         DB::disableQueryLog();
 
-        // The remembered snapshot must also be indexed by key, not merely
-        // memoised, so a subsequent find() resolves without a query too.
         DB::enableQueryLog();
 
         $tag = $fresh->find(new Tag, 1);
@@ -172,8 +165,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that find resolves a record from an over-large (un-memoised) table
-     * by scanning the freshly-queried collection rather than a key index.
+     * Test that find resolves a record from a table too large to index.
      *
      * @return void
      */
@@ -189,8 +181,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
 
     /**
      * Test that a table exceeding the size guard is returned in full but never
-     * cached, so reference mode on an over-large table falls back to querying
-     * rather than holding a huge serialized snapshot.
+     * cached.
      *
      * @return void
      */
@@ -212,8 +203,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a table holding a value the cache cannot store is returned in
-     * full but neither cached nor memoised.
+     * Test that a table the cache cannot store is neither cached nor memoised.
      *
      * @return void
      */
@@ -237,8 +227,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a snapshot an earlier version stored as objects is read as a
-     * miss, so the table is loaded again and the snapshot overwritten.
+     * Test that a snapshot stored as objects by an earlier version is reloaded.
      *
      * @return void
      *
@@ -263,8 +252,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a payload in the snapshot key that is not a collection is read
-     * as a miss.
+     * Test that a non-collection payload in the snapshot key is read as a miss.
      *
      * @return void
      *
@@ -283,8 +271,8 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that find resolves a single record from the in-memory snapshot
-     * without an additional query.
+     * Test that find resolves a record from the in-memory snapshot without a
+     * query.
      *
      * @return void
      */
@@ -346,8 +334,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that the snapshot and metadata cache keys are scoped to the table,
-     * so two reference caches for different tables never collide.
+     * Test that the snapshot and metadata cache keys are scoped to the table.
      *
      * @return void
      *
@@ -362,8 +349,8 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a snapshot stored after a write is keyed by the table, the
-     * generation token that write left, and the snapshot query's fingerprint.
+     * Test that a snapshot is keyed by table, current generation and
+     * fingerprint.
      *
      * @return void
      *
@@ -382,11 +369,8 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that two reference caches whose table identifier is qualified with a
-     * distinct connection identity (as bootCacheable() composes it) never share
-     * a snapshot, even though the underlying table name is the same - closing
-     * the cross-connection disclosure a bare table-name key would otherwise
-     * allow.
+     * Test that one table qualified by distinct connections never shares a
+     * snapshot.
      *
      * @return void
      *
@@ -405,8 +389,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that loading the table records the populated_at timestamp in the
-     * reference metadata.
+     * Test that loading the table records populated_at metadata.
      *
      * @return void
      */
@@ -422,8 +405,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a flush records the invalidated_at timestamp in the reference
-     * metadata.
+     * Test that a flush records invalidated_at metadata.
      *
      * @return void
      */
@@ -440,8 +422,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that find() with an array of ids returns the matching models from
-     * the snapshot.
+     * Test that find with an array of ids returns the matching models.
      *
      * @return void
      */
@@ -454,8 +435,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a flush drops the key index, so a subsequent load that trips
-     * the size guard can never serve stale index entries through find().
+     * Test that a flush drops the key index so find never serves stale entries.
      *
      * @return void
      */
@@ -475,8 +455,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that each global-scope variant of the table is held as its own
-     * snapshot, so one tenant is never served another's rows.
+     * Test that each global-scope variant of the table holds its own snapshot.
      *
      * @return void
      */
@@ -513,8 +492,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that one flush invalidates every variant's snapshot for every
-     * instance sharing the store, not only the one that flushed.
+     * Test that a flush invalidates every variant for every instance.
      *
      * @param  string  $store
      * @return void
@@ -548,8 +526,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that every flush invalidates the snapshot, not only the first, so a
-     * snapshot stored after one write never survives the next.
+     * Test that every flush invalidates the snapshot, not only the first.
      *
      * @return void
      */
@@ -570,8 +547,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that an evicted generation token never makes a snapshot stored
-     * before an earlier write reachable again.
+     * Test that an evicted generation never revives an older snapshot.
      *
      * @return void
      */
@@ -590,12 +566,11 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a write through a reference-mode repository invalidates every
-     * variant on a non-taggable store even with the version registry disabled.
+     * Test that a write invalidates every variant with the registry disabled.
      *
      * @return void
      */
-    public function testARepositoryWriteInvalidatesEveryVariantWithTheRegistryDisabled(): void
+    public function testWriteInvalidatesEveryVariantWithRegistryDisabled(): void
     {
         $this->seedPosts();
 
@@ -622,12 +597,12 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a variant whose snapshot query cannot be fingerprinted is
-     * queried on every read and never stored.
+     * Test that an unfingerprintable variant is queried on every read, never
+     * stored.
      *
      * @return void
      */
-    public function testAnUnfingerprintableVariantIsQueriedOnEveryReadAndNeverStored(): void
+    public function testUnfingerprintableVariantIsNeverStored(): void
     {
         $this->seedPosts();
 
@@ -651,8 +626,7 @@ final class ReferenceCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a generation token the store refuses to replace is logged,
-     * since other processes keep serving the old snapshots.
+     * Test that a flush logs a generation the store refuses to replace.
      *
      * @return void
      */

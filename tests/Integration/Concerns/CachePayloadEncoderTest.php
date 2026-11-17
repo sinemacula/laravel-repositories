@@ -278,8 +278,7 @@ final class CachePayloadEncoderTest extends IntegrationTestCase
 
     /**
      * Test that a collection whose class a reader cannot rebuild is not
-     * encoded, so the read is left uncached rather than stored as an entry that
-     * is rejected, recomputed and rewritten on every read.
+     * encoded, so the read is left uncached rather than rewritten every time.
      *
      * @return void
      */
@@ -302,8 +301,7 @@ final class CachePayloadEncoderTest extends IntegrationTestCase
     }
 
     /**
-     * Test that the instance state a model can carry beyond what the other
-     * tests set is stored when it differs.
+     * Test that a model's key, paging and persistence state is stored.
      *
      * @return void
      */

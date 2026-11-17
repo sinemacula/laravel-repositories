@@ -28,10 +28,6 @@ final class SupplementaryCapabilityTest extends IntegrationTestCase
 {
     use InteractsWithUserRepository;
 
-    // -------------------------------------------------------------------------
-    // Supplementary contract detection and collection
-    // -------------------------------------------------------------------------
-
     /**
      * Verify that eager-loading declarations are collected from criteria.
      *
@@ -146,11 +142,9 @@ final class SupplementaryCapabilityTest extends IntegrationTestCase
 
         $repository->query();
 
-        // Two criteria, each declaring 'id', 'name', 'active' - duplicates
-        // merged
+        // Both criteria declare the same fields, which collapse to one set.
         self::assertSame(['id', 'name', 'active'], $repository->getCollectedFields());
 
-        // Eager-loads from both merged (last wins for same key)
         self::assertArrayHasKey('posts', $repository->getCollectedEagerLoads());
         self::assertArrayHasKey('comments', $repository->getCollectedEagerLoads());
     }
@@ -171,7 +165,6 @@ final class SupplementaryCapabilityTest extends IntegrationTestCase
 
         self::assertNotEmpty($repository->getCollectedMetadata());
 
-        // Second query with only non-capability criteria
         $repository->removeCriteria(EagerLoadingCriterion::class);
         $repository->pushCriteria(new ActiveUsersCriterion);
 
@@ -216,21 +209,12 @@ final class SupplementaryCapabilityTest extends IntegrationTestCase
 
         $repository->query();
 
-        // Transient capability criterion contributes declarations
         self::assertNotEmpty($repository->getCollectedEagerLoads());
         self::assertNotEmpty($repository->getCollectedMetadata());
     }
 
-    // -------------------------------------------------------------------------
-    // Criteria application ordering
-    // -------------------------------------------------------------------------
-
     /**
      * Verify that transient criteria are applied before persistent criteria.
-     *
-     * Uses NamedUsersCriterion (transient, filters to Alice) and
-     * ActiveUsersCriterion (persistent, filters to active). Both are applied
-     * and the ordering produces the correct result.
      *
      * @return void
      *
@@ -246,7 +230,6 @@ final class SupplementaryCapabilityTest extends IntegrationTestCase
 
         $users = $repository->query()->get();
 
-        // Both applied: active AND named Alice → 1 result
         self::assertCount(1, $users);
 
         $first = $users->first();
@@ -255,13 +238,8 @@ final class SupplementaryCapabilityTest extends IntegrationTestCase
         self::assertSame('Alice', $first->getAttribute('name'));
     }
 
-    // -------------------------------------------------------------------------
-    // CriteriaInterface preservation
-    // -------------------------------------------------------------------------
-
     /**
-     * Verify that CriteriaInterface is unchanged — existing criteria work
-     * without modification.
+     * Verify that a criterion with no supplementary contracts still applies.
      *
      * @return void
      *

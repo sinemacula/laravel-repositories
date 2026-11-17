@@ -1,6 +1,6 @@
 # Contributing
 
-Contributions are welcome via GitHub pull requests. This guide covers the expectations for working on this package.
+Contributions are welcome via GitHub pull requests.
 
 ## Requirements
 
@@ -33,7 +33,7 @@ Branch from `master` using the appropriate prefix:
 
 ### Commits
 
-This project uses [Conventional Commits](https://www.conventionalcommits.org/). Prefix your commit messages accordingly:
+This project uses [Conventional Commits](https://www.conventionalcommits.org/):
 
 ```text
 feat: add whole-table reference mode to the repository cache
@@ -42,18 +42,17 @@ test: cover the criteria flag truth table boundary
 chore: update qlty configuration
 ```
 
-Pull request titles must follow the same convention - and they are the ones that matter most: PRs are
-squash-merged, so the title becomes the commit on `master`, and release-please derives the changelog and
-the next version from those commits.
+Pull request titles must follow the same convention. PRs are squash-merged, so the title becomes the commit on
+`master`, and release-please derives the changelog and the next version from those commits.
 
 ### Code Quality
 
-All code must pass static analysis before submission:
+All code must pass these checks before submission:
 
 ```bash
 composer check    # Static analysis and lint checks via qlty (PHPStan, PHP-CS-Fixer, CodeSniffer)
 composer format   # Format the codebase via qlty
-composer smells   # Advisory code smells (duplication, complexity)
+composer smells   # Duplication and complexity smells via qlty
 ```
 
 ### Testing
@@ -76,15 +75,15 @@ vendor/bin/phpunit --filter testMethodName tests/Unit/SomeTest.php
 
 ### Standards
 
-- PHPStan level 8 compliance
+- PHPStan level 9 compliance
 - Full type hints on all public method parameters and return types
 - PHPDoc on all methods and classes
-- New code is expected to ship with tests covering the behavioural surface; the package's mutation-testing gate
-  (`composer test:mutation`) is the enforced floor. Behaviour that spans the repository lifecycle (criteria, scopes,
-  the cache) should be covered by integration tests that exercise the package the way a consuming application does.
+- New code ships with tests covering its behaviour; the mutation gate (`composer test:mutation`) is the enforced
+  floor. Behaviour that spans the repository lifecycle (criteria, scopes, the cache) is covered by integration tests
+  that exercise the package the way a consuming application does.
 
 ## Pull Requests
 
-- Title the PR as a Conventional Commit - the squash-merge makes it the commit that drives the changelog
+- Title the PR as a Conventional Commit
 - Keep changes minimal and scoped to a single concern
 - Do not change static analysis or formatting configuration without prior discussion

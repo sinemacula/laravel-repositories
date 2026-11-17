@@ -5,14 +5,13 @@ declare(strict_types = 1);
 namespace Tests\Integration;
 
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\DB;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\CoversTrait;
 use SineMacula\Repositories\Concerns\ManagesCriteria;
 use SineMacula\Repositories\Repository;
+use Tests\Support\Concerns\InteractsWithUserRepository;
 use Tests\Support\Criteria\ActiveUsersCriterion;
 use Tests\Support\Criteria\NamedUsersCriterion;
-use Tests\Support\Repositories\TestUserRepository;
 
 /**
  * Integration tests for repository persistent, transient, and one-shot criteria
@@ -27,6 +26,8 @@ use Tests\Support\Repositories\TestUserRepository;
 #[CoversTrait(ManagesCriteria::class)]
 final class RepositoryCriteriaIntegrationTest extends IntegrationTestCase
 {
+    use InteractsWithUserRepository;
+
     /**
      * Verify persistent criteria behavior across enable, disable, and use flow.
      *
@@ -63,7 +64,7 @@ final class RepositoryCriteriaIntegrationTest extends IntegrationTestCase
      *
      * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
-    public function testSkipCriteriaBypassesCriteriaForSingleQueryAndResetsFlags(): void
+    public function testSkipCriteriaBypassesCriteriaForOneQuery(): void
     {
         $this->seedUsers();
 
@@ -77,8 +78,7 @@ final class RepositoryCriteriaIntegrationTest extends IntegrationTestCase
         self::assertTrue($composed->isCriteriaSkipped());
         self::assertTrue($composed->isForceUsingCriteria());
 
-        // The flags compose the copy, so the instance they were set from is
-        // untouched and its own reads still apply the pushed criterion.
+        // The flags are set on a copy, leaving the original untouched.
         self::assertFalse($repository->isCriteriaSkipped());
         self::assertFalse($repository->isForceUsingCriteria());
 
@@ -116,7 +116,7 @@ final class RepositoryCriteriaIntegrationTest extends IntegrationTestCase
      *
      * @return void
      */
-    public function testRemoveCriteriaGracefullyHandlesNonObjectAndNonMatchingValues(): void
+    public function testRemoveCriteriaIgnoresNonObjectsAndNonMatches(): void
     {
         $repository = $this->repository();
 
@@ -153,31 +153,5 @@ final class RepositoryCriteriaIntegrationTest extends IntegrationTestCase
 
         self::assertSame(0, $repository->persistentCriteriaCount());
         self::assertSame(0, $repository->transientCriteriaCount());
-    }
-
-    /**
-     * Resolve the repository under test.
-     *
-     * @return \Tests\Support\Repositories\TestUserRepository
-     */
-    private function repository(): TestUserRepository
-    {
-        self::assertNotNull($this->app);
-
-        return $this->app->make(TestUserRepository::class);
-    }
-
-    /**
-     * Seed baseline users for repository integration scenarios.
-     *
-     * @return void
-     */
-    private function seedUsers(): void
-    {
-        DB::table('test_users')->insert([
-            ['id' => 1, 'name' => 'Alice', 'active' => true],
-            ['id' => 2, 'name' => 'Bob', 'active' => false],
-            ['id' => 3, 'name' => 'Carol', 'active' => true],
-        ]);
     }
 }

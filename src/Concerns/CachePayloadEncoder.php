@@ -13,14 +13,9 @@ use Illuminate\Support\Collection;
  * Converts a repository read result into the arrays and scalars the cache
  * stores, so an entry reads back under a store that unserializes no class.
  *
- * A model keeps its class, connection, raw attributes, eager-loaded relations
- * and any instance state, such as visibility, appends, casts or its table, that
- * differs from a fresh instance; a pivot also keeps its parent, related model
- * and keys. A model reached twice, as a chaperoned relation reaches its parent,
- * is written once and referenced after, so the rebuilt graph shares the same
- * instances. Collections keep their class and keys, enums their case and dates
- * their instant and timezone. A result holding any other object, or a
- * collection whose class cannot be built without arguments, cannot be stored.
+ * A model reached twice is written once and referenced after, so the rebuilt
+ * graph shares instances. A result holding any object other than a model,
+ * collection, enum or date cannot be stored.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -48,10 +43,7 @@ final class CachePayloadEncoder
     private array $prototypes = [];
 
     /**
-     * Encode a read result for the cache.
-     *
-     * Returns null when the result holds a value that cannot be stored as
-     * arrays and scalars.
+     * Encode a read result for the cache, or null when it cannot be stored.
      *
      * @param  mixed  $value
      * @return array{format: int, value: mixed}|null
@@ -110,8 +102,8 @@ final class CachePayloadEncoder
     }
 
     /**
-     * Encode a date by its instant and timezone, so a wall time that occurs
-     * twice in the timezone still reads back as the same instant.
+     * Encode a date by its instant and timezone, so an ambiguous wall time
+     * reads back as the same instant.
      *
      * @param  \DateTimeInterface  $date
      * @return array<string, string>
@@ -127,11 +119,8 @@ final class CachePayloadEncoder
     }
 
     /**
-     * Encode a collection by its class and items.
-     *
-     * A collection class a reader cannot build without arguments is refused,
-     * since an entry naming it would be rejected on every read, then recomputed
-     * and written again.
+     * Encode a collection by its class and items, refusing a class a reader
+     * cannot build without arguments.
      *
      * @param  \Illuminate\Support\Collection<array-key, mixed>  $collection
      * @return array<string, mixed>
@@ -232,8 +221,7 @@ final class CachePayloadEncoder
     {
         $prototype = $this->prototypes[$model::class] ??= new ($model::class);
 
-        // The date format falls back to the connection's, so the fresh instance
-        // must share the model's connection to compare equal.
+        // The date format falls back to the connection's.
         $prototype->setConnection($model->getConnectionName());
 
         $fresh = self::stateOf($prototype);

@@ -1,50 +1,54 @@
 # Upgrade Guide
 
-This document provides migration guidance for consumer-visible changes between versions.
+Consumer-visible changes between versions, newest first.
 
-## Non-taggable stores invalidate with a generation token
+## From v3.2.2 to v3.2.3
 
-On a non-taggable store, the `repository-cache-version:{table}` key now holds a random generation token that every
-write replaces, instead of an integer that every write incremented.
+### 1. Non-taggable stores invalidate with a generation token
 
-**Why:** the file store increments with an unlocked read-modify-write, and seeding a missing counter was not atomic
+On a non-taggable store, the `repository-cache-version:{table}` key holds a random generation token
+that every write replaces, instead of an integer that every write incremented.
+
+The file store increments with an unlocked read-modify-write, and seeding a missing counter was not atomic
 either, so concurrent writes could roll the counter back to a value whose entries predate a write and serve them
 again. A token never repeats, so neither concurrent writes nor an evicted key can revive an orphaned entry.
 
-**Who is affected:** per-query entries on non-taggable stores miss once after the upgrade. Code that read or
+Per-query entries on non-taggable stores miss once after the upgrade. Code that read or
 incremented the version key directly must stop; call `CacheStore::invalidateTable()` or `flushCache()` instead.
 
-## Cache keys follow global scopes and eager-load constraints
+### 2. Cache keys follow global scopes and eager-load constraints
 
-A cacheable read is now keyed by the SQL Eloquent runs, global scopes and eager-load constraints included, and a
-reference-mode repository keeps one snapshot per global-scope variant.
+A cacheable read is keyed by the SQL Eloquent runs, global scopes and eager-load constraints
+included, and a reference-mode repository keeps one snapshot per global-scope variant.
 
-**Why:** the key used to be taken before global scopes applied, and an eager-load constraint was identified by where it
+The key used to be taken before global scopes applied, and an eager-load constraint was identified by where it
 was defined rather than by what it queried. Reads that ran different SQL (a `withTrashed()` read and a default one, two
 tenants under a tenant scope, a constraint reading the authenticated user) shared one entry, so one request was served
 another's rows until the TTL expired.
 
-**Who is affected:**
+After upgrading:
 
 - Every existing cache entry misses once after the upgrade, since the keys change.
 - Global scopes and eager-load constraints run once more per read, on cache hits too. A scope or constraint with side
   effects, or one returning different SQL on each call (a timestamp, a random value), is not supported.
 - A read eager loading a `MorphTo` relation or a relation class of your own, one with an `afterQuery()` callback other
   than the one `chaperone()` registers, one with a callable `withDefault()`, or one whose eager loads nest more than 16
-  levels deep, now runs uncached rather than risk serving another read's rows.
+  levels deep, runs uncached rather than risk serving another read's rows.
 
-## Composing a query now returns a copy
+## From v3.0.x to v3.1.0
+
+### 1. Composing a query returns a copy
 
 Composing a query no longer mutates the repository. `addScope()`, `withCriteria()`, `useCriteria()`,
 `skipCriteria()`, `resetScopes()` and `withoutCache()` return a copy carrying the composition, and the instance they
 were called on is left untouched.
 
-**Why:** a composition used to live on the repository until a query consumed it. A scope method that threw after
-composing left its constraints behind, and the next unrelated query silently inherited them. No amount of cleanup
-inside the package could see that failure, because the package is not on the stack when a caller's own scope method
-throws. Returning a copy makes the abandoned composition garbage instead of state.
+A composition used to live on the repository until a query consumed it. A scope method that threw after
+composing left its constraints behind, and the next unrelated query inherited them. The package is not on the stack
+when a caller's own scope method throws, so no cleanup inside it could catch that. Returning a copy makes the abandoned
+composition garbage instead of state.
 
-**Who is affected:** any caller that composes in one statement and queries in another. The declarations a criterion
+This affects any caller that composes in one statement and queries in another. The declarations a criterion
 contributes (eager loads, field selection, relationship counts, metadata) are collected on the handle the query ran
 through, so `getCollectedMetadata()` and its siblings must be read from the composed copy rather than from the
 repository the copy came from.
@@ -100,28 +104,34 @@ public function scopeLive(): static
 `@phpstan-pure`, so a discarded result is reported as `method.resultUnused` from PHPStan level 4 upward. Mark your own
 scope methods `@phpstan-pure` to extend that check to their call sites.
 
-**Scopes that must apply to every query** are configuration rather than composition. Register them with `pushScope()`,
-which mutates the instance and is safe in `boot()`. `addScope()` during `boot()` only ever reached the first query an
+Scopes that must apply to every query are configuration rather than composition. Register them with `pushScope()`,
+which mutates the instance and is safe in `boot()`; `addScope()` in `boot()` only ever reached the first query an
 instance built. `pushScope()` is protected, so only the repository itself can register one.
 
 A repository in whole-table reference mode never serves a registered scope from its snapshot, so registering one keeps
 every read on the real query pipeline rather than answering the constraint with unfiltered rows.
 
-**If your subclass defines `__clone()`**, call `parent::__clone()` first. The base implementation drops the in-flight
+If your subclass defines `__clone()`, call `parent::__clone()` first. The base implementation drops the in-flight
 builder and duplicates the criteria collections, and a copy that skips it shares both with the handle it came from.
+
+## From v2.2.x to v3.0.0
+
+### 1. Laravel 11 is no longer supported
+
+v3.0.0 requires Laravel 12 or 13. Laravel 13 support is new, and Laravel 11 support is dropped.
+
+Upgrade the application to Laravel 12 or later before requiring v3.
 
 ## From v2.1.x to v2.2.0
 
-v2.2.0 adds two consumer-visible changes to the base `Repository` and to `Cacheable`'s reference mode.
+### 1. Repository::all() is a concrete method
 
-### 1. Repository::all() is now a concrete method
+`all()` is implemented directly on `Repository` as `all(mixed ...$arguments): mixed`, delegating to
+the `get()` pipeline so criteria, scopes, and caching apply exactly as they would for `get()`.
 
-**What changed:** `all()` is now implemented directly on `Repository` as `all(mixed ...$arguments): mixed`, delegating
-to the `get()` pipeline so criteria, scopes, and caching apply exactly as they would for `get()`.
-
-**Who is affected:** Subclasses that declare their own `all()` method with an incompatible signature. PHP enforces
-method signature compatibility at class-load time, so a subclass `all()` that does not match
-`all(mixed ...$arguments): mixed` now fatals when the class is loaded.
+This affects subclasses that declare their own `all()` with an incompatible signature. PHP checks signature
+compatibility when the class loads, so a subclass `all()` that does not match `all(mixed ...$arguments): mixed` is a
+fatal error.
 
 **Before (v2.1):**
 
@@ -138,8 +148,7 @@ final class UserRepository extends Repository
 **After (v2.2):**
 
 ```php
-// Remove the override entirely - the base class now provides it - or match
-// the base signature and delegate:
+// Remove the override, or match the base signature and delegate:
 final class UserRepository extends Repository
 {
     public function all(mixed ...$arguments): mixed
@@ -149,46 +158,41 @@ final class UserRepository extends Repository
 }
 ```
 
-**Action:** Remove any subclass `all()` override, or re-sign it to match `all(mixed ...$arguments): mixed`.
+Remove any subclass `all()` override, or re-sign it to match `all(mixed ...$arguments): mixed`.
 
-### 2. Reference-mode reads now honour active criteria and scopes
+### 2. Reference-mode reads honour active criteria and scopes
 
-**What changed:** A repository with `protected bool $cacheReferenceTable = true` previously always served the
-unfiltered whole-table snapshot from `get()`, `all()`, and `find()`, even when criteria or scopes were active. Reference
-mode now executes a real, uncached query instead of the snapshot whenever criteria or scopes are pending.
+A repository with `protected bool $cacheReferenceTable = true` used to serve the unfiltered snapshot
+from `get()`, `all()`, and `find()` even when criteria or scopes were active. It now executes a real, uncached query
+whenever criteria or scopes are pending.
 
-**Why:** The old behaviour silently discarded active criteria and scopes on reference-mode repositories, returning more
-data than the caller asked for.
+The snapshot discarded active criteria and scopes, returning more data than the caller asked for.
 
-**Who is affected:** Consumers combining `cacheReferenceTable = true` with `pushCriteria()`, `withCriteria()`, or
-`addScope()` and relying on the previous (incorrect) unfiltered result.
+This affects consumers combining `cacheReferenceTable = true` with `pushCriteria()`, `withCriteria()`, or
+`addScope()` and relying on the unfiltered result.
 
-**Action:** No change is required for typical usage - this delivers the already-documented reference-mode contract. To
-keep serving the unfiltered snapshot regardless of active criteria, call `skipCriteria()` explicitly before the read.
+Typical usage needs no change. To serve the snapshot despite active criteria, skip them for the read with
+`skipCriteria()`; skipping criteria does not lift scopes.
 
 ## From v1.x to v2.0
 
-v2.0.0 introduced seven categories of breaking change. This section covers each one with the change rationale and
-before/after code examples.
-
-The samples below show the idiom as it stood in v2, with composition written as its own statement. From v3 the
-composition methods return a copy, so read them alongside the section above before copying any of them.
+v2.0.0 made seven breaking changes. The samples show the v2 idiom, with composition written as its own statement; from
+v3.1 the composition methods return a copy, so read them alongside that section before copying any of them.
 
 ### 1. RepositoryInterface expanded from empty marker to 8 methods
 
-**What changed:** `RepositoryInterface` was an empty marker interface in v1. In v2, it declares eight methods:
+`RepositoryInterface` was an empty marker interface in v1. In v2, it declares eight methods:
 `model()`, `makeModel()`, `resetModel()`, `getModel()`, `addScope()`, `resetScopes()`, `query()`, `newQuery()`.
 
-**Why:** The empty interface provided no contract guarantees. Populating it ensures that any code type-hinting
-`RepositoryInterface` can rely on these methods being available.
+The empty interface guaranteed nothing. Code type-hinting `RepositoryInterface` can now rely on these methods.
 
-**Who is affected:** Only code that implements `RepositoryInterface` directly without extending `Repository`. If you
+This affects only code that implements `RepositoryInterface` directly without extending `Repository`. If you
 extend `Repository` (the typical pattern), `Repository` provides all implementations and no changes are needed.
 
 **Before (v1):**
 
 ```php
-// This worked in v1 because the interface was empty
+// The interface was empty, so this compiled
 class CustomStore implements RepositoryInterface
 {
     // No methods required
@@ -210,20 +214,18 @@ class CustomStore extends Repository
 
 ### 2. New protected property: $forceUseCriteria
 
-**What changed:** A new `protected bool $forceUseCriteria = false` property was added to support the updated
-`useCriteria()` behavior.
+A `protected bool $forceUseCriteria = false` property backs the new `useCriteria()` behavior.
 
-**Who is affected:** Subclasses that define a property named `$forceUseCriteria` will experience a collision.
+This affects subclasses that already define a property named `$forceUseCriteria`.
 
-**Action:** Rename any conflicting property in your subclass.
+Rename any conflicting property in your subclass.
 
 ### 3. useCriteria() behavioral change
 
-**What changed:** In v1, `useCriteria()` only set `$skipCriteria = false` (undoing a `skipCriteria()` call). In v2, it
-also sets `$forceUseCriteria = true`, which actively overrides `disableCriteria()` for the next query.
+In v1, `useCriteria()` only set `$skipCriteria = false` (undoing a `skipCriteria()` call). In v2, it
+also sets `$forceUseCriteria = true`, which overrides `disableCriteria()` for the next query.
 
-**Why:** This makes `useCriteria()` a true "force criteria on for this query" method, even when criteria are globally
-disabled.
+`useCriteria()` should force criteria on for the next query even when they are disabled.
 
 **Before (v1):**
 
@@ -243,15 +245,15 @@ $repository->useCriteria();
 $results = $repository->query()->get();
 ```
 
-**Action:** If you relied on `useCriteria()` not overriding `disableCriteria()`, use `skipCriteria()` / removing the
-`skipCriteria()` call instead, or do not call `useCriteria()` after `disableCriteria()`.
+If you used `useCriteria()` only to undo `skipCriteria()`, drop the `skipCriteria()` call instead, and do not call
+`useCriteria()` after `disableCriteria()` unless you mean to force criteria on.
 
 ### 4. removeCriteria() now affects both collections
 
-**What changed:** In v1, `removeCriteria()` only removed criteria from the persistent collection. In v2, it removes
+In v1, `removeCriteria()` only removed criteria from the persistent collection. In v2, it removes
 matching criteria from both persistent and transient collections.
 
-**Why:** Removing a criterion should remove it everywhere, not leave a copy in the transient collection.
+Removing a criterion should not leave a copy in the transient collection.
 
 **Before (v1):**
 
@@ -271,16 +273,15 @@ $repository->removeCriteria(MyCriterion::class);
 // v2: removed from BOTH persistent and transient
 ```
 
-**Action:** If you relied on `removeCriteria()` leaving transient criteria intact, adjust your criteria management
+If you relied on `removeCriteria()` leaving transient criteria intact, adjust your criteria management
 logic.
 
 ### 5. getModel() always returns a Model
 
-**What changed:** In v1, `getModel()` returned `$this->model` directly, which could be a `Builder` instance if called
-during query composition. In v2, `getModel()` checks whether the internal state is a `Model` and calls `makeModel()` if
-it is not, ensuring it always returns a `Model`.
+In v1, `getModel()` returned `$this->model` directly, which could be a `Builder` during query
+composition. In v2, it calls `makeModel()` when the internal state is not a `Model`, so it always returns a `Model`.
 
-**Why:** `getModel()` should return a model, not a query builder. The v1 behavior leaked internal lifecycle state.
+The v1 behavior leaked internal lifecycle state.
 
 **Before (v1):**
 
@@ -298,17 +299,16 @@ $model = $repository->getModel();
 // $model is always Model
 ```
 
-**Action:** If you relied on `getModel()` returning a `Builder` mid-lifecycle to inspect query state, use `query()`
+If you relied on `getModel()` returning a `Builder` mid-lifecycle to inspect query state, use `query()`
 instead to get the builder.
 
 ### 6. __callStatic() requires Laravel container
 
-**What changed:** In v1, `__callStatic()` used `new static()` to create the repository. In v2, it resolves the
-repository from the Laravel container via `Container::getInstance()->make(static::class)` and throws
-`RepositoryException` if the container is not an `Application` instance.
+In v1, `__callStatic()` used `new static()` to create the repository. In v2, it resolves the
+repository with `Container::getInstance()->make(static::class)` and throws `RepositoryException` if the container is
+not an `Application` instance.
 
-**Why:** Container resolution ensures the repository receives its dependencies correctly and respects any bindings or
-decorators registered in the container.
+Container resolution injects the repository's dependencies and respects any bindings or decorators.
 
 **Before (v1):**
 
@@ -320,22 +320,21 @@ $user = UserRepository::find(1);
 **After (v2):**
 
 ```php
-// Requires the Laravel container to be available
-// In tests: ensure the application is bootstrapped (e.g., via Orchestra Testbench)
+// Requires a booted application (in tests, e.g. Orchestra Testbench)
 $user = UserRepository::find(1);
 
-// Without Laravel container: throws RepositoryException
+// Without one: throws RepositoryException
 ```
 
-**Action:** Ensure the Laravel application is bootstrapped before using static method calls. In tests, use Orchestra
+Ensure the Laravel application is bootstrapped before using static method calls. In tests, use Orchestra
 Testbench or resolve the repository from the container directly.
 
 ### 7. $model property type includes null
 
-**What changed:** The `$model` property type changed from `Builder|Model` to `Builder|Model|null`, with a default value
-of `null`. The model is now resolved during construction rather than being assumed non-null from the start.
+The `$model` property type changed from `Builder|Model` to `Builder|Model|null`, with a default of
+`null`. The model is resolved during construction rather than assumed non-null from the start.
 
-**Who is affected:** Subclasses with type assertions or PHPStan narrowing that assume `$model` is never null.
+This affects subclasses with type assertions or PHPStan narrowing that assume `$model` is never null.
 
-**Action:** Add null checks where you access `$this->model` in subclass code, or rely on `getModel()` which handles the
+Add null checks where you access `$this->model` in subclass code, or rely on `getModel()` which handles the
 null case.

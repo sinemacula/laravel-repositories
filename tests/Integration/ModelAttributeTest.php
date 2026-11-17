@@ -31,8 +31,7 @@ use Tests\Support\Repositories\UndeclaredModelRepository;
 final class ModelAttributeTest extends IntegrationTestCase
 {
     /**
-     * Verify a repository declaring its model with the attribute resolves and
-     * queries it, with no model() implementation of its own.
+     * Verify the attribute declares the model with no model() implementation.
      *
      * @return void
      *
@@ -51,7 +50,7 @@ final class ModelAttributeTest extends IntegrationTestCase
 
     /**
      * Verify a declaration on an ancestor reaches its subclasses, since class
-     * attributes are not inherited and the lookup has to walk for them.
+     * attributes are not inherited.
      *
      * @return void
      *
@@ -63,8 +62,7 @@ final class ModelAttributeTest extends IntegrationTestCase
     }
 
     /**
-     * Verify an override replaces the lookup, so the nearer declaration wins
-     * exactly as an inherited override would.
+     * Verify a model() override wins over an ancestor's declaration.
      *
      * @return void
      *
@@ -88,8 +86,7 @@ final class ModelAttributeTest extends IntegrationTestCase
     }
 
     /**
-     * Verify a repository declaring neither fails at construction, naming both
-     * ways of declaring one.
+     * Verify a repository declaring no model fails at construction.
      *
      * @return void
      *
@@ -104,8 +101,7 @@ final class ModelAttributeTest extends IntegrationTestCase
     }
 
     /**
-     * Verify a generated double resolves the model of the class it stands in
-     * for: such a double copies the attribute by name, dropping its arguments.
+     * Verify a generated double resolves the model of the class it doubles.
      *
      * @return void
      *

@@ -14,20 +14,8 @@ use Tests\Support\Exceptions\CompositionFailure;
 use Tests\Support\Repositories\ScopedTestUserRepository;
 
 /**
- * Tests for the ManagesScopes trait: the two scope lifetimes, and the three
+ * Tests for the ManagesScopes trait: the two scope lifetimes and the three
  * places a composition can be abandoned.
- *
- * A composition can be abandoned at exactly three points, and each has a named
- * test here so none can be addressed in isolation again:
- *
- * 1. testScopeAbandonedInAConsumerMethodOutlivesTheCallButNotTheNextQuery - the
- *    throw is in a consumer's own scope method, before any query entry point.
- *    The package is not on the stack, so no guard can see it, and the composed
- *    state stays registered until a query consumes it.
- * 2. testScopeAbandonedInsideAScopeClosureIsDiscarded - the throw is in a scope
- *    closure, which runs inside query(), so the guard discards it.
- * 3. testCompositionAbandonedInsideQueryIsDiscarded - the throw is raised while
- *    query() applies criteria; the guard discards it too.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -46,8 +34,7 @@ final class ManagesScopesTest extends IntegrationTestCase
     private const string REGISTERED_ORDER = 'order by "name" asc';
 
     /**
-     * Verify a scope registered with pushScope() during boot() applies to every
-     * query, unlike one added with addScope(), which the first query consumes.
+     * Test that a scope registered with pushScope() applies to every query.
      *
      * @return void
      *
@@ -63,8 +50,7 @@ final class ManagesScopesTest extends IntegrationTestCase
     }
 
     /**
-     * Verify a registered scope survives resetScopes(), which clears only the
-     * scopes composing the next query.
+     * Test that a registered scope survives resetScopes().
      *
      * @return void
      *
@@ -83,8 +69,8 @@ final class ManagesScopesTest extends IntegrationTestCase
     }
 
     /**
-     * Verify a per-query scope applies after a registered one, so it can
-     * override an ordering the registered set established.
+     * Test that a per-query scope applies after a registered one, so it can
+     * override its ordering.
      *
      * @return void
      *
@@ -105,8 +91,7 @@ final class ManagesScopesTest extends IntegrationTestCase
     }
 
     /**
-     * Verify resetScopes() returns a copy without the composing scopes and
-     * leaves the handle it was called on carrying its own.
+     * Test that resetScopes() returns a copy without the composing scopes.
      *
      * @return void
      *
@@ -124,19 +109,15 @@ final class ManagesScopesTest extends IntegrationTestCase
         self::assertSame(0, $composed->resetScopes()->scopesCount());
         self::assertSame(2, $composed->scopesCount());
 
-        // The registered scope is configuration, so it is counted separately
-        // and survives both the copy and the reset.
         self::assertSame(1, $composed->persistentScopesCount());
         self::assertSame(1, $composed->resetScopes()->persistentScopesCount());
     }
 
     /**
-     * Abandonment site 1: the throw is in a consumer's own scope method, before
-     * any query entry point is reached.
+     * Test that a scope abandoned in a consumer's scope method never reaches
+     * the instance.
      *
-     * query() is never entered, so no guard can see the failure. Nothing needs
-     * to: composition returns a copy, so the two scopes the aborted chain built
-     * live only on copies the failed statement discards.
+     * query() is never entered, so the scopes live only on discarded copies.
      *
      * @return void
      *
@@ -167,8 +148,8 @@ final class ManagesScopesTest extends IntegrationTestCase
     }
 
     /**
-     * Abandonment site 2: the throw is inside a scope closure, which runs
-     * within query(), so the guard discards the composition.
+     * Test that a scope closure throwing inside query() has its composition
+     * discarded.
      *
      * @return void
      *
@@ -197,16 +178,15 @@ final class ManagesScopesTest extends IntegrationTestCase
             self::assertSame('Scope closure failed.', $exception->getMessage());
         }
 
-        // The guard cleans the copy, so even a caller who kept it composes
-        // cleanly next time, and the instance it came from never held anything.
+        // The guard cleans even the copy a caller kept.
         self::assertSame(0, $composed->scopesCount());
         self::assertSame(0, $repository->scopesCount());
         self::assertStringNotContainsString(self::COMPOSED_COLUMN, $repository->query()->toSql()); // @phpstan-ignore staticMethod.dynamicCall
     }
 
     /**
-     * Abandonment site 3: query() raises while applying criteria, before any
-     * scope runs, and the guard discards the whole composition.
+     * Test that a composition abandoned while query() applies criteria is
+     * discarded.
      *
      * @return void
      *
@@ -239,14 +219,13 @@ final class ManagesScopesTest extends IntegrationTestCase
     }
 
     /**
-     * Verify a subclass can drive scope application itself, which is why
-     * applyScopes() is protected rather than private.
+     * Test that a subclass can drive scope application itself.
      *
      * @return void
      *
      * @throws \Throwable
      */
-    public function testApplyScopesIsCallableFromASubclassDrivingItsOwnComposition(): void
+    public function testASubclassCanApplyScopesItself(): void
     {
         $repository = $this->scopedRepository()->scopeActive();
 

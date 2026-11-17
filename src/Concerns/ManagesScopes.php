@@ -7,16 +7,8 @@ namespace SineMacula\Repositories\Concerns;
 use Illuminate\Contracts\Database\Eloquent\Builder;
 
 /**
- * Shared scope-state lifecycle for repositories, covering both scope lifetimes.
- *
- * Scopes come in two kinds, and the difference is how long they live:
- * - Registered scopes (pushScope()) are configuration. They apply to every
- *   query for the life of the instance and are never consumed.
- * - Composing scopes (addScope()) compose the next query only. The next query
- *   built from the repository applies them and then discards them.
- *
- * Registered scopes are applied first, so a composing scope can still override
- * an ordering or a limit a registered one established.
+ * Manages the scopes a repository applies: registered scopes apply to every
+ * query, composing scopes to the next query only.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -25,20 +17,14 @@ use Illuminate\Contracts\Database\Eloquent\Builder;
  */
 trait ManagesScopes
 {
-    /** @var array<int, \Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void> Managed via addScope()/resetScopes(). Composes the next query only. */
+    /** @var array<int, \Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void> The scopes composing the next query only. */
     protected array $scopes = [];
 
-    /** @var array<int, \Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void> Managed via pushScope(). Applied to every query for the life of the instance. */
+    /** @var array<int, \Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void> The scopes applied to every query. */
     protected array $persistentScopes = [];
 
     /**
-     * Add a scope composing the next query.
-     *
-     * Returns a copy carrying the scope; this instance is left untouched. A
-     * composition abandoned before a query is built is therefore garbage rather
-     * than state, so it cannot reach a later, unrelated query. The copy is the
-     * only thing carrying the scope, so discarding it discards the scope. Use
-     * pushScope() for a scope that must apply to every query.
+     * Return a copy carrying a scope that composes the next query.
      *
      * @param  \Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void  $scope
      * @return static
@@ -57,11 +43,9 @@ trait ManagesScopes
     }
 
     /**
-     * Drop the scopes composing the next query.
+     * Return a copy without the scopes composing the next query.
      *
-     * Returns a copy with no composing scopes; this instance is left untouched.
-     * Scopes registered with pushScope() are configuration rather than
-     * composition, so they are deliberately kept.
+     * Scopes registered with pushScope() are kept.
      *
      * @return static
      *
@@ -79,14 +63,8 @@ trait ManagesScopes
     }
 
     /**
-     * Register a scope that applies to every query for the life of the
-     * instance.
-     *
-     * This is the scope counterpart of pushCriteria(), and the registrar that
-     * boot() needs: addScope() returns a copy carrying the scope, so a scope
-     * added with it during boot() is discarded with that copy and never reaches
-     * a query. A scope registered here is never consumed, so it survives every
-     * query and every resetScopes().
+     * Register a scope that applies to every query, such as one added in
+     * boot().
      *
      * @api-stable
      *
@@ -101,15 +79,11 @@ trait ManagesScopes
     }
 
     /**
-     * Apply all accumulated scopes to the model.
-     *
-     * Called after prepareQueryBuilder() has normalized $model to a Builder.
-     * Registered scopes run before the ones composing this query, so a
-     * per-query scope can override an ordering or limit a registered one set.
+     * Apply the registered scopes, then the composing ones, to the model.
      *
      * @return static
      *
-     * @internal use addScope()/pushScope()/resetScopes() for scope management
+     * @internal
      */
     protected function applyScopes(): static
     {
@@ -128,13 +102,7 @@ trait ManagesScopes
     /**
      * Clear the scopes composing the next query in place.
      *
-     * The query pipeline consumes its own composition rather than handing a
-     * copy anywhere, so the lifecycle needs an in-place clear; resetScopes() is
-     * the copying API a caller gets.
-     *
      * @return void
-     *
-     * @internal lifecycle step. Use resetScopes() to drop composing scopes.
      */
     private function clearComposingScopes(): void
     {

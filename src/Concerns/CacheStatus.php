@@ -8,8 +8,7 @@ use Carbon\CarbonImmutable;
 use Carbon\CarbonInterface;
 
 /**
- * Immutable value object representing the current state of a repository cache
- * entry.
+ * The state of a repository cache, as its stored metadata records it.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -59,10 +58,7 @@ final readonly class CacheStatus
     /**
      * Determine whether the cache currently holds data.
      *
-     * Note: this reflects stored metadata, not a guaranteed data presence. An
-     * external or shared-store flush can remove entries without going through
-     * flushTable(), leaving this returning true while the underlying data is
-     * gone.
+     * A flush outside the repository can empty the cache without this knowing.
      *
      * @return bool
      */

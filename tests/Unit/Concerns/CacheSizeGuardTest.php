@@ -4,7 +4,9 @@ declare(strict_types = 1);
 
 namespace Tests\Unit\Concerns;
 
+use Illuminate\Support\Collection;
 use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use SineMacula\Repositories\Concerns\CacheSizeGuard;
 
@@ -20,89 +22,57 @@ use SineMacula\Repositories\Concerns\CacheSizeGuard;
 final class CacheSizeGuardTest extends TestCase
 {
     /**
-     * Test that a result within both ceilings is allowed.
+     * Provide results the guard allows, with its row and byte ceilings.
      *
-     * @return void
+     * @return iterable<string, array{int|null, int|null, \Illuminate\Support\Collection<int, string>|string, int}>
      */
-    public function testAllowsResultWithinCeilings(): void
+    public static function allowedResults(): iterable
     {
-        $guard = new CacheSizeGuard(1000, 262144);
-
-        self::assertTrue($guard->allows(collect(['a', 'b']), 2));
+        yield 'within both ceilings' => [1000, 262144, collect(['a', 'b']), 2];
+        yield 'no row ceiling' => [null, 262144, collect(['a', 'b', 'c']), 100000];
+        yield 'no byte ceiling' => [1000, null, str_repeat('x', 100000), 1];
+        yield 'rows at the ceiling' => [5, 262144, collect(['a']), 5];
+        yield 'bytes at the ceiling' => [1000, strlen(serialize(collect(['a', 'b']))), collect(['a', 'b']), 2];
     }
 
     /**
-     * Test that a result exceeding the row ceiling is rejected.
+     * Test that a result within the ceilings is allowed.
      *
+     * @param  int|null  $maxRows
+     * @param  int|null  $maxBytes
+     * @param  \Illuminate\Support\Collection<int, string>|string  $result
+     * @param  int  $rows
      * @return void
      */
-    public function testRejectsResultExceedingRowCeiling(): void
+    #[DataProvider('allowedResults')]
+    public function testAllowsResultWithinCeilings(?int $maxRows, ?int $maxBytes, Collection|string $result, int $rows): void
     {
-        $guard = new CacheSizeGuard(2, 262144);
-
-        self::assertFalse($guard->allows(collect(['a', 'b', 'c']), 3));
+        self::assertTrue((new CacheSizeGuard($maxRows, $maxBytes))->allows($result, $rows));
     }
 
     /**
-     * Test that a result exceeding the byte ceiling is rejected.
+     * Provide results the guard rejects, with its row and byte ceilings.
      *
-     * @return void
+     * @return iterable<string, array{int, int, \Illuminate\Support\Collection<int, string>|string, int}>
      */
-    public function testRejectsResultExceedingByteCeiling(): void
+    public static function rejectedResults(): iterable
     {
-        $guard = new CacheSizeGuard(1000, 8);
-
-        self::assertFalse($guard->allows(str_repeat('x', 256), 1));
+        yield 'rows over the ceiling' => [2, 262144, collect(['a', 'b', 'c']), 3];
+        yield 'bytes over the ceiling' => [1000, 8, str_repeat('x', 256), 1];
     }
 
     /**
-     * Test that a null row ceiling disables the row bound.
+     * Test that a result exceeding either ceiling is rejected.
      *
+     * @param  int  $maxRows
+     * @param  int  $maxBytes
+     * @param  \Illuminate\Support\Collection<int, string>|string  $result
+     * @param  int  $rows
      * @return void
      */
-    public function testNullRowCeilingDisablesRowBound(): void
+    #[DataProvider('rejectedResults')]
+    public function testRejectsResultExceedingACeiling(int $maxRows, int $maxBytes, Collection|string $result, int $rows): void
     {
-        $guard = new CacheSizeGuard(null, 262144);
-
-        self::assertTrue($guard->allows(collect(['a', 'b', 'c']), 100000));
-    }
-
-    /**
-     * Test that a null byte ceiling disables the byte bound.
-     *
-     * @return void
-     */
-    public function testNullByteCeilingDisablesByteBound(): void
-    {
-        $guard = new CacheSizeGuard(1000, null);
-
-        self::assertTrue($guard->allows(str_repeat('x', 100000), 1));
-    }
-
-    /**
-     * Test that a result whose row count exactly equals the ceiling is allowed,
-     * pinning the bound as exclusive rather than inclusive.
-     *
-     * @return void
-     */
-    public function testRowCountEqualToCeilingIsAllowed(): void
-    {
-        $guard = new CacheSizeGuard(5, 262144);
-
-        self::assertTrue($guard->allows(collect(['a']), 5));
-    }
-
-    /**
-     * Test that a result whose serialized size exactly equals the byte ceiling
-     * is allowed, pinning the bound as exclusive rather than inclusive.
-     *
-     * @return void
-     */
-    public function testByteSizeEqualToCeilingIsAllowed(): void
-    {
-        $result = collect(['a', 'b']);
-        $guard  = new CacheSizeGuard(1000, strlen(serialize($result)));
-
-        self::assertTrue($guard->allows($result, 2));
+        self::assertFalse((new CacheSizeGuard($maxRows, $maxBytes))->allows($result, $rows));
     }
 }

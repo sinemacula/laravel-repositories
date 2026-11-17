@@ -22,7 +22,7 @@ final class FileStoreTagRepository extends Repository
 {
     use Cacheable;
 
-    /** @var string|null Laravel cache store name. */
+    /** @var string|null The cache store name. */
     protected ?string $cacheStoreName = 'file';
 
     /**

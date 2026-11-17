@@ -12,13 +12,9 @@ use Illuminate\Support\Collection;
 
 /**
  * Rebuilds a repository read result from the arrays and scalars the cache
- * stores.
+ * stores, without firing model events.
  *
- * The reverse of the encoder: models are rebuilt without firing any model
- * event, with their raw attributes, relations and state restored, and every
- * reference resolves to the instance it names. A payload that does not read
- * back whole, such as an entry an earlier version stored as objects, is
- * rejected rather than read in part.
+ * A payload that does not read back whole is rejected rather than read in part.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -40,10 +36,8 @@ final class CachePayloadDecoder
     private int $depth = 0;
 
     /**
-     * Decode a stored payload.
-     *
-     * Returns the miss marker for a payload recording that a read found
-     * nothing, and null for a payload that cannot be read back.
+     * Decode a stored payload: the miss marker for a recorded miss, null for a
+     * payload that cannot be read back.
      *
      * @param  mixed  $payload
      * @return mixed
@@ -64,9 +58,6 @@ final class CachePayloadDecoder
     /**
      * Determine whether a class can be built without arguments, as a reader
      * builds every model and collection class it names.
-     *
-     * The encoder checks the same rule, so it never stores a class that could
-     * not be read back.
      *
      * @param  class-string  $class
      * @return bool
@@ -159,9 +150,7 @@ final class CachePayloadDecoder
         $class      = $this->instantiableClassOf($node, Collection::class);
         $collection = new $class($this->items($node));
 
-        // A collection the framework builds for models turns on relationship
-        // autoloading when it is enabled, so a rebuilt one must too. Releases
-        // before the setting existed never autoload.
+        // Match the relationship autoloading a freshly queried collection gets.
         if ($collection instanceof EloquentCollection && self::autoloadsRelationships()) {
             $collection->withRelationshipAutoloading();
         }
@@ -182,10 +171,8 @@ final class CachePayloadDecoder
     }
 
     /**
-     * Rebuild a model.
-     *
-     * The model is recorded under its id before its relations are rebuilt, so a
-     * relation that refers back to it resolves to this instance.
+     * Rebuild a model, recording it before its relations so a relation that
+     * refers back to it resolves to this instance.
      *
      * @param  array<array-key, mixed>  $node
      * @return \Illuminate\Database\Eloquent\Model
@@ -295,8 +282,7 @@ final class CachePayloadDecoder
     }
 
     /**
-     * Get the setter for each piece of state a model can carry, each checking
-     * the stored value has the type the setter takes.
+     * Get the type-checked setter for each piece of state a model can carry.
      *
      * @return array<string, \Closure(\Illuminate\Database\Eloquent\Model, array<array-key, mixed>, string): mixed>
      */

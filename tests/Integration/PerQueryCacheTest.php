@@ -22,8 +22,6 @@ use Tests\Support\Repositories\SizeGuardedTagRepository;
 /**
  * Integration tests for per-query repository caching against a real database.
  *
- * Cache-invalidation-on-write scenarios live in PerQueryCacheInvalidationTest.
- *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
  *
@@ -78,8 +76,7 @@ final class PerQueryCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a cache hit executes zero database queries, proving the
-     * pre-execution interception.
+     * Test that a cache hit executes no database queries.
      *
      * @return void
      */
@@ -97,8 +94,7 @@ final class PerQueryCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a scoped hit executes zero queries while resolving the scoped
-     * rows rather than the full table.
+     * Test that a scoped cache hit returns the scoped row without querying.
      *
      * @return void
      */
@@ -117,8 +113,7 @@ final class PerQueryCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that an oversized result always hits the database because the size
-     * guard skips storing it.
+     * Test that a result too large to cache always hits the database.
      *
      * @return void
      */
@@ -176,8 +171,7 @@ final class PerQueryCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that after a null find, once the row is created the next read
-     * returns the new row without a stale null being served from cache.
+     * Test that a cached null find does not hide a row created afterwards.
      *
      * @return void
      */
@@ -195,8 +189,7 @@ final class PerQueryCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that flushing the application's default cache store does not evict
-     * the per-query repository cache when it uses a dedicated store.
+     * Test that flushing the default store leaves a dedicated store intact.
      *
      * @return void
      */
@@ -221,8 +214,7 @@ final class PerQueryCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that all() resolves through the cached get() pipeline in per-query
-     * mode.
+     * Test that all() is served from the per-query cache.
      *
      * @return void
      *
@@ -246,8 +238,7 @@ final class PerQueryCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that reads whose arguments contain closures execute uncached, so two
-     * distinct closures can never be served each other's results.
+     * Test that reads with closure arguments run uncached.
      *
      * @return void
      */
@@ -275,9 +266,7 @@ final class PerQueryCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a read whose arguments cannot be fingerprinted logs the
-     * uncached fallback at debug level, so a permanently-uncacheable shape is
-     * observable.
+     * Test that an unfingerprintable read logs its uncached fallback.
      *
      * @return void
      */
@@ -299,8 +288,7 @@ final class PerQueryCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that reference mode executes a real filtered query when criteria are
-     * active instead of serving the unfiltered snapshot.
+     * Test that reference mode queries the database when criteria are active.
      *
      * @return void
      */
@@ -342,8 +330,7 @@ final class PerQueryCacheTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a reference-mode find() with an array of ids returns the
-     * matching models, mirroring Eloquent's find() contract.
+     * Test that a reference-mode find() with several ids returns each match.
      *
      * @return void
      */

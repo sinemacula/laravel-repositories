@@ -14,22 +14,20 @@ use Illuminate\Support\Facades\Config;
  */
 enum CacheKeys: string
 {
-    // Store the cached collection data for a repository (reference mode)
+    // A reference-mode snapshot
     case REPOSITORY_CACHE = 'repository-cache:%s';
 
-    // Store the cache metadata for a repository
+    // A repository's cache status metadata
     case REPOSITORY_CACHE_META = 'repository-cache-meta:%s';
 
-    // Store a per-query cached result for a repository (table, query hash)
+    // A per-query cached result, by table and query fingerprint
     case REPOSITORY_QUERY_CACHE = 'repository-query:%s:%s';
 
-    // Store the generational version that scopes a repository table's per-query
-    // keys
+    // A table's generation token
     case REPOSITORY_CACHE_VERSION = 'repository-cache-version:%s';
 
     /**
-     * Resolves the cache key with the necessary prefix and replaces any
-     * placeholders.
+     * Resolve the prefixed cache key with its placeholders replaced.
      *
      * @param  array<int, string>  $replacements
      * @return string

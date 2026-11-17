@@ -59,7 +59,7 @@ final class CacheableTest extends IntegrationTestCase
 {
     use InteractsWithNonPublicMembers;
 
-    /** @var string The resolved per-query metadata cache key for the tags table. */
+    /** @var string The per-query metadata cache key for the tags table. */
     private const string META_KEY = 'repositories:repository-cache-meta:tags';
 
     /** @var string The message carried by a failing cache store. */
@@ -103,8 +103,7 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that the second read returns cached data without executing a new
-     * database query.
+     * Test that a second read is served from the cache.
      *
      * @return void
      */
@@ -155,17 +154,13 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a cache-store failure during the post-write flush is swallowed
-     * and logged, and the already-committed write still returns its result
-     * rather than surfacing the flush error to the caller (who could retry and
-     * duplicate the record).
+     * Test that a failed post-write flush is logged and swallowed, so the
+     * committed write still returns and a retrying caller cannot duplicate it.
      *
      * @return void
      */
     public function testWriteSwallowsAndLogsAPostWriteFlushFailure(): void
     {
-        // Arrange - a store whose flush write blows up (e.g. a cache outage
-        // after the DB mutation has already committed).
         $store = \Mockery::mock(Store::class)->shouldIgnoreMissing();
         $store->shouldReceive('put')->andThrow(new \RuntimeException(self::STORE_FAILURE)); // @phpstan-ignore method.notFound
 
@@ -182,10 +177,8 @@ final class CacheableTest extends IntegrationTestCase
                     && $context['exception']->getMessage() === self::STORE_FAILURE,
             ));
 
-        // Act - the write commits; the flush throws but must not surface.
         $created = $this->repository->create(['name' => 'vue']); // @phpstan-ignore staticMethod.dynamicCall
 
-        // Assert - the committed write returns its result despite the failure.
         self::assertInstanceOf(Tag::class, $created);
         self::assertSame('vue', $created->getAttribute('name'));
     }
@@ -244,7 +237,7 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that getCacheStatus returns accurate state transitions.
+     * Test that getCacheStatus reports whether the cache is populated.
      *
      * @return void
      */
@@ -258,15 +251,26 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a custom TTL is respected and the cache expires.
+     * @return iterable<string, array{class-string<\Tests\Support\Repositories\ShortReferenceTtlTagRepository|\Tests\Support\Repositories\ShortTtlTagRepository>}>
+     */
+    public static function shortTtlRepositories(): iterable
+    {
+        yield 'per-query' => [ShortTtlTagRepository::class];
+        yield 'reference' => [ShortReferenceTtlTagRepository::class];
+    }
+
+    /**
+     * Test that a repository's TTL override expires the cache.
      *
+     * @param  class-string<\Tests\Support\Repositories\ShortReferenceTtlTagRepository|\Tests\Support\Repositories\ShortTtlTagRepository>  $class
      * @return void
      */
-    public function testCustomTtlIsRespected(): void
+    #[DataProvider('shortTtlRepositories')]
+    public function testTtlOverrideExpiresTheCache(string $class): void
     {
         assert($this->app !== null);
 
-        $repository = $this->app->make(ShortTtlTagRepository::class);
+        $repository = $this->app->make($class);
 
         $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
 
@@ -323,8 +327,7 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that withoutCache reads fresh data from the database while the
-     * cached snapshot remains stale.
+     * Test that withoutCache reads fresh data from the database.
      *
      * @return void
      */
@@ -340,8 +343,7 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that boot invokes the parent boot chain so the subclass boot hook
-     * and the cacheable concern are both initialized.
+     * Test that boot still runs the subclass boot hook.
      *
      * @return void
      */
@@ -386,8 +388,7 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that distinct scoped reads resolve distinct cached rows rather than
-     * colliding on a single whole-table entry.
+     * Test that distinct scoped reads are cached apart.
      *
      * @return void
      */
@@ -401,8 +402,7 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a cached scoped read is served from the cache on repeat without
-     * returning a different scope's rows.
+     * Test that a repeated scoped read is served its own scope's rows.
      *
      * @return void
      */
@@ -416,8 +416,7 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a by-id read never returns the full-table collection from the
-     * cache.
+     * Test that a by-id read is never served the cached full-table collection.
      *
      * @return void
      */
@@ -432,10 +431,8 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that find() does not collide across distinct ids. The by-id
-     * constraint is applied at execution time - after the base builder is
-     * fingerprinted - so without folding the verb arguments into the cache key
-     * find(2) would be served the cached find(1) record.
+     * Test that find() caches distinct ids apart, although the id constraint is
+     * applied after the builder is fingerprinted.
      *
      * @return void
      */
@@ -451,10 +448,7 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a scalar value() read does not collide with a cached get(). The
-     * two reads share an identical base builder, so without folding the verb
-     * into the cache key value('name') would be served the cached get()
-     * collection instead of the scalar column value.
+     * Test that value() and get() over the same builder are cached apart.
      *
      * @return void
      */
@@ -465,12 +459,12 @@ final class CacheableTest extends IntegrationTestCase
         $cached = $this->repository->value('name'); // @phpstan-ignore staticMethod.dynamicCall
         $fresh  = $this->repository->withoutCache()->value('name'); // @phpstan-ignore staticMethod.dynamicCall
 
-        self::assertIsString($cached);     // A scalar column value, never the cached get() collection
-        self::assertSame($fresh, $cached); // And the same value the database returns uncached
+        self::assertIsString($cached);
+        self::assertSame($fresh, $cached);
     }
 
     /**
-     * Test that create() returning a Model invalidates the cache.
+     * Test that create() invalidates the cache.
      *
      * @return void
      */
@@ -487,7 +481,7 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a delete() write verb invalidates the cache.
+     * Test that delete() invalidates the cache.
      *
      * @return void
      */
@@ -519,8 +513,7 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that the cached find returns a sentinel miss that is invalidated
-     * once the missing record is created.
+     * Test that a cached miss is invalidated once the record is created.
      *
      * @return void
      */
@@ -540,8 +533,7 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a null/miss read is negatively cached, so a repeated read for
-     * the same missing key is served from the cache without a database query.
+     * Test that a repeated read of a missing key is served from the cache.
      *
      * @return void
      */
@@ -560,9 +552,8 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a cached read which throws leaves no dirty builder or scope
-     * state behind, so the next cached read composes from a clean slate instead
-     * of inheriting the failed call's constraints.
+     * Test that a cached read which throws leaves no criteria or scopes behind
+     * for the next read to inherit.
      *
      * @return void
      */
@@ -588,9 +579,8 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a registered scope forces a reference read to execute a real
-     * query, because the whole-table snapshot is built straight from the model
-     * and would answer the registered constraint with unfiltered rows.
+     * Test that a registered scope keeps reference reads on a real query, since
+     * the snapshot is built straight from the model.
      *
      * @return void
      */
@@ -604,50 +594,33 @@ final class CacheableTest extends IntegrationTestCase
 
         self::assertCount(1, $tags);
         self::assertSame('php', $tags->first()?->getAttribute('name'));
-
-        // A second read must stay filtered rather than falling back to a
-        // snapshot of the whole table.
         self::assertCount(1, $repository->get()); // @phpstan-ignore staticMethod.dynamicCall
     }
 
     /**
-     * Test that an unconsumed withoutCache() never reaches the instance it was
-     * composed from, so a discarded bypass cannot uncache a later read.
-     *
-     * @return void
+     * @return iterable<string, array{\Closure(\Tests\Support\Repositories\CacheableTagRepository): object}>
      */
-    public function testDiscardedCacheBypassNeverReachesTheInstance(): void
+    public static function cacheBypasses(): iterable
     {
-        $this->repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-
-        // Deliberately discarded: the copy carrying the bypass is the thing
-        // under test, so the instance must be left alone.
-        $this->repository->withoutCache(); // @phpstan-ignore method.resultUnused
-
-        DB::enableQueryLog();
-
-        $result = $this->repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-
-        DB::disableQueryLog();
-
-        self::assertCount(2, $result);
-        self::assertCount(0, DB::getQueryLog());
+        yield 'discarded' => [static fn (CacheableTagRepository $repository): object => $repository->withoutCache()];
+        yield 'composed' => [static fn (CacheableTagRepository $repository): object => $repository->withoutCache()->query()];
     }
 
     /**
-     * Test that a composed withoutCache() stays on the copy that carries it, so
-     * the bypass cannot reach an unrelated later read made through the instance
-     * it was composed from.
+     * Test that a withoutCache() copy, discarded or composed, never uncaches a
+     * later read through the instance it came from.
      *
+     * @param  \Closure(\Tests\Support\Repositories\CacheableTagRepository): object  $bypass
      * @return void
      *
      * @throws \Throwable
      */
-    public function testComposedCacheBypassLeavesTheInstanceItCameFrom(): void
+    #[DataProvider('cacheBypasses')]
+    public function testCacheBypassNeverReachesTheInstance(\Closure $bypass): void
     {
         $this->repository->get(); // @phpstan-ignore staticMethod.dynamicCall
 
-        $this->repository->withoutCache()->query();
+        $bypass($this->repository);
 
         DB::enableQueryLog();
 
@@ -660,9 +633,8 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a reference read which throws leaves no queued transient
-     * criteria behind, so the next read serves the whole-table snapshot instead
-     * of silently filtering it.
+     * Test that a reference read which throws leaves no transient criteria
+     * behind to filter the next read.
      *
      * @return void
      */
@@ -672,8 +644,6 @@ final class CacheableTest extends IntegrationTestCase
 
         $repository = $this->app->make(ReferenceTableTagRepository::class);
 
-        // Arrange - a snapshot store whose read blows up (e.g. a cache outage)
-        // after the reference read has consumed the suppressing flags.
         $store = \Mockery::mock(Store::class)->shouldIgnoreMissing();
         $store->shouldReceive('get')->andThrow(new \RuntimeException(self::STORE_FAILURE)); // @phpstan-ignore method.notFound
 
@@ -682,9 +652,8 @@ final class CacheableTest extends IntegrationTestCase
 
         $this->setProperty($repository, 'referenceCache', new ReferenceCache(Cache::store('throwing-reference'), 'tags', 3600, new CacheSizeGuard(null, null)));
 
-        // skipCriteria() hides the pending criterion from the composition
-        // check, so the read takes the snapshot branch and clears the flag
-        // before the store failure strands the criterion.
+        // Skipping hides the criterion from the composition check, so the read
+        // takes the snapshot branch and the store failure strands it.
         $repository = $repository->withCriteria(new NamedTagsCriterion('php'))->skipCriteria();
 
         try {
@@ -695,31 +664,42 @@ final class CacheableTest extends IntegrationTestCase
             self::assertSame(self::STORE_FAILURE, $exception->getMessage());
         }
 
-        // Act - a working snapshot store, so only leaked state could filter.
         $this->setProperty($repository, 'referenceCache', new ReferenceCache(Cache::store('array'), 'tags', 3600, new CacheSizeGuard(null, null)));
 
-        // Assert - the whole table, not the stranded criterion's single row.
         self::assertCount(2, $repository->get()); // @phpstan-ignore staticMethod.dynamicCall
     }
 
     /**
-     * Test that a single-model result is cached when its row count of one does
-     * not exceed the size guard, proving the guard sees a single Model result
-     * as exactly one row.
-     *
-     * @return void
+     * @return iterable<string, array{string, array<int, int|string>}>
      */
-    public function testSingleModelResultIsCachedWithinAOneRowSizeGuard(): void
+    public static function readsWithinAOneRowCeiling(): iterable
+    {
+        yield 'single model' => ['find', [1]];
+        yield 'scalar value' => ['value', ['name']];
+    }
+
+    /**
+     * Test that the size guard counts a single model as one row and a scalar as
+     * none, so both are cached under a one-row ceiling.
+     *
+     * @param  string  $method
+     * @param  array<int, int|string>  $arguments
+     * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     */
+    #[DataProvider('readsWithinAOneRowCeiling')]
+    public function testReadsWithinTheRowCeilingAreCached(string $method, array $arguments): void
     {
         assert($this->app !== null);
 
         $repository = $this->app->make(SizeGuardedTagRepository::class);
 
-        $repository->find(1); // @phpstan-ignore staticMethod.dynamicCall
+        $repository->__call($method, $arguments);
 
         DB::enableQueryLog();
 
-        $repository->find(1); // @phpstan-ignore staticMethod.dynamicCall
+        $repository->__call($method, $arguments);
 
         self::assertCount(0, DB::getQueryLog());
 
@@ -727,37 +707,12 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a scalar value() result is cached regardless of the size
-     * guard's row ceiling, proving a non-collection, non-model result counts as
-     * zero rows.
+     * Test that a reference-mode find() of many ids drops any id that is not an
+     * int or string.
      *
      * @return void
      */
-    public function testScalarValueResultIsCachedRegardlessOfRowSizeGuard(): void
-    {
-        assert($this->app !== null);
-
-        $repository = $this->app->make(SizeGuardedTagRepository::class);
-
-        $repository->value('name'); // @phpstan-ignore staticMethod.dynamicCall
-
-        DB::enableQueryLog();
-
-        $repository->value('name'); // @phpstan-ignore staticMethod.dynamicCall
-
-        self::assertCount(0, DB::getQueryLog());
-
-        DB::disableQueryLog();
-    }
-
-    /**
-     * Test that a reference-mode find() with a mixed-type array of ids resolves
-     * only the entries whose id is a supported int or string shape, silently
-     * dropping any other value rather than including or crashing on it.
-     *
-     * @return void
-     */
-    public function testReferenceModeFindWithMixedTypeArrayResolvesOnlySupportedIds(): void
+    public function testReferenceModeFindDropsUnsupportedIds(): void
     {
         assert($this->app !== null);
 
@@ -770,8 +725,7 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that the configured store name is preferred over the application's
-     * default cache store when no repository property overrides it.
+     * Test that the configured store is preferred over the application default.
      *
      * @return void
      */
@@ -794,12 +748,11 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a repository's store name property takes precedence over the
-     * configured store name.
+     * Test that a repository's store name overrides the configured store.
      *
      * @return void
      */
-    public function testStoreNamePropertyTakesPrecedenceOverConfiguredStoreName(): void
+    public function testStoreNamePropertyOverridesConfiguredStore(): void
     {
         Config::set('cache.stores.custom-test', ['driver' => 'array']);
         Config::set('cache.stores.secondary', ['driver' => 'array']);
@@ -819,8 +772,7 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that opting into reference mode serves mixed reads from a single
-     * whole-table query rather than the per-query cache.
+     * Test that reference mode serves mixed reads from one whole-table query.
      *
      * @return void
      *
@@ -864,7 +816,7 @@ final class CacheableTest extends IntegrationTestCase
 
     /**
      * Test that a reference read selecting every column is served from the
-     * snapshot, however the full column list is written.
+     * snapshot, however the column list is written.
      *
      * @param  string  $method
      * @param  array<int, array<int, int|string>|int|string>  $arguments
@@ -873,7 +825,7 @@ final class CacheableTest extends IntegrationTestCase
      * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
     #[DataProvider('referenceReadsSelectingEveryColumn')]
-    public function testReferenceModeServesReadsSelectingEveryColumnFromTheSnapshot(string $method, array $arguments): void
+    public function testReferenceModeServesFullColumnReadsFromTheSnapshot(string $method, array $arguments): void
     {
         assert($this->app !== null);
 
@@ -905,9 +857,8 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a reference read the snapshot cannot answer exactly - one
-     * selecting only some columns, or with an argument shape it does not
-     * recognise - executes a real query and returns what that query selects.
+     * Test that a reference read selecting only some columns, or with an
+     * argument shape the snapshot does not recognise, runs a real query.
      *
      * @param  string  $method
      * @param  array<array-key, array<int, int|string>|int|string>  $arguments
@@ -961,8 +912,7 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a reference-mode find() accepts an Arrayable of ids, mirroring
-     * the array-of-ids shape rather than requiring a plain array.
+     * Test that a reference-mode find() accepts an Arrayable of ids.
      *
      * @return void
      */
@@ -979,12 +929,12 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that non-reference verbs in reference mode execute through the
-     * normal query pipeline rather than being served the whole-table snapshot.
+     * Test that reference mode runs verbs the snapshot does not serve as normal
+     * queries.
      *
      * @return void
      */
-    public function testReferenceModeServesNonReferenceVerbsThroughTheQueryPipeline(): void
+    public function testReferenceModeQueriesNonReferenceVerbs(): void
     {
         assert($this->app !== null);
 
@@ -996,9 +946,8 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a reference read consumes the one-shot criteria flags exactly
-     * as a normal query pipeline would, so neither flag leaks onto a later,
-     * unrelated read.
+     * Test that a reference read consumes the one-shot criteria flags, so
+     * neither leaks onto a later read.
      *
      * @return void
      */
@@ -1008,8 +957,6 @@ final class CacheableTest extends IntegrationTestCase
 
         $repository = $this->app->make(ReferenceTableTagRepository::class);
 
-        // skipCriteria() is one-shot: once consumed, a criterion pushed
-        // afterward must still be applied on the next read.
         $repository = $repository->skipCriteria();
         $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
 
@@ -1019,8 +966,6 @@ final class CacheableTest extends IntegrationTestCase
 
         self::assertCount(1, $filtered);
 
-        // useCriteria() is also one-shot: once consumed, disabled persistent
-        // criteria must not be force-applied again on a later, unrelated read.
         $repository->disableCriteria();
         $repository = $repository->useCriteria();
 
@@ -1124,14 +1069,12 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a one-shot skipCriteria() is still honoured when a
-     * reference-mode find() falls back to a real query because the id argument
-     * is an unsupported shape, and that the flag does not leak onto a later,
-     * unrelated read.
+     * Test that skipCriteria() applies to a reference find() that falls back to
+     * a real query, without leaking onto a later read.
      *
      * @return void
      */
-    public function testReferenceModeSkipCriteriaAppliesToUnsupportedFindShapeFallback(): void
+    public function testSkipCriteriaAppliesToReferenceFindFallback(): void
     {
         assert($this->app !== null);
 
@@ -1153,14 +1096,12 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a one-shot useCriteria() still forces disabled persistent
-     * criteria on when a reference-mode find() falls back to a real query
-     * because the id argument is an unsupported shape, and that the force does
-     * not leak onto a later, unrelated read.
+     * Test that useCriteria() applies to a reference find() that falls back to
+     * a real query, without leaking onto a later read.
      *
      * @return void
      */
-    public function testReferenceModeUseCriteriaAppliesToUnsupportedFindShapeFallback(): void
+    public function testUseCriteriaAppliesToReferenceFindFallback(): void
     {
         assert($this->app !== null);
 
@@ -1183,12 +1124,12 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a read whose reference-mode id argument is an unsupported shape
-     * logs the real-query fallback at debug level.
+     * Test that a reference find() with an unsupported id logs its fallback at
+     * debug level.
      *
      * @return void
      */
-    public function testReferenceModeUnsupportedFindShapeLogsFallbackAtDebugLevel(): void
+    public function testReferenceFindFallbackLogsAtDebugLevel(): void
     {
         assert($this->app !== null);
 
@@ -1205,8 +1146,7 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Provide the criteria-composition precedence branches that determine
-     * whether the next query would differ from the unfiltered snapshot.
+     * Provide each criteria precedence branch and whether it filters the query.
      *
      * @return iterable<string, array{0: \Closure(\Tests\Support\Repositories\ReferenceTableTagRepository): \Tests\Support\Repositories\ReferenceTableTagRepository, 1: bool}>
      */
@@ -1266,16 +1206,15 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that reference-mode composition detection agrees with the real
-     * applyCriteria() pipeline for every criteria precedence branch, locking
-     * the mirror between Cacheable and ManagesCriteria in place.
+     * Test that reference-mode composition detection agrees with
+     * applyCriteria() on every precedence branch.
      *
      * @param  \Closure(\Tests\Support\Repositories\ReferenceTableTagRepository): \Tests\Support\Repositories\ReferenceTableTagRepository  $arrange
      * @param  bool  $expectedPending
      * @return void
      */
     #[DataProvider('compositionPrecedenceBranchProvider')]
-    public function testReferenceModeCompositionDetectionAgreesWithApplyCriteriaAcrossPrecedenceBranches(\Closure $arrange, bool $expectedPending): void
+    public function testReferenceModeCompositionMatchesApplyCriteria(\Closure $arrange, bool $expectedPending): void
     {
         assert($this->app !== null);
 
@@ -1304,30 +1243,8 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a repository's reference-mode TTL override is honoured, so the
-     * snapshot expires at the configured duration rather than the packaged
-     * default.
-     *
-     * @return void
-     */
-    public function testReferenceTtlOverrideExpiresSnapshotAfterConfiguredDuration(): void
-    {
-        assert($this->app !== null);
-
-        $repository = $this->app->make(ShortReferenceTtlTagRepository::class);
-
-        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-
-        self::assertTrue($repository->getCacheStatus()->isPopulated());
-
-        $this->travel(6)->seconds();
-
-        self::assertFalse($repository->getCacheStatus()->isPopulated());
-    }
-
-    /**
-     * Test that a repository's negative-lookup TTL override is honoured, so a
-     * negative cache entry survives past the packaged default duration.
+     * Test that a negative-lookup TTL override keeps a miss cached past the
+     * packaged default.
      *
      * @return void
      */
@@ -1352,16 +1269,27 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a repository's row-ceiling override is honoured, so a result
-     * exceeding it is never cached.
+     * @return iterable<string, array{class-string<\Tests\Support\Repositories\ByteSizeGuardedTagRepository|\Tests\Support\Repositories\SizeGuardedTagRepository>}>
+     */
+    public static function sizeCeilingRepositories(): iterable
+    {
+        yield 'row ceiling' => [SizeGuardedTagRepository::class];
+        yield 'byte ceiling' => [ByteSizeGuardedTagRepository::class];
+    }
+
+    /**
+     * Test that a result over a repository's size ceiling override is never
+     * cached.
      *
+     * @param  class-string<\Tests\Support\Repositories\ByteSizeGuardedTagRepository|\Tests\Support\Repositories\SizeGuardedTagRepository>  $class
      * @return void
      */
-    public function testRowCeilingOverridePreventsCachingOfOversizedResult(): void
+    #[DataProvider('sizeCeilingRepositories')]
+    public function testCeilingOverrideKeepsOversizedResultsUncached(string $class): void
     {
         assert($this->app !== null);
 
-        $repository = $this->app->make(SizeGuardedTagRepository::class);
+        $repository = $this->app->make($class);
 
         $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
 
@@ -1369,30 +1297,12 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a repository's byte-ceiling override is honoured, so a result
-     * exceeding it is never cached.
+     * Test that disabling the registry on a non-taggable store leaves a cached
+     * entry reachable after a write.
      *
      * @return void
      */
-    public function testByteCeilingOverridePreventsCachingOfOversizedResult(): void
-    {
-        assert($this->app !== null);
-
-        $repository = $this->app->make(ByteSizeGuardedTagRepository::class);
-
-        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-
-        self::assertFalse($repository->getCacheStatus()->isPopulated());
-    }
-
-    /**
-     * Test that a repository's disabled version-bump registry override is
-     * honoured, so a write on a non-taggable store leaves a previously cached
-     * entry reachable instead of orphaning it.
-     *
-     * @return void
-     */
-    public function testRegistryDisabledOverrideLeavesStaleEntryAfterWriteOnNonTaggableStore(): void
+    public function testDisabledRegistryLeavesStaleEntryAfterWrite(): void
     {
         assert($this->app !== null);
 
@@ -1413,11 +1323,8 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that the reference-mode snapshot cache key is composed from the
-     * exact prefix, connection name, and database name in that order, then the
-     * generation and the snapshot query's fingerprint, so dropping or
-     * reordering any component of that composition is observable as a missing
-     * key.
+     * Test that the reference snapshot key is the prefix, connection, database,
+     * generation and query fingerprint, in that order.
      *
      * @return void
      *
@@ -1441,8 +1348,7 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a reference-mode find() consumes the one-shot criteria flags,
-     * so neither flag survives the call to leak onto a later, unrelated read.
+     * Test that a reference-mode find() consumes the one-shot criteria flags.
      *
      * @return void
      */
@@ -1462,13 +1368,12 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that resolveProperty() treats an override declared with a type no
-     * override takes as undeclared, and passes each type an override takes
-     * through unchanged.
+     * Test that resolveProperty() ignores an override of the wrong type and
+     * passes each valid one through unchanged.
      *
      * @return void
      */
-    public function testResolvePropertyTreatsAnOverrideOfAnotherTypeAsUndeclared(): void
+    public function testResolvePropertyIgnoresMistypedOverride(): void
     {
         self::assertNotNull($this->app);
 
@@ -1482,9 +1387,7 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that referenceId() filters an array argument down to the supported
-     * int and string key shapes, preserving their values and dropping every
-     * other shape, rather than merely coalescing to the same array by chance.
+     * Test that referenceId() keeps only the int and string ids of an array.
      *
      * @return void
      */
@@ -1496,9 +1399,8 @@ final class CacheableTest extends IntegrationTestCase
     }
 
     /**
-     * Test that rowCount() returns the exact row count for each result shape: a
-     * collection's item count, a single model as exactly one row, and every
-     * other value (including null) as zero rows.
+     * Test that rowCount() counts a collection's items, a model as one row and
+     * anything else as none.
      *
      * @return void
      */

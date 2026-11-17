@@ -1,7 +1,6 @@
 # Extension Points
 
-This document classifies every protected member accessible to Repository subclasses and describes the stability
-guarantees for each.
+Every protected member a `Repository` subclass can reach, and the stability guarantee each carries.
 
 ## Classification Legend
 
@@ -15,19 +14,19 @@ guarantees for each.
 
 ### boot() - Stable
 
-**Purpose:** Hook for subclass initialization. Called once at the end of the constructor, after all internal state has
-been initialized.
+**Purpose:** Hook for subclass initialization. Called once by the constructor, after the base state is initialized and
+before concern hooks run.
 
 **When to use:** Override this method to register persistent criteria, configure initial scopes, or set up any
 subclass-specific state during repository construction.
 
 **Behavioral guarantees:**
 
-- Called exactly once per repository instance, at the end of the constructor.
+- Called exactly once per constructed instance; a composed copy does not call it again.
 - When `boot()` is invoked, the following state is guaranteed to be initialized:
   - `$persistentCriteria` and `$transientCriteria` are empty Collections.
   - `$disableCriteria`, `$skipCriteria`, and `$forceUseCriteria` are `false`.
-  - `$scopes` is an empty array.
+  - `$scopes` and `$persistentScopes` are empty arrays.
   - `$model` holds a resolved Model instance (via `makeModel()`).
   - `$app` holds the Application instance.
 - It is safe to call `pushCriteria()`, `pushScope()`, and `getModel()` during `boot()`.
@@ -46,7 +45,7 @@ protected function boot(): void
 ### pushScope() - Stable
 
 **Purpose:** Registers a scope that applies to every query for the life of the instance. The scope counterpart of
-`pushCriteria()`, and the registrar `boot()` needs.
+`pushCriteria()`.
 
 **Signature:** `protected function pushScope(\Closure $scope): static`
 
@@ -57,9 +56,8 @@ before the scopes composing the current query, so a per-query scope can still ov
 model, which no scope reaches. Registering a scope therefore keeps every read on the real query pipeline, so the
 constraint is never answered with unfiltered rows.
 
-**Contrast with `addScope()`:** `addScope()` composes the next query only, and returns a copy rather than mutating the
-repository. That is what makes an abandoned composition harmless, and it is why `addScope()` cannot be used from
-`boot()`, which discards whatever it returns.
+**Contrast with `addScope()`:** `addScope()` composes the next query only and returns a copy rather than mutating the
+repository, which is why it cannot be used from `boot()`.
 
 ```php
 protected function boot(): void
@@ -90,16 +88,15 @@ attributes of the class it stands in for by name alone.
 
 ### prepareQueryBuilder() - Internal
 
-**Purpose:** Orchestrates criteria and scope application, then ensures `$model` is a Builder. Called internally by
-`query()` and `__call()`.
+**Purpose:** Ensures `$model` is a Builder, then applies criteria and scopes to it. Called internally by `query()` and
+`__call()`.
 
-**Why Internal:** This method coordinates multiple internal concerns (criteria application, scope application, model-to-
-builder conversion). Its behavior and signature may change as the lifecycle is clarified in future versions. Subclasses
-should use `query()` to obtain a prepared builder.
+**Why Internal:** It coordinates model-to-builder conversion, criteria application and scope application, and may
+change as that lifecycle evolves. Use `query()` to obtain a prepared builder.
 
 ### applyScopes() - Internal
 
-**Purpose:** Iterates over registered scopes and applies each to the current model/builder. Called internally by
+**Purpose:** Applies the registered and composing scopes to the current builder. Called internally by
 `prepareQueryBuilder()`.
 
 **Why Internal:** Scope application is an internal step in the query composition pipeline. Scopes are composed publicly
@@ -107,20 +104,19 @@ with `addScope()` and `resetScopes()`, and registered from inside the subclass w
 
 ### resetAndReturn() - Internal
 
-**Purpose:** Resets transient state (transient criteria, scopes, model) after a forwarded method call completes. Called
-internally by `__call()`.
+**Purpose:** Resets per-query state (transient criteria, composing scopes, model) after a forwarded method call
+completes. Called internally by `__call()`.
 
-**Why Internal:** This method is a cleanup step in the magic method forwarding pipeline. Its behavior is tied to
-internal state management and may change without notice.
+**Why Internal:** It is a cleanup step in the method forwarding pipeline, tied to internal state management.
 
 ### applyCriteria() - Internal
 
-**Purpose:** Applies persistent and transient criteria to the model/builder according to the four control flags.
-Defined in the `ManagesCriteria` trait (which is itself `@internal`).
+**Purpose:** Applies transient and persistent criteria to the builder according to the three criteria flags. Defined in
+the internal `ManagesCriteria` trait.
 
-**Why Internal:** Criteria application logic is the core of the criteria lifecycle state machine. The public API for
-criteria management is `pushCriteria()`, `withCriteria()`, `enableCriteria()`, `disableCriteria()`, `useCriteria()`,
-`skipCriteria()`, and `resetCriteria()`.
+**Why Internal:** It is the core of the criteria state machine. The public API for criteria management is
+`pushCriteria()`, `withCriteria()`, `enableCriteria()`, `disableCriteria()`, `useCriteria()`, `skipCriteria()`, and
+`resetCriteria()`.
 
 ## Protected Properties
 
@@ -143,23 +139,21 @@ lifecycle (e.g., in `boot()` or in custom query methods).
 
 **Type:** `Builder|Model|null`
 
-**Purpose:** Holds the current model instance ("at rest") or query builder ("during query composition"). Changes type
-during a single operation according to the repository's lifecycle phases.
+**Purpose:** Holds the current model instance at rest, or the query builder during query composition.
 
-**Why Transitional:** The dual-role nature of this property (holding both a Model and a Builder at different lifecycle
-points) is identified as a design issue. Future versions may separate these concerns into distinct properties or
-introduce a clearer lifecycle contract. Do not rely on the specific type of `$model` at any given point.
+**Why Transitional:** Holding both a Model and a Builder at different points is a known design issue that a future
+version may split into separate properties. Do not rely on the type of `$model` at any given point.
 
 **Lifecycle phases:**
 
-| Phase                 | $model Type | Entry Point                                              | Exit Point                                             |
-|-----------------------|-------------|----------------------------------------------------------|--------------------------------------------------------|
-| **At rest**           | `Model`     | After construction; after `resetModel()` completes       | When `prepareQueryBuilder()` begins                    |
-| **Query composition** | `Builder`   | When `prepareQueryBuilder()` normalizes Model to Builder | When `query()` or `__call()` resets via `resetModel()` |
+| Phase                 | $model Type | Entry Point                                              | Exit Point                                                    |
+|-----------------------|-------------|----------------------------------------------------------|---------------------------------------------------------------|
+| **At rest**           | `Model`     | After construction; after `resetModel()` completes       | When `prepareQueryBuilder()` begins                           |
+| **Query composition** | `Builder`   | When `prepareQueryBuilder()` normalizes Model to Builder | When `query()` or `__call()` resets via `resetModel()`        |
+| **Composed copy**     | `null`      | When a composing call clones the instance                | When `prepareQueryBuilder()` or `getModel()` resolves a model |
 
-During query composition, all criteria and scopes receive a `Builder` - no defensive `Model`-to-`Builder` conversion
-is needed in criteria implementations. The normalization happens once at the start of `prepareQueryBuilder()` before any
-criteria or scopes are applied.
+`prepareQueryBuilder()` normalizes `$model` to a `Builder` before applying any criteria or scopes, so criteria never
+need a `Model`-to-`Builder` conversion of their own.
 
 ### $persistentCriteria - Internal
 
@@ -167,8 +161,7 @@ criteria or scopes are applied.
 
 **Purpose:** Stores criteria that persist across queries until explicitly removed.
 
-**Why Internal:** Managed entirely through the public API (`pushCriteria()`, `removeCriteria()`, `getCriteria()`,
-`resetCriteria()`). Direct property access is unnecessary and bypasses the criteria lifecycle.
+**Why Internal:** Managed through `pushCriteria()`, `removeCriteria()`, `getCriteria()` and `resetCriteria()`.
 
 ### $transientCriteria - Internal
 
@@ -176,8 +169,7 @@ criteria or scopes are applied.
 
 **Purpose:** Stores criteria that apply to the next query only, then are cleared.
 
-**Why Internal:** Managed through `withCriteria()` and automatically cleared after each query. Direct access bypasses
-the intended one-shot lifecycle.
+**Why Internal:** Managed through `withCriteria()` and cleared after each query.
 
 ### $disableCriteria - Internal
 
@@ -185,8 +177,7 @@ the intended one-shot lifecycle.
 
 **Purpose:** When `true`, persistent criteria are not applied (transient criteria are still applied).
 
-**Why Internal:** Managed through `enableCriteria()` and `disableCriteria()`. Direct manipulation risks desynchronizing
-the flag state machine.
+**Why Internal:** Managed through `enableCriteria()` and `disableCriteria()`.
 
 ### $skipCriteria - Internal
 
@@ -195,7 +186,7 @@ the flag state machine.
 **Purpose:** When `true`, all criteria (persistent and transient) are skipped for the next query. Resets to `false`
 after each query.
 
-**Why Internal:** Managed through `skipCriteria()`. This is a transient flag that resets automatically.
+**Why Internal:** Managed through `skipCriteria()`.
 
 ### $forceUseCriteria - Internal
 
@@ -204,16 +195,16 @@ after each query.
 **Purpose:** When `true`, persistent criteria are applied even if `$disableCriteria` is `true`. Overrides
 `$disableCriteria` for one query.
 
-**Why Internal:** Managed through `useCriteria()`. This is a transient flag that resets automatically.
+**Why Internal:** Managed through `useCriteria()`.
 
 ### $scopes - Internal
 
 **Type:** `array`
 
-**Purpose:** Stores registered query scopes (closures) that are applied during query composition.
+**Purpose:** Stores the scopes composing the next query.
 
 **Why Internal:** Managed through `addScope()` and `resetScopes()`, both of which return a copy rather than mutating
-the instance. Direct array manipulation bypasses the public API.
+the instance.
 
 ### $persistentScopes - Internal
 
@@ -222,11 +213,11 @@ the instance. Direct array manipulation bypasses the public API.
 **Purpose:** Stores scopes registered via `pushScope()`. Applied to every query for the life of the instance, before the
 scopes composing the current query, and never consumed by a query or cleared by `resetScopes()`.
 
-**Why Internal:** Managed through `pushScope()`. Direct array manipulation bypasses the public API.
+**Why Internal:** Managed through `pushScope()`.
 
 ## Criteria Flag Precedence
 
-The criteria state machine uses four binary flags that interact according to these precedence rules:
+Three flags decide which criteria apply:
 
 1. **`$skipCriteria` overrides all other flags.** When true, no criteria (persistent or transient) are applied,
    regardless of `$disableCriteria` or `$forceUseCriteria` state. Both `$skipCriteria` and `$forceUseCriteria` are
@@ -240,8 +231,6 @@ The criteria state machine uses four binary flags that interact according to the
    criteria are suppressed. Transient criteria are still applied. Use `skipCriteria()` to suppress all criteria
    including transient.
 
-See the `ManagesCriteria` trait docblock for the complete 16-state truth table.
-
 ## Criteria Application Ordering
 
 When criteria are applied, they execute in a fixed two-phase order:
@@ -250,8 +239,7 @@ When criteria are applied, they execute in a fixed two-phase order:
 2. **Persistent criteria second** - Criteria registered via `pushCriteria()` are applied in insertion order. They remain
    registered for future queries.
 
-Within each phase, criteria execute in the order they were added. There is no priority or dependency mechanism;
-insertion order is the sole determinant.
+There is no priority or dependency mechanism; insertion order is the sole determinant.
 
 Supplementary capability declarations (eager-loading, field selection, counts, metadata) are collected from each
 criterion immediately after its `apply()` method executes, in the same ordering as above. Collected declarations are
@@ -260,9 +248,7 @@ accessible via `getCollectedEagerLoads()`, `getCollectedFields()`, `getCollected
 
 ## Supplementary Criteria Capabilities
 
-Criteria can opt into declaring additional capabilities by implementing supplementary contracts alongside
-`CriteriaInterface`. These contracts are purely additive - existing criteria that only implement `CriteriaInterface`
-are unaffected.
+A criterion can declare more than its query by implementing these contracts alongside `CriteriaInterface`:
 
 | Contract                     | Purpose                                 | Collection Method          |
 |------------------------------|-----------------------------------------|----------------------------|
@@ -271,14 +257,12 @@ are unaffected.
 | `DeclaresRelationshipCounts` | Declare relationship count aggregations | `getCollectedCounts()`     |
 | `ContributesMetadata`        | Attach key-value metadata               | `getCollectedMetadata()`   |
 
-The repository detects these contracts at criteria application time via `instanceof` checks and collects the
-declarations. Downstream code (e.g., repository subclasses) can retrieve the collected declarations and apply them
-to the query as appropriate for their context.
+The repository collects the declarations as it applies criteria but does not act on them; a subclass or caller reads
+them back and applies them as its context requires.
 
 ## Constructor Boot Sequence
 
-The constructor performs the following steps in order. Each step's post-conditions are guaranteed when the next step
-begins:
+The constructor runs these steps in order, and each step's post-condition holds when the next begins:
 
 | Step | Action                                  | Post-condition                                                                                                                           |
 |------|-----------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------|
@@ -289,6 +273,7 @@ begins:
 | 5    | (scope defaults)                        | `$scopes` is an empty array, as is `$persistentScopes`                                                                                   |
 | 6    | `makeModel()`                           | `$model` holds a resolved Model instance; RepositoryException thrown if model class is invalid                                           |
 | 7    | `boot()`                                | Subclass initialization hook. All state from steps 1-6 is available.                                                                     |
+| 8    | `bootConcerns()`                        | Each trait's `boot{TraitName}()` hook has run, such as `bootCacheable()`                                                                 |
 
 Subclasses overriding `boot()` can safely assume all state from steps 1-6 is initialized. It is safe to call
 `pushCriteria()`, `pushScope()`, `getModel()`, and the other base repository methods during `boot()`. Methods provided
@@ -297,15 +282,14 @@ initialise after `boot()`, via `bootConcerns()`.
 
 ## Versioning Commitment
 
-Changes to **Stable** members follow the deprecation policy documented in
-the [Versioning Policy](README.md#versioning-policy):
+Changes to **Stable** members follow [Semantic Versioning](https://semver.org/) and this deprecation policy:
 
 - Stable members will not change behavior or signature without a deprecation notice in a prior release.
 - The minimum deprecation window is one minor or major release cycle.
 - Deprecated members will include documentation of the migration path in [UPGRADE.md](../UPGRADE.md).
 
 **Transitional** members may change in any minor or major release. Changes will be documented in
-[CHANGELOG.md](CHANGELOG.md) with migration guidance where applicable.
+[CHANGELOG.md](../CHANGELOG.md) with migration guidance where applicable.
 
 **Internal** members carry no stability commitment. They may change in any release, including patch releases, without
 prior notice. Use the public API methods instead.

@@ -38,7 +38,7 @@ use Tests\Support\Repositories\UndeclaredModelRepository;
 final class RepositoryTest extends TestCase
 {
     /**
-     * Ensure the Model attribute declares the model without a model() body.
+     * Test that the Model attribute declares the model without a model() body.
      *
      * @return void
      *
@@ -50,8 +50,9 @@ final class RepositoryTest extends TestCase
     }
 
     /**
-     * Ensure a declaration on an ancestor reaches its subclasses, since class
-     * attributes are not inherited and the lookup has to walk for them.
+     * Test that a declaration on an ancestor reaches its subclasses.
+     *
+     * Class attributes are not inherited, so the lookup walks the hierarchy.
      *
      * @return void
      *
@@ -64,7 +65,7 @@ final class RepositoryTest extends TestCase
     }
 
     /**
-     * Ensure an override replaces the lookup entirely.
+     * Test that a model() override replaces the lookup.
      *
      * @return void
      *
@@ -82,8 +83,7 @@ final class RepositoryTest extends TestCase
     }
 
     /**
-     * Ensure a repository declaring neither fails, naming both ways to declare
-     * a model so the message is actionable.
+     * Test that a repository declaring neither fails with an actionable error.
      *
      * @return void
      *
@@ -99,9 +99,9 @@ final class RepositoryTest extends TestCase
     }
 
     /**
-     * Ensure a declaration carrying no arguments is walked past rather than
-     * read: a generated double copies the attributes of the class it stands in
-     * for by name alone.
+     * Test that a declaration without arguments is skipped.
+     *
+     * A generated double copies its parent's attributes, minus their arguments.
      *
      * @return void
      *
@@ -117,8 +117,7 @@ final class RepositoryTest extends TestCase
     }
 
     /**
-     * Ensure the resolved declaration is memoised, so the per-query model
-     * rebuild does not reflect on every call.
+     * Test that the resolved declaration is memoised.
      *
      * @return void
      *
@@ -131,8 +130,6 @@ final class RepositoryTest extends TestCase
 
         self::assertSame(Tag::class, $repository->model());
 
-        // Once resolved the memo is authoritative: a second call reads it back
-        // rather than reflecting over the hierarchy again.
         (new \ReflectionProperty(Repository::class, 'declaredModel'))
             ->setValue($repository, TagAlias::class);
 
@@ -140,7 +137,7 @@ final class RepositoryTest extends TestCase
     }
 
     /**
-     * Ensure invalid model resolutions fail fast.
+     * Test that makeModel fails when the container resolves a non-model.
      *
      * @return void
      *
@@ -164,8 +161,7 @@ final class RepositoryTest extends TestCase
     }
 
     /**
-     * Ensure the constructor boots every used concern that exposes a dedicated
-     * boot hook, after the subclass boot() has run.
+     * Test that the constructor boots concerns with a dedicated boot hook.
      *
      * @return void
      *
@@ -185,7 +181,7 @@ final class RepositoryTest extends TestCase
     }
 
     /**
-     * Ensure static calls fail when no Laravel application container is active.
+     * Test that static calls fail when no application container is active.
      *
      * @return void
      */

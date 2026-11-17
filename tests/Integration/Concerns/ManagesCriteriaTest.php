@@ -36,9 +36,8 @@ final class ManagesCriteriaTest extends IntegrationTestCase
     private const string RESOLUTION_FAILURE = 'Simulated resolution failure.';
 
     /**
-     * Test that a failed composition consumes the one-shot force flag, so a
-     * surviving useCriteria() cannot override a standing disableCriteria() on
-     * the next, unrelated query.
+     * Test that a failed composition consumes the one-shot force flag, so the
+     * next query still honours disableCriteria().
      *
      * @return void
      *
@@ -67,16 +66,13 @@ final class ManagesCriteriaTest extends IntegrationTestCase
 
         $repository->removeCriteria(FailingUsersCriterion::class);
 
-        // Criteria remain disabled and the force flag was consumed by the
-        // failed attempt, so neither the name criterion nor the half-applied
-        // builder it left behind may narrow this query.
+        // Neither the name criterion nor its half-applied builder narrows this.
         self::assertCount(3, $repository->query()->get());
     }
 
     /**
      * Test that a composition failure raised before criteria are applied still
-     * consumes a pending skipCriteria(), which would otherwise silently drop
-     * every criterion from the next, unrelated query.
+     * consumes a pending skipCriteria().
      *
      * @return void
      *
@@ -150,8 +146,7 @@ final class ManagesCriteriaTest extends IntegrationTestCase
     }
 
     /**
-     * Test that withCriteria() composes a copy, so criteria meant for one read
-     * cannot reach a read made through the instance they were composed from.
+     * Test that withCriteria() composes a copy and leaves the original alone.
      *
      * @return void
      *
@@ -173,8 +168,7 @@ final class ManagesCriteriaTest extends IntegrationTestCase
 
     /**
      * Test that a failed composition discards the capability declarations
-     * collected from the criteria that ran before it failed, so a later read of
-     * the collected declarations cannot describe a query that was never built.
+     * collected from the criteria that ran before it failed.
      *
      * @return void
      *
@@ -236,14 +230,14 @@ final class ManagesCriteriaTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a subclass applying criteria before any builder is prepared has
-     * them applied to a query started from the repository's model.
+     * Test that criteria applied before any builder is prepared apply to a
+     * query started from the model.
      *
      * @return void
      *
      * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      */
-    public function testCriteriaApplyToAQueryStartedFromTheModelWhenNoBuilderIsPrepared(): void
+    public function testCriteriaApplyWithoutAPreparedBuilder(): void
     {
         $this->seedUsers();
 
@@ -260,8 +254,7 @@ final class ManagesCriteriaTest extends IntegrationTestCase
     }
 
     /**
-     * Test that the criteria sanitizer drops entries that are not criteria, so
-     * neither the persistent nor the transient collection registers them.
+     * Test that the criteria sanitizer drops entries that are not criteria.
      *
      * @return void
      */

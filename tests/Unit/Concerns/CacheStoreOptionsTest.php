@@ -21,8 +21,7 @@ use SineMacula\Repositories\Concerns\CacheStoreOptions;
 final class CacheStoreOptionsTest extends TestCase
 {
     /**
-     * Test that the constructor assigns each option to its matching readonly
-     * property, unchanged.
+     * Test that the constructor assigns each option to its property.
      *
      * @return void
      */
@@ -39,8 +38,7 @@ final class CacheStoreOptionsTest extends TestCase
     }
 
     /**
-     * Test that a disabled registry is preserved as false rather than coerced,
-     * pinning both boolean states through the constructor.
+     * Test that a disabled registry flag is preserved.
      *
      * @return void
      */

@@ -1,13 +1,11 @@
 # Testing Guide
 
-This guide covers testing patterns for downstream packages that extend `Repository` or implement `CriteriaInterface`.
+Testing patterns for packages that extend `Repository` or implement `CriteriaInterface`.
 
 ## Setup
 
-The package exports test utilities through the `SineMacula\Repositories\Testing` namespace. These utilities live in the
-`testing/` directory and are not autoloaded in production.
-
-Add the testing namespace to your downstream package's `composer.json`:
+The test utilities live in `testing/` under the `SineMacula\Repositories\Testing` namespace, which the package only
+autoloads for its own development. Map it in your package's `composer.json`:
 
 ```json
 {
@@ -25,14 +23,13 @@ Run `composer dump-autoload` after adding the mapping.
 
 | Utility              | Purpose                                                                                             |
 |----------------------|-----------------------------------------------------------------------------------------------------|
-| `CriteriaTestHelper` | Apply a criterion to a lightweight query builder without a database connection or service container |
+| `CriteriaTestHelper` | Apply a criterion to a query builder without a configured database or service container             |
 | `InspectsRepository` | Trait providing state observation and mutation methods for repository test doubles                  |
-| `CriterionStub`      | Configurable criterion stub for testing repository behavior without writing custom criteria         |
+| `CriterionStub`      | Criterion stub that counts its applications and runs an optional callback                           |
 
 ## Pattern 1: Testing a Criterion in Isolation
 
-Test what a criterion does to a query without requiring a database connection, service container, or Orchestra
-Testbench.
+Test what a criterion does to a query without a configured database, service container, or Orchestra Testbench.
 
 ### When to Use
 
@@ -42,9 +39,9 @@ Testbench.
 
 ### How It Works
 
-`CriteriaTestHelper::apply()` creates a minimal in-memory SQLite connection via Laravel's Capsule Manager, builds a
-fresh Eloquent query builder for a given table name, and passes it to your criterion's `apply()` method. No service
-container, no application bootstrap, no configured database.
+`CriteriaTestHelper::apply()` boots an in-memory SQLite connection through Laravel's Capsule Manager, builds a fresh
+Eloquent query builder for the given table, and passes it to your criterion's `apply()` method.
+`CriteriaTestHelper::builder()` returns a fresh builder with no criterion applied, for comparison.
 
 ### Example
 
@@ -68,13 +65,8 @@ class ActiveUsersCriterionTest extends TestCase
             'users'
         );
 
-        // Inspect the generated SQL
-        $sql = $builder->toSql();
-        $this->assertStringContainsString('"active"', $sql);
-
-        // Inspect the bindings
-        $bindings = $builder->getBindings();
-        $this->assertContains(1, $bindings);
+        $this->assertStringContainsString('"active"', $builder->toSql());
+        $this->assertContains(true, $builder->getBindings());
     }
 
     public function testDoesNotModifyOtherClauses(): void
@@ -84,7 +76,6 @@ class ActiveUsersCriterionTest extends TestCase
             'users'
         );
 
-        // Verify the query only has the expected WHERE clause
         $wheres = $builder->getQuery()->wheres;
         $this->assertCount(1, $wheres);
         $this->assertSame('active', $wheres[0]['column']);
@@ -94,10 +85,9 @@ class ActiveUsersCriterionTest extends TestCase
 
 ### Limitations
 
-The lightweight path covers query builder method calls (WHERE, ORDER BY, joins, eager-loading declarations, etc.) but
-does not execute queries against a real database. For criteria that depend on database-specific behavior (JSON
-operators,
-full-text search, subqueries against real data), use integration tests with Orchestra Testbench.
+The helper covers query builder calls (WHERE, ORDER BY, joins, eager-loading declarations) but executes nothing against
+a real database. For criteria that depend on database-specific behavior (JSON operators, full-text search, subqueries
+against real data), use integration tests with Orchestra Testbench.
 
 ## Pattern 2: Testing a Repository Subclass
 
@@ -112,14 +102,12 @@ for state observation.
 
 ### How It Works
 
-Add the `InspectsRepository` trait to your test double. The trait provides methods to observe the repository's criteria
-counts, flag values, composing-scope count and model reference, and to mutate that state for edge-case testing. This
-eliminates the need for custom public wrapper methods.
+Add the `InspectsRepository` trait to your test double. It exposes the repository's criteria counts, flag values,
+scope counts and model reference, and lets a test overwrite that state for edge cases.
 
 Observe the handle a composing call returned, not the one it was called on. `addScope()`, `withCriteria()`,
-`useCriteria()`, `skipCriteria()` and `resetScopes()` return a copy, so the composition is on that copy. Scopes
-registered with `pushScope()` are counted by `persistentScopesCount()`, and are also observable through the query they
-produce.
+`useCriteria()`, `skipCriteria()`, `resetScopes()` and `withoutCache()` return a copy, so the composition is on that
+copy. Scopes registered with `pushScope()` are counted by `persistentScopesCount()`.
 
 ### Example
 
@@ -167,7 +155,6 @@ class UserRepositoryTest extends TestCase
     {
         $repository = $this->app->make(TestableUserRepository::class);
 
-        // Observe state without custom wrapper methods
         $this->assertTrue($repository->isBooted());
         $this->assertSame(1, $repository->persistentCriteriaCount());
         $this->assertSame(0, $repository->transientCriteriaCount());
@@ -189,7 +176,6 @@ class UserRepositoryTest extends TestCase
 
         $composed = $repository->addScope(fn ($query) => $query->orderBy('name'));
 
-        // The scope travels with the copy, not the repository it came from
         $this->assertSame(1, $composed->scopesCount());
         $this->assertSame(0, $repository->scopesCount());
     }
@@ -229,9 +215,8 @@ class UserRepositoryTest extends TestCase
 
 ### Asserting a Composition Did Not Leak
 
-Composition returns a copy, so a test for a scope method should assert both halves of the contract: the returned handle
-carries the composition, and the handle it was composed from does not. The second assertion is the one that catches a
-scope method written to mutate.
+A test for a scope method should assert that the returned handle carries the composition and that the handle it was
+composed from does not. The second assertion catches a scope method written to mutate.
 
 ```php
 public function testScopeEmailVerifiedLeavesTheRepositoryUntouched(): void
@@ -271,8 +256,8 @@ Test how criteria and scopes interact within a repository, verifying application
 
 ### How It Works
 
-Use `CriterionStub` as a lightweight, configurable criterion that tracks whether and how many times it was applied.
-Combine with the `InspectsRepository` trait to observe the full lifecycle.
+`CriterionStub` records whether and how many times it was applied, and runs an optional callback on the builder.
+Combine it with the `InspectsRepository` trait to observe the full lifecycle.
 
 ### Example
 
@@ -332,8 +317,6 @@ class CriteriaScopeInteractionTest extends TestCase
             $order[] = 'scope';
         })->query();
 
-        $repository->query();
-
         $this->assertSame(['criterion', 'scope'], $order);
     }
 
@@ -359,11 +342,10 @@ class CriteriaScopeInteractionTest extends TestCase
         $stub = new CriterionStub;
         $repository->pushCriteria($stub);
 
-        // First query
         $repository->query();
         $this->assertSame(1, $stub->applyCount());
 
-        // Second query - a registered criterion is never consumed
+        // A registered criterion is never consumed
         $repository->query();
         $this->assertSame(2, $stub->applyCount());
     }
