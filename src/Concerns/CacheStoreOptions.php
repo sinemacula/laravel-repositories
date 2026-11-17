@@ -5,12 +5,7 @@ declare(strict_types = 1);
 namespace SineMacula\Repositories\Concerns;
 
 /**
- * Immutable configuration bundle for a per-query repository cache store.
- *
- * Groups the correlated tuning parameters - lifetime, size guard, registry
- * behaviour, and negative-lookup lifetime - so the cache store constructor
- * stays within the parameter limit and the options can be resolved once at
- * boot.
+ * The tuning options for a per-query repository cache store.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -36,7 +31,7 @@ final readonly class CacheStoreOptions
         /** The guard that enforces the per-store cache size limit. */
         public CacheSizeGuard $sizeGuard,
 
-        /** Whether non-taggable stores bump the table version on flush. */
+        /** Whether a flush on a non-taggable store replaces the generation token. */
         public bool $registryEnabled,
 
         /** The lifetime, in seconds, for cached negative lookups. */

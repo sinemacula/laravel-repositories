@@ -5,15 +5,8 @@ declare(strict_types = 1);
 namespace SineMacula\Repositories\Contracts;
 
 /**
- * Supplementary capability contract for criteria that declare field selection.
- *
- * Criteria implementing this contract can declare which fields should be
- * selected when the query executes. The repository collects these declarations
- * at criteria application time, making them available to the code that composes
- * the final query.
- *
- * This is an opt-in contract: criteria that only implement CriteriaInterface
- * are unaffected.
+ * Lets a criterion declare fields to select, which the repository collects when
+ * it applies.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.

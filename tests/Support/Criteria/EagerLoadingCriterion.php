@@ -13,10 +13,7 @@ use SineMacula\Repositories\Contracts\DeclaresFieldSelection;
 use SineMacula\Repositories\Contracts\DeclaresRelationshipCounts;
 
 /**
- * Test criterion implementing all supplementary capability contracts.
- *
- * Demonstrates that a criterion can declare eager-loading, field selection,
- * relationship counts, and metadata alongside query modification.
+ * Fixture criterion implementing every supplementary capability contract.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -28,7 +25,7 @@ use SineMacula\Repositories\Contracts\DeclaresRelationshipCounts;
 final class EagerLoadingCriterion implements ContributesMetadata, CriteriaInterface, DeclaresEagerLoading, DeclaresFieldSelection, DeclaresRelationshipCounts
 {
     /**
-     * Apply the criterion (no-op for this test criterion).
+     * Return the builder unchanged.
      *
      * @param  \Illuminate\Contracts\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Model  $model
      * @return \Illuminate\Contracts\Database\Eloquent\Builder

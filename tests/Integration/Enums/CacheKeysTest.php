@@ -66,31 +66,30 @@ final class CacheKeysTest extends TestCase
     }
 
     /**
-     * Test that resolveKey replaces single placeholders.
+     * Provide keys with placeholders, their replacements and resolved values.
      *
-     * @return void
+     * @return iterable<string, array{\SineMacula\Repositories\Enums\CacheKeys, array<int, string>, string}>
      */
-    public function testResolveKeyWithSingleReplacement(): void
+    public static function replacementProvider(): iterable
     {
-        Config::set('repositories.cache.prefix', 'app');
-
-        $result = CacheKeys::REPOSITORY_CACHE_META->resolveKey(['tags']);
-
-        self::assertSame('app:repository-cache-meta:tags', $result);
+        yield 'single' => [CacheKeys::REPOSITORY_CACHE_META, ['tags'], 'app:repository-cache-meta:tags'];
+        yield 'multiple' => [CacheKeys::REPOSITORY_QUERY_CACHE, ['tags', 'abc123'], 'app:repository-query:tags:abc123'];
     }
 
     /**
-     * Test that resolveKey replaces multiple placeholders.
+     * Test that resolveKey replaces each placeholder.
      *
+     * @param  \SineMacula\Repositories\Enums\CacheKeys  $case
+     * @param  array<int, string>  $replacements
+     * @param  string  $expected
      * @return void
      */
-    public function testResolveKeyWithMultipleReplacements(): void
+    #[DataProvider('replacementProvider')]
+    public function testResolveKeyReplacesPlaceholders(CacheKeys $case, array $replacements, string $expected): void
     {
         Config::set('repositories.cache.prefix', 'app');
 
-        $result = CacheKeys::REPOSITORY_QUERY_CACHE->resolveKey(['tags', 'abc123']);
-
-        self::assertSame('app:repository-query:tags:abc123', $result);
+        self::assertSame($expected, $case->resolveKey($replacements));
     }
 
     /**

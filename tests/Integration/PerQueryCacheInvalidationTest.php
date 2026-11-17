@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use PHPUnit\Framework\Attributes\CoversTrait;
+use PHPUnit\Framework\Attributes\DataProvider;
 use SineMacula\Repositories\Concerns\Cacheable;
 use Tests\Support\Models\Tag;
 use Tests\Support\Repositories\CacheableTagRepository;
@@ -58,16 +59,37 @@ final class PerQueryCacheInvalidationTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a write invalidation forces a fresh query on the next read.
+     * Provide each inserting write verb with the repository that runs it.
      *
-     * @return void
+     * @return iterable<string, array{class-string<\Tests\Support\Repositories\CacheableTagRepository|\Tests\Support\Repositories\FileStoreTagRepository>, string}>
      */
-    public function testWriteInvalidationForcesFreshQuery(): void
+    public static function inserts(): iterable
     {
-        $repository = $this->makeRepository(CacheableTagRepository::class);
+        yield 'create' => [CacheableTagRepository::class, 'create'];
+        yield 'create on a file store' => [FileStoreTagRepository::class, 'create'];
+        yield 'firstOrCreate' => [CacheableTagRepository::class, 'firstOrCreate'];
+        yield 'createOrFirst' => [CacheableTagRepository::class, 'createOrFirst'];
+        yield 'createQuietly' => [CacheableTagRepository::class, 'createQuietly'];
+        yield 'forceCreateQuietly' => [CacheableTagRepository::class, 'forceCreateQuietly'];
+        yield 'incrementOrCreate' => [CacheableTagRepository::class, 'incrementOrCreate'];
+    }
+
+    /**
+     * Test that an insert forces a fresh query on the next read.
+     *
+     * @param  class-string<\Tests\Support\Repositories\CacheableTagRepository|\Tests\Support\Repositories\FileStoreTagRepository>  $class
+     * @param  string  $verb
+     * @return void
+     *
+     * @throws \SineMacula\Repositories\Exceptions\RepositoryException
+     */
+    #[DataProvider('inserts')]
+    public function testAnInsertForcesAFreshQuery(string $class, string $verb): void
+    {
+        $repository = $this->makeRepository($class);
 
         $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-        $repository->create(['name' => 'vue']); // @phpstan-ignore staticMethod.dynamicCall
+        $repository->__call($verb, [['name' => 'vue']]);
 
         DB::enableQueryLog();
 
@@ -78,29 +100,7 @@ final class PerQueryCacheInvalidationTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a non-taggable file store invalidates per-query entries via the
-     * registry on a write.
-     *
-     * @return void
-     */
-    public function testFileStoreInvalidatesViaRegistryOnWrite(): void
-    {
-        $repository = $this->makeRepository(FileStoreTagRepository::class);
-
-        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-        $repository->create(['name' => 'vue']); // @phpstan-ignore staticMethod.dynamicCall
-
-        DB::enableQueryLog();
-
-        $result = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-
-        self::assertCount(1, DB::getQueryLog());
-        self::assertCount(3, $result);
-    }
-
-    /**
-     * Test that, with the registry disabled, a non-taggable file store keeps
-     * serving the stale entry after a write (TTL-only staleness).
+     * Test that a registry-less file store serves a stale entry after a write.
      *
      * @return void
      */
@@ -119,27 +119,6 @@ final class PerQueryCacheInvalidationTest extends IntegrationTestCase
 
         self::assertCount(0, DB::getQueryLog());
         self::assertCount(2, $result);
-    }
-
-    /**
-     * Test that firstOrCreate invalidates the cache when it inserts a new row.
-     *
-     * @return void
-     */
-    public function testFirstOrCreateInvalidatesCacheOnInsert(): void
-    {
-        $repository = $this->makeRepository(CacheableTagRepository::class);
-
-        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-
-        $repository->firstOrCreate(['name' => 'vue']); // @phpstan-ignore staticMethod.dynamicCall
-
-        DB::enableQueryLog();
-
-        $result = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-
-        self::assertCount(1, DB::getQueryLog());
-        self::assertCount(3, $result);
     }
 
     /**
@@ -164,92 +143,6 @@ final class PerQueryCacheInvalidationTest extends IntegrationTestCase
     }
 
     /**
-     * Test that createOrFirst invalidates the cache when it inserts a new row.
-     *
-     * @return void
-     */
-    public function testCreateOrFirstInvalidatesCacheOnInsert(): void
-    {
-        $repository = $this->makeRepository(CacheableTagRepository::class);
-
-        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-
-        $repository->createOrFirst(['name' => 'vue']); // @phpstan-ignore staticMethod.dynamicCall
-
-        DB::enableQueryLog();
-
-        $result = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-
-        self::assertCount(1, DB::getQueryLog());
-        self::assertCount(3, $result);
-    }
-
-    /**
-     * Test that createQuietly invalidates the cache when it inserts a new row.
-     *
-     * @return void
-     */
-    public function testCreateQuietlyInvalidatesCacheOnInsert(): void
-    {
-        $repository = $this->makeRepository(CacheableTagRepository::class);
-
-        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-
-        $repository->createQuietly(['name' => 'vue']); // @phpstan-ignore staticMethod.dynamicCall
-
-        DB::enableQueryLog();
-
-        $result = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-
-        self::assertCount(1, DB::getQueryLog());
-        self::assertCount(3, $result);
-    }
-
-    /**
-     * Test that forceCreateQuietly invalidates the cache when it inserts a new
-     * row.
-     *
-     * @return void
-     */
-    public function testForceCreateQuietlyInvalidatesCacheOnInsert(): void
-    {
-        $repository = $this->makeRepository(CacheableTagRepository::class);
-
-        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-
-        $repository->forceCreateQuietly(['name' => 'vue']); // @phpstan-ignore staticMethod.dynamicCall
-
-        DB::enableQueryLog();
-
-        $result = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-
-        self::assertCount(1, DB::getQueryLog());
-        self::assertCount(3, $result);
-    }
-
-    /**
-     * Test that incrementOrCreate invalidates the cache when it creates a new
-     * row.
-     *
-     * @return void
-     */
-    public function testIncrementOrCreateInvalidatesCacheOnInsert(): void
-    {
-        $repository = $this->makeRepository(CacheableTagRepository::class);
-
-        $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-
-        $repository->incrementOrCreate(['name' => 'vue']); // @phpstan-ignore staticMethod.dynamicCall
-
-        DB::enableQueryLog();
-
-        $result = $repository->get(); // @phpstan-ignore staticMethod.dynamicCall
-
-        self::assertCount(1, DB::getQueryLog());
-        self::assertCount(3, $result);
-    }
-
-    /**
      * Test that a mass touch() invalidates the cache.
      *
      * @return void
@@ -270,8 +163,7 @@ final class PerQueryCacheInvalidationTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a pending withoutCache() is consumed by a write verb rather
-     * than leaking onto a later, unrelated read.
+     * Test that a pending withoutCache() is consumed by the write it precedes.
      *
      * @return void
      */
@@ -292,8 +184,8 @@ final class PerQueryCacheInvalidationTest extends IntegrationTestCase
     }
 
     /**
-     * Test that the non-taggable database store invalidates per-query entries
-     * on a write, seeding the version key its increment cannot create.
+     * Test that a write invalidates a database store, seeding the version key
+     * its increment cannot create.
      *
      * @return void
      */

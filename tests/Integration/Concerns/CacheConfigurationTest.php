@@ -83,8 +83,7 @@ final class CacheConfigurationTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a non-numeric configuration value falls back to the packaged
-     * default rather than propagating an invalid type.
+     * Test that a non-numeric configuration value falls back to the default.
      *
      * @return void
      */
@@ -102,8 +101,7 @@ final class CacheConfigurationTest extends IntegrationTestCase
     }
 
     /**
-     * Test that every tuning value falls back to its packaged default when the
-     * configuration keys are absent entirely.
+     * Test that every tuning value falls back to its default when unset.
      *
      * @return void
      */
@@ -144,13 +142,11 @@ final class CacheConfigurationTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a repository-level override takes exact precedence over the
-     * packaged default even though the default is itself a non-null value,
-     * proving the override is read first rather than merely coalesced with it.
+     * Test that a max bytes override takes precedence over the default.
      *
      * @return void
      */
-    public function testMaxBytesOverrideTakesExactPrecedenceOverNonNullConfigDefault(): void
+    public function testMaxBytesOverrideTakesPrecedenceOverTheDefault(): void
     {
         $configuration = CacheConfiguration::resolveFor(['cacheMaxBytes' => 100], 'tags');
 
@@ -159,9 +155,8 @@ final class CacheConfigurationTest extends IntegrationTestCase
     }
 
     /**
-     * Test that the packaged byte-size default is applied at its exact
-     * boundary, so a result serializing to precisely the ceiling is allowed and
-     * one byte over is rejected.
+     * Test that the packaged byte ceiling allows a result at the ceiling and
+     * rejects one byte over.
      *
      * @return void
      */
@@ -176,12 +171,12 @@ final class CacheConfigurationTest extends IntegrationTestCase
     }
 
     /**
-     * Test that the store name falls back to the array driver when neither an
-     * overridable property nor configuration resolves to a string.
+     * Test that the store name falls back to the array driver when no string is
+     * configured.
      *
      * @return void
      */
-    public function testStoreNameFallsBackToArrayDriverForNonStringConfiguration(): void
+    public function testNonStringStoreNameFallsBackToArrayDriver(): void
     {
         Config::set('repositories.cache.store', ['unexpected' => 'shape']);
         Config::set('cache.default', ['unexpected' => 'shape']);
@@ -192,8 +187,7 @@ final class CacheConfigurationTest extends IntegrationTestCase
     }
 
     /**
-     * Build a string whose serialized representation is exactly the given byte
-     * length.
+     * Build a string whose serialized form is exactly the given byte length.
      *
      * @param  int  $bytes
      * @return string

@@ -52,9 +52,6 @@ final class ScopedTestUserRepository extends Repository
     /**
      * Compose the next query down to a name, then abort.
      *
-     * Mirrors a consumer scope method that derives something after composing
-     * and fails doing so. The composed copy is abandoned.
-     *
      * @param  string  $name
      * @return self
      *
@@ -66,19 +63,13 @@ final class ScopedTestUserRepository extends Repository
             $query->where('name', $name);
         });
 
-        // The copy really did compose; the exception carries how many scopes it
-        // holds so a test can prove the abandoned work existed and still never
-        // reached the instance the caller holds.
+        // The count proves the abandoned copy really composed.
         throw new CompositionFailure('Scope composition aborted.', $composed->scopesCount());
     }
 
     /**
      * Apply the composed scopes to the current builder from inside the
-     * subclass.
-     *
-     * Mirrors a repository that drives composition itself rather than going
-     * through query(), which is why applyScopes() is protected rather than
-     * private.
+     * subclass, as a repository that bypasses query() would.
      *
      * @return \Illuminate\Contracts\Database\Eloquent\Builder
      */

@@ -36,10 +36,6 @@ use Tests\Support\Scopes\TenantScope;
  * Tests for the QueryFingerprint helper's query, binding, scope and eager-load
  * folding.
  *
- * Distinct, stable and unfingerprintable comparisons are grouped behind data
- * providers so each fingerprinting concern stays covered without one method per
- * scenario.
- *
  * @SuppressWarnings("php:S1448")
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
@@ -99,9 +95,7 @@ final class QueryFingerprintTest extends IntegrationTestCase
     }
 
     /**
-     * Test that fingerprinting scenarios which must never collide - differing
-     * SQL, bindings, verbs, arguments, connections, models, scopes, casts or
-     * eager loads - each yield a distinct fingerprint.
+     * Test that scenarios which must never collide yield distinct fingerprints.
      *
      * @param  \Closure(): string  $first
      * @param  \Closure(): string  $second
@@ -114,8 +108,7 @@ final class QueryFingerprintTest extends IntegrationTestCase
     }
 
     /**
-     * Test that the default, trashed-inclusive and trashed-only reads of a
-     * soft-deleting model yield three distinct fingerprints.
+     * Test that each trashed visibility yields its own fingerprint.
      *
      * @return void
      *
@@ -157,12 +150,12 @@ final class QueryFingerprintTest extends IntegrationTestCase
             fn (): string => QueryFingerprint::for(Tag::query(), 'find', [1]),
         ];
 
-        yield 'a date binding matches the string the connection sends for it' => [
+        yield 'a date binding and the string sent for it' => [
             fn (): string => QueryFingerprint::for(Tag::query()->where('created_at', new \DateTimeImmutable('2026-01-01 12:00:00', new \DateTimeZone('UTC')))),
             fn (): string => QueryFingerprint::for(Tag::query()->where('created_at', '2026-01-01 12:00:00')),
         ];
 
-        yield 'eager load registration order does not affect the fingerprint' => [
+        yield 'reordered eager loads' => [
             fn (): string => QueryFingerprint::for(Tag::query()->with(['children', 'aliases']), 'get'),
             fn (): string => QueryFingerprint::for(Tag::query()->with(['aliases', 'children']), 'get'),
         ];
@@ -172,12 +165,12 @@ final class QueryFingerprintTest extends IntegrationTestCase
             fn (): string => QueryFingerprint::for(Book::query()->with(['posts' => static fn (Builder $query): Builder => $query->where('title', 'live')])),
         ];
 
-        yield 'a constraint that changes nothing matches the unconstrained load' => [
+        yield 'a no-op constraint' => [
             fn (): string => QueryFingerprint::for(Tag::query()->with(['children' => static fn (Builder $query): Builder => $query])),
             fn (): string => QueryFingerprint::for(Tag::query()->with('children')),
         ];
 
-        yield 'a nested load without its parent is never loaded' => [
+        yield 'a nested load without its parent' => [
             fn (): string => QueryFingerprint::for(Tag::query()->setEagerLoads(['children.aliases' => static fn (): null => null])),
             fn (): string => QueryFingerprint::for(Tag::query()),
         ];
@@ -189,9 +182,7 @@ final class QueryFingerprintTest extends IntegrationTestCase
     }
 
     /**
-     * Test that fingerprinting scenarios which must always collide - repeat
-     * reads, equivalent bindings, reordered eager loads, or constraints that
-     * produce the same SQL - each yield a stable fingerprint.
+     * Test that scenarios which must always collide yield the same fingerprint.
      *
      * @param  \Closure(): string  $first
      * @param  \Closure(): string  $second
@@ -282,8 +273,7 @@ final class QueryFingerprintTest extends IntegrationTestCase
     }
 
     /**
-     * Test that a read whose result is shaped outside SQL, or whose arguments
-     * have no stable representation, cannot be fingerprinted.
+     * Test that reads shaped outside SQL or by unstable arguments are refused.
      *
      * @param  \Closure(): string  $fingerprint
      * @param  string  $message
@@ -299,8 +289,8 @@ final class QueryFingerprintTest extends IntegrationTestCase
     }
 
     /**
-     * Test that the chaperone callback of another relation is not taken for the
-     * relation's own, so the read cannot be fingerprinted.
+     * Test that a chaperone callback of another relation cannot be
+     * fingerprinted.
      *
      * @return void
      *
@@ -322,8 +312,7 @@ final class QueryFingerprintTest extends IntegrationTestCase
     }
 
     /**
-     * Test that an eager-load chain just inside the depth limit is still
-     * fingerprinted.
+     * Test that eager loads nested up to the depth limit are fingerprinted.
      *
      * @return void
      *
@@ -351,9 +340,7 @@ final class QueryFingerprintTest extends IntegrationTestCase
     }
 
     /**
-     * Test that fingerprinting leaves the prepared builder as it was: its
-     * scopes pending, its before-query callbacks queued and its eager loads
-     * registered.
+     * Test that fingerprinting leaves the prepared builder untouched.
      *
      * @param  \Closure(): \Illuminate\Database\Eloquent\Builder<covariant \Illuminate\Database\Eloquent\Model>  $prepare
      * @return void
@@ -400,7 +387,7 @@ final class QueryFingerprintTest extends IntegrationTestCase
             fn (): string => QueryFingerprint::for(Tag::query()->where('created_at', '>', Carbon::parse('2026-07-01 00:00:00'))),
         ];
 
-        yield 'enum argument yields distinct fingerprint per case' => [
+        yield 'distinct enum cases' => [
             fn (): string => QueryFingerprint::for(Tag::query(), 'find', [Status::ACTIVE]),
             fn (): string => QueryFingerprint::for(Tag::query(), 'find', [Status::INACTIVE]),
         ];
@@ -450,7 +437,7 @@ final class QueryFingerprintTest extends IntegrationTestCase
             fn (): string => QueryFingerprint::for(TagAlias::query()),
         ];
 
-        yield 'a date binding and its ATOM string, which the connection sends apart' => [
+        yield 'a date binding and its ATOM string' => [
             fn (): string => QueryFingerprint::for(Tag::query()->where('created_at', new \DateTimeImmutable('2026-01-01 12:00:00', new \DateTimeZone('UTC')))),
             fn (): string => QueryFingerprint::for(Tag::query()->where('created_at', '2026-01-01T12:00:00+00:00')),
         ];
@@ -579,8 +566,7 @@ final class QueryFingerprintTest extends IntegrationTestCase
     }
 
     /**
-     * Fingerprint a shelf query eager loading the given relation, built while
-     * the relation keys on the given column.
+     * Fingerprint a shelf query eager loading the relation keyed on the column.
      *
      * @param  string  $relation
      * @param  string  $key

@@ -5,13 +5,8 @@ declare(strict_types = 1);
 namespace SineMacula\Repositories\Concerns;
 
 /**
- * Invokes the dedicated boot hook of every bootable concern used by a
- * repository.
- *
- * Concerns such as Cacheable need boot-time setup but cannot override boot()
- * without colliding with a subclass boot() override, so the repository invokes
- * their dedicated boot hooks after boot() has run instead. This lets a single
- * repository safely use more than one bootable concern.
+ * Invokes the boot{Concern} hook of every concern a repository uses, so a
+ * concern needs no boot() override of its own.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.

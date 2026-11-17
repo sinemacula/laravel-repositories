@@ -53,8 +53,7 @@ final class CacheStatusTest extends TestCase
     }
 
     /**
-     * Test that getAge returns the number of seconds when the cache is
-     * populated.
+     * Test that getAge returns the number of seconds when populated.
      *
      * @return void
      */
@@ -86,12 +85,11 @@ final class CacheStatusTest extends TestCase
     }
 
     /**
-     * Test that getLastInvalidatedAt returns the Carbon instance when the cache
-     * has been previously invalidated.
+     * Test that getLastInvalidatedAt returns the last invalidation time.
      *
      * @return void
      */
-    public function testGetLastInvalidatedAtReturnsCarbonInstanceWhenPreviouslyInvalidated(): void
+    public function testGetLastInvalidatedAtReturnsTheInvalidationTime(): void
     {
         $invalidatedAt = CarbonImmutable::parse('2026-01-15 10:30:00');
 

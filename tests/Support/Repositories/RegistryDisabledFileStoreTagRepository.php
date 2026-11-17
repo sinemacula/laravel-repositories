@@ -10,7 +10,7 @@ use Tests\Support\Models\Tag;
 
 /**
  * Fixture cacheable tag repository backed by the non-taggable file store with
- * the version-bump registry disabled.
+ * the generation registry disabled.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -23,7 +23,7 @@ final class RegistryDisabledFileStoreTagRepository extends Repository
 {
     use Cacheable;
 
-    /** @var string|null Laravel cache store name. */
+    /** @var string|null The cache store name. */
     protected ?string $cacheStoreName = 'file';
 
     /** @var bool Whether the non-taggable key registry is enabled. */

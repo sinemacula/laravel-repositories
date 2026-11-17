@@ -10,13 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 use SineMacula\Repositories\Contracts\CriteriaInterface;
 
 /**
- * Lightweight criteria testing utility.
- *
- * Allows testing criterion query-building behavior without a database
- * connection, service container, or integration test framework. Uses an
- * in-memory SQLite connection via Laravel's Capsule Manager.
- *
- * See docs/testing.md for usage patterns.
+ * Applies criteria to query builders on an in-memory SQLite connection.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -24,24 +18,12 @@ use SineMacula\Repositories\Contracts\CriteriaInterface;
 final class CriteriaTestHelper
 {
     // phpcs:disable Squiz.Commenting.VariableComment -- @managed-static documents intentional shared state
-    /** @var \Illuminate\Database\Capsule\Manager|null Memoized in-memory SQLite connection shared across calls. @managed-static */
+    /** @var \Illuminate\Database\Capsule\Manager|null Shared in-memory SQLite connection. @managed-static */
     private static ?Capsule $capsule = null;
     // phpcs:enable Squiz.Commenting.VariableComment
 
     /**
      * Apply a criterion to a fresh query builder for the given table.
-     *
-     * Returns the resulting Builder so you can inspect the generated SQL,
-     * bindings, and query structure.
-     *
-     * Example:
-     *
-     *     $builder = CriteriaTestHelper::apply(
-     *         new ActiveUsersCriterion,
-     *         'users'
-     *     );
-     *     $this->assertStringContainsString('active', $builder->toSql());
-     *     $this->assertContains(true, $builder->getBindings());
      *
      * @param  \SineMacula\Repositories\Contracts\CriteriaInterface<\Illuminate\Database\Eloquent\Model>  $criterion
      * @param  string  $table
@@ -63,8 +45,6 @@ final class CriteriaTestHelper
     /**
      * Create a fresh query builder for the given table without applying any
      * criterion.
-     *
-     * Useful as a control comparison in tests.
      *
      * @param  string  $table
      * @return \Illuminate\Database\Eloquent\Builder<\Illuminate\Database\Eloquent\Model>

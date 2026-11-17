@@ -9,17 +9,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 
 /**
- * Trait providing state observation and mutation helpers for repository test
- * doubles.
+ * State observers and mutators for repository test doubles.
  *
- * Use this trait on your test repository subclass instead of writing custom
- * public wrapper methods for protected properties. See docs/testing.md for
- * usage patterns.
- *
- * Every observer reads the handle it is called on, and composition returns a
- * copy, so inspect a composition on the copy the composing call returned:
- * $repository->addScope($scope)->scopesCount(), never a discarded addScope()
- * followed by $repository->scopesCount().
+ * Composition returns a copy, so inspect the copy it returned:
+ * $repository->addScope($scope)->scopesCount().
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -30,10 +23,6 @@ use Illuminate\Support\Collection;
  */
 trait InspectsRepository
 {
-    // -------------------------------------------------------------------------
-    // State observers
-    // -------------------------------------------------------------------------
-
     /**
      * Get the number of persistent criteria registered.
      *
@@ -57,9 +46,7 @@ trait InspectsRepository
     /**
      * Get the number of scopes composing the next query.
      *
-     * Scopes registered with pushScope() are not counted: they are
-     * configuration for the life of the instance rather than composition of the
-     * next query.
+     * Excludes scopes registered with pushScope().
      *
      * @return int
      */
@@ -121,10 +108,8 @@ trait InspectsRepository
     /**
      * Determine whether this handle holds a resolved model.
      *
-     * Returns true when $model holds a resolved Model instance, which indicates
-     * that makeModel() and boot() both executed. A copy returned by a composing
-     * call starts with no model and reports false until it builds its own
-     * query, so assert this on the instance under test rather than on a copy.
+     * A copy returned by a composing call reports false until it builds its own
+     * query.
      *
      * @return bool
      */
@@ -133,12 +118,8 @@ trait InspectsRepository
         return $this->model !== null;
     }
 
-    // -------------------------------------------------------------------------
-    // State mutators (for edge-case testing)
-    // -------------------------------------------------------------------------
-
     /**
-     * Force the internal model reference for edge-case coverage.
+     * Force the internal model reference.
      *
      * @param  \Illuminate\Contracts\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Model|null  $model
      * @return void
@@ -169,10 +150,6 @@ trait InspectsRepository
     {
         $this->transientCriteria = $criteria;
     }
-
-    // -------------------------------------------------------------------------
-    // Protected method wrappers
-    // -------------------------------------------------------------------------
 
     /**
      * Invoke the protected applyScopes() method.

@@ -21,7 +21,7 @@ use SineMacula\Repositories\Contracts\CriteriaInterface;
 final class NamedUsersCriterion implements CriteriaInterface
 {
     /**
-     * Constructor.
+     * Create a new named users criterion.
      *
      * @param  string  $name
      */
@@ -33,9 +33,6 @@ final class NamedUsersCriterion implements CriteriaInterface
 
     /**
      * Apply the name condition.
-     *
-     * The repository guarantees Builder input; the assertion narrows the type
-     * for static analysis only.
      *
      * @param  \Illuminate\Contracts\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Model  $model
      * @return \Illuminate\Contracts\Database\Eloquent\Builder

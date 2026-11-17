@@ -19,15 +19,12 @@ use SineMacula\Repositories\Contracts\RepositoryInterface;
 use SineMacula\Repositories\Exceptions\RepositoryException;
 
 /**
- * Core Eloquent repository abstraction that coordinates model resolution,
- * criteria-driven query composition, and transient state lifecycle.
+ * Base Eloquent repository: resolves the model and composes queries from
+ * criteria and scopes.
  *
- * Composition is immutable: addScope(), resetScopes(), withCriteria(),
- * useCriteria() and skipCriteria() return a copy carrying the composition and
- * leave this instance untouched, so only a query built from the returned handle
- * carries it. Configuration mutates and returns this instance: pushScope(),
- * pushCriteria(), removeCriteria(), enableCriteria(), disableCriteria() and
- * resetCriteria().
+ * Composition (addScope(), resetScopes(), withCriteria(), useCriteria(),
+ * skipCriteria()) returns a copy and leaves this instance untouched, while
+ * configuration (pushScope() and the other criteria methods) mutates it.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -47,19 +44,19 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     /** @var \Illuminate\Contracts\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Model|null The resolved model or active query builder. */
     protected Builder|Model|null $model = null;
 
-    /** @var \Illuminate\Support\Collection<int, \SineMacula\Repositories\Contracts\CriteriaInterface<TModel>> Managed via pushCriteria()/removeCriteria()/getCriteria()/resetCriteria(). */
+    /** @var \Illuminate\Support\Collection<int, \SineMacula\Repositories\Contracts\CriteriaInterface<TModel>> The criteria applied to every query. */
     protected Collection $persistentCriteria;
 
-    /** @var \Illuminate\Support\Collection<int, \SineMacula\Repositories\Contracts\CriteriaInterface<TModel>> Managed via withCriteria(). Cleared after each query. */
+    /** @var \Illuminate\Support\Collection<int, \SineMacula\Repositories\Contracts\CriteriaInterface<TModel>> The criteria applied to the next query only. */
     protected Collection $transientCriteria;
 
-    /** @var bool Managed via enableCriteria()/disableCriteria(). */
+    /** @var bool Whether persistent criteria are disabled. */
     protected bool $disableCriteria = false;
 
-    /** @var bool Managed via skipCriteria(). Resets after each query. */
+    /** @var bool Whether the next query skips every criterion. */
     protected bool $skipCriteria = false;
 
-    /** @var bool Managed via useCriteria(). Resets after each query. */
+    /** @var bool Whether the next query applies persistent criteria even when disabled. */
     protected bool $forceUseCriteria = false;
 
     /** @var array<string, (\Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void)|null> Eager-loading declarations from applied criteria. */
@@ -102,11 +99,8 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     /**
      * Isolate a composed copy from the instance it was composed from.
      *
-     * The in-flight builder is dropped so the copy builds its own from a fresh
-     * model, and the criteria collections are copied so composing on one handle
-     * cannot reach the other. The cache collaborators are deliberately shared:
-     * they represent one table's cache, and a flush through either handle has
-     * to be visible to both.
+     * The cache collaborators stay shared, so a flush through either handle
+     * reaches both.
      *
      * @return void
      */
@@ -177,11 +171,9 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     }
 
     /**
-     * Retrieve all models for the repository.
+     * Retrieve all models for the repository through the get() pipeline.
      *
-     * Delegates to the get() pipeline so criteria, scopes, and any caching
-     * concern apply exactly as they would for get(); neither Eloquent builder
-     * exposes an all() method, so the verb cannot be forwarded.
+     * Neither Eloquent builder has an all() method to forward to.
      *
      * @param  mixed  ...$arguments
      * @return mixed
@@ -206,7 +198,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     {
         $model = $this->app->make($this->model());
 
-        // @phpstan-ignore instanceof.alwaysTrue (defensive runtime guard - the container can resolve a non-model when misconfigured)
+        // @phpstan-ignore instanceof.alwaysTrue
         if (!$model instanceof Model) {
             throw new RepositoryException("Class {$this->model()} must be an instance of Illuminate\\Database\\Eloquent\\Model");
         }
@@ -215,11 +207,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     }
 
     /**
-     * Return the model class.
-     *
-     * Defaults to the class named by the Model attribute, looked for on this
-     * repository and then on each of its ancestors. Overriding this method
-     * replaces the lookup, so an override and an attribute cannot disagree.
+     * Return the model class, by default the one the Model attribute names.
      *
      * @return class-string<TModel>
      *
@@ -246,9 +234,6 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
 
     /**
      * Create a new query with active repository criteria and scopes applied.
-     *
-     * Composition state is reset before a failure propagates, so an abandoned
-     * composition can never be re-applied onto the next, unrelated query.
      *
      * @return \Illuminate\Contracts\Database\Eloquent\Builder
      *
@@ -307,8 +292,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     }
 
     /**
-     * Get the eager-loading declarations collected from the most recent
-     * criteria application.
+     * Get the eager loads collected from the most recent criteria application.
      *
      * @return array<string, (\Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void)|null>
      */
@@ -318,8 +302,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     }
 
     /**
-     * Get the field selection declarations collected from the most recent
-     * criteria application.
+     * Get the fields collected from the most recent criteria application.
      *
      * @return array<int, string>
      */
@@ -329,8 +312,8 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     }
 
     /**
-     * Get the relationship count declarations collected from the most recent
-     * criteria application.
+     * Get the relationship counts collected from the most recent criteria
+     * application.
      *
      * @return array<string, (\Closure(\Illuminate\Contracts\Database\Eloquent\Builder): void)|null>
      */
@@ -350,30 +333,12 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     }
 
     /**
-     * Boot the repository instance.
+     * Boot the repository instance, after the model resolves and before any
+     * concern boots.
      *
-     * Override this method to perform subclass initialization such as
-     * registering persistent criteria, registering scopes, or configuring
-     * subclass-specific state.
-     *
-     * When this method is called, the following state is guaranteed:
-     * - $app holds the Application instance
-     * - $persistentCriteria and $transientCriteria are empty Collections
-     * - All criteria flags are at their defaults (disabled=false, skip=false,
-     *   force=false)
-     * - $scopes and $persistentScopes are empty arrays
-     * - $model holds a resolved Model instance
-     *
-     * Register scopes here with pushScope(), not addScope(): addScope() returns
-     * a copy carrying the scope and leaves this instance untouched, so a scope
-     * added with it during boot() is discarded with that copy and reaches no
-     * query at all.
-     *
-     * It is safe to call pushCriteria(), pushScope(), getModel(), and the other
-     * base repository methods during boot(). Methods provided by bootable
-     * concerns (such as the cache operations added by Cacheable) are not yet
-     * available: concern collaborators initialise after boot(), via
-     * bootConcerns().
+     * Register scopes here with pushScope(): addScope() returns a copy, so a
+     * scope added with it is discarded. Concern methods such as the cache
+     * operations are not yet available.
      *
      * @api-stable
      *
@@ -384,16 +349,12 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     /**
      * Prepare a query builder with criteria and scopes applied.
      *
-     * Normalizes the model to a Builder before applying criteria and scopes,
-     * guaranteeing that all criteria receive a Builder input (never a raw
-     * Model).
-     *
      * @return \Illuminate\Contracts\Database\Eloquent\Builder
      *
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      *
-     * @internal Orchestration method. Use query() to obtain a prepared builder.
+     * @internal
      */
     protected function prepareQueryBuilder(): Builder
     {
@@ -416,7 +377,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
      * @throws \Illuminate\Contracts\Container\BindingResolutionException
      * @throws \SineMacula\Repositories\Exceptions\RepositoryException
      *
-     * @internal cleanup step in the magic method forwarding pipeline
+     * @internal
      */
     protected function resetAndReturn(mixed $queryResult): mixed
     {
@@ -428,15 +389,11 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
     }
 
     /**
-     * Resolve the model class named by the Model attribute.
+     * Resolve the model class named by the nearest Model attribute in the class
+     * hierarchy, since attributes are not inherited.
      *
-     * Class attributes are not inherited, so the hierarchy is walked from this
-     * repository upwards and the nearest declaration wins, which is how an
-     * inherited model() override already behaves.
-     *
-     * A declaration carrying no arguments is skipped rather than read: a
-     * generated double copies the attributes of the class it stands in for by
-     * name alone, and reading that copy would resolve nothing.
+     * A declaration without arguments is skipped: a generated test double
+     * copies the attribute by name alone.
      *
      * @return class-string<TModel>
      *
@@ -449,7 +406,7 @@ abstract class Repository implements RepositoryCriteriaInterface, RepositoryInte
             foreach ((new \ReflectionClass($class))->getAttributes(ModelAttribute::class) as $attribute) {
 
                 if ($attribute->getArguments() !== []) {
-                    // @phpstan-ignore return.type (reflection yields a runtime class name, the template is erased)
+                    // @phpstan-ignore return.type
                     return $attribute->newInstance()->model;
                 }
             }

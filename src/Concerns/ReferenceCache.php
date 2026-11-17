@@ -15,20 +15,11 @@ use SineMacula\Repositories\Enums\CacheKeys;
 use SineMacula\Repositories\Exceptions\UnfingerprintableQueryException;
 
 /**
- * Whole-table reference cache for repositories whose backing table is small,
- * static, and read in full.
+ * Whole-table snapshot cache for small, static tables read in full.
  *
- * In reference mode the table is loaded once and served from memory: full
- * collection reads and single-record lookups by primary key resolve without
- * touching the database. The rebuilt snapshot is memoised on the instance and
- * indexed by key, so repeated reads within a request neither re-hydrate the
- * cached payload nor scan it linearly. Whole-table caching semantics, including
- * cross-request persistence, are preserved as an explicit opt-in.
- *
- * The model's global scopes apply to the snapshot query, so each variant they
- * produce (a tenant, say) is keyed by its query fingerprint and held as its own
- * snapshot. Every snapshot key embeds a generation token that a write replaces,
- * so one write invalidates every variant at once.
+ * Each global scope variant (a tenant, say) is held as its own snapshot, keyed
+ * by its query fingerprint and the table's generation token, so one write
+ * invalidates them all.
  *
  * @author      Ben Carey <bdmc@sinemacula.co.uk>
  * @copyright   2026 Sine Macula Limited.
@@ -87,11 +78,8 @@ final class ReferenceCache implements CacheInvalidator
     }
 
     /**
-     * Find one or many records by key value from the whole-table snapshot.
-     *
-     * Mirrors Eloquent's find() contract: a scalar key resolves to a single
-     * model or null, while an array of keys resolves to a collection of the
-     * matching models.
+     * Find one or many records by key value from the whole-table snapshot, as
+     * Eloquent's find() does.
      *
      * @param  \Illuminate\Database\Eloquent\Model  $model
      * @param  array<int, int|string>|int|string  $id
@@ -107,8 +95,6 @@ final class ReferenceCache implements CacheInvalidator
             return $rows->whereIn($model->getKeyName(), $id)->values();
         }
 
-        // A snapshot that is not memoised has no key index; scan the freshly
-        // queried collection instead.
         if ($index === null) {
             return $rows->firstWhere($model->getKeyName(), $id);
         }
@@ -118,13 +104,7 @@ final class ReferenceCache implements CacheInvalidator
     }
 
     /**
-     * Invalidate every snapshot of the table.
-     *
-     * The generation token is replaced rather than the snapshots forgotten,
-     * since a snapshot per scope variant leaves no fixed set of keys to forget.
-     * A fresh random token, unlike a counter, never returns to a value an
-     * earlier snapshot was stored under, so concurrent writes on a store
-     * without atomic increments cannot make a stale snapshot reachable again.
+     * Invalidate every snapshot of the table by replacing its generation token.
      *
      * @return void
      */
@@ -144,10 +124,8 @@ final class ReferenceCache implements CacheInvalidator
     }
 
     /**
-     * Get the current reference cache status.
-     *
-     * The status reflects stored metadata rather than a guaranteed snapshot:
-     * the store can evict a snapshot without going through flushTable().
+     * Get the current reference cache status, as the stored metadata records
+     * it.
      *
      * @return \SineMacula\Repositories\Concerns\CacheStatus
      */
@@ -174,8 +152,7 @@ final class ReferenceCache implements CacheInvalidator
      * Resolve the snapshot for the model's current scope variant, with its key
      * index when it is memoised.
      *
-     * A variant that cannot be fingerprinted is queried on every read and never
-     * stored, since no key would keep it apart from another variant.
+     * A variant that cannot be fingerprinted is queried on every read.
      *
      * @param  \Illuminate\Database\Eloquent\Model  $model
      * @return array{\Illuminate\Support\Collection<int, \Illuminate\Database\Eloquent\Model>, \Illuminate\Support\Collection<int|string, \Illuminate\Database\Eloquent\Model>|null}
@@ -203,8 +180,7 @@ final class ReferenceCache implements CacheInvalidator
      * Load the snapshot for a scope variant from the cache, or from the
      * database on a miss, memoising it with its key index.
      *
-     * A snapshot over the size guard, or one holding a value the cache cannot
-     * store, is neither cached nor memoised, so each read queries for it.
+     * A snapshot the cache cannot hold is neither cached nor memoised.
      *
      * @param  string  $fingerprint
      * @param  \Illuminate\Database\Eloquent\Builder<\Illuminate\Database\Eloquent\Model>  $query
@@ -236,10 +212,6 @@ final class ReferenceCache implements CacheInvalidator
     /**
      * Get the current generation token, minting one when the store holds none.
      *
-     * A missing token is never read as a fixed value, since an evicted token
-     * would then make the snapshots stored before the first write reachable
-     * again.
-     *
      * @return string
      */
     private function generation(): string
@@ -269,10 +241,6 @@ final class ReferenceCache implements CacheInvalidator
 
     /**
      * Get the cached snapshot stored under the given key, or null on a miss.
-     *
-     * A snapshot that does not read back as a collection, such as one an
-     * earlier version stored as objects, is a miss, so the table is loaded
-     * again and the snapshot overwritten.
      *
      * @param  string  $key
      * @return \Illuminate\Support\Collection<int, \Illuminate\Database\Eloquent\Model>|null

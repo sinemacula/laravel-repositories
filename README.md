@@ -14,36 +14,21 @@
 
 </div>
 
-This Laravel package provides a streamlined repository pattern layer for Eloquent models with criteria-driven query
-composition. It keeps the parts of l5-repository that are most useful in modern Laravel applications while removing
-unnecessary abstraction and maintenance overhead.
+A repository layer for Eloquent models with criteria-driven query composition and an opt-in per-query cache. It keeps
+the parts of [andersao/l5-repository](https://github.com/andersao/l5-repository) that still earn their place in a modern
+Laravel application and drops the rest.
 
-A big thanks to the creators of [andersao/l5-repository](https://github.com/andersao/l5-repository) for the original
-foundation this package builds on.
-
-## Features
-
-- **Repository Base Class**: A container-resolved repository abstraction with explicit model validation, lifecycle reset
-  behavior, and a `boot()` extension point for subclass initialization.
-- **Criteria Lifecycle Controls**: Persistent and one-shot criteria pipelines with runtime enable, disable, skip, and
-  reset controls.
-- **Supplementary Capability Contracts**: Opt-in interfaces that criteria can implement to declare eager-loading
-  (`DeclaresEagerLoading`), field selection (`DeclaresFieldSelection`), relationship counts
-  (`DeclaresRelationshipCounts`), and metadata (`ContributesMetadata`) alongside query modification. The repository
-  collects these declarations at criteria application time and exposes them via dedicated accessors on the handle the
-  query ran through.
-- **Immutable Query Composition**: Composing a query returns a copy rather than mutating the repository, so a
-  composition abandoned part-way through cannot reach a later, unrelated query. Scopes that must apply to every query
-  are registered separately.
-- **Model-Like Ergonomics**: Explicit query entrypoints (`query()` / `newQuery()`) plus magic forwarding for
-  model-style usage such as `Repository::find($id)`.
-- **Opt-In Per-Query Caching**: A transparent caching layer (`Cacheable`) that serves repeated reads from a
-  per-query cache and invalidates per table on writes, with whole-table reference mode, negative caching, and a
-  size guard. Repositories that never use the trait pay nothing.
+Repositories are resolved from the container and expose `query()` / `newQuery()` plus model-style forwarding such as
+`UserRepository::find($id)`. Criteria come in two lifetimes, persistent (`pushCriteria()`) and next-query-only
+(`withCriteria()`), with `enableCriteria()`, `disableCriteria()`, `useCriteria()`, `skipCriteria()` and
+`resetCriteria()` controlling which apply. A criterion can also implement `DeclaresEagerLoading`,
+`DeclaresFieldSelection`, `DeclaresRelationshipCounts` or `ContributesMetadata`; the repository collects those
+declarations as it applies criteria and exposes them through `getCollectedEagerLoads()`, `getCollectedFields()`,
+`getCollectedCounts()` and `getCollectedMetadata()` on the handle the query ran through.
 
 ## Installation
 
-To install the Laravel Repositories package, run the following command in your project directory:
+Install the package with Composer:
 
 ```bash
 composer require sinemacula/laravel-repositories
@@ -51,7 +36,7 @@ composer require sinemacula/laravel-repositories
 
 ## Configuration
 
-Publish the configuration file to customize the opt-in repository cache:
+Publish the configuration file to tune the repository cache:
 
 ```bash
 php artisan vendor:publish --provider="SineMacula\Repositories\RepositoryServiceProvider" --tag=config
@@ -77,8 +62,8 @@ The attribute is looked for on the repository and then on each of its ancestors,
 the model a family of repositories shares. Implementing `model()` replaces the lookup, so the two can never
 disagree, and a repository that does neither fails when it is constructed rather than when it is first queried.
 
-The `@extends` annotation is still worth writing. It is what tells static analysis which model the repository
-returns; the attribute is read at runtime and cannot narrow the generic.
+Write the `@extends` annotation as well: it tells static analysis which model the repository returns, and the attribute,
+read at runtime, cannot narrow the generic.
 
 ## Usage
 
@@ -86,7 +71,7 @@ returns; the attribute is read at runtime and cannot narrow the generic.
 // Explicit query entrypoint
 $users = $userRepository->query()->where('active', true)->get();
 
-// Magic forwarding remains available for model-like usage
+// Model-style forwarding
 $user = UserRepository::find($id);
 ```
 
@@ -101,16 +86,14 @@ $live = $credentials->scopeLive();       // $credentials is unchanged
 $live->get();                            // the copy carries the scope
 ```
 
-This is what makes a half-built query harmless. If a scope method throws after composing, the partial composition is
-garbage rather than state, so nothing reaches the next query made through the repository. Discarding the return value
-therefore discards the composition, and `addScope()`, `withCriteria()`, `useCriteria()`, `skipCriteria()`,
-`resetScopes()` and `withoutCache()` are marked pure so static analysis reports a discarded result as an error. A
-consumer scope method that simply forwards to `addScope()` is only covered by that check if it is marked `@phpstan-pure`
-too.
+If a scope method throws after composing, the partial composition is garbage rather than state, so nothing reaches the
+next query made through the repository. Discarding the return value discards the composition, so these methods are
+marked pure and static analysis reports a discarded result as an error. A scope method of your own that forwards to
+`addScope()` is only covered by that check if it is marked `@phpstan-pure` too.
 
-Configuration is the other half, and it does mutate. `pushScope()` and `pushCriteria()` register constraints that apply
-to every query for the life of the instance, which is what `boot()` should use. `pushCriteria()` is public, while
-`pushScope()` is protected, so a registered scope is declared by the repository itself rather than by a caller.
+Configuration does mutate. `pushScope()` and `pushCriteria()` register constraints that apply to every query for the
+life of the instance, and are what `boot()` should use. `pushCriteria()` is public; `pushScope()` is protected, so only
+the repository itself can register a scope.
 
 ### Container Lifecycle
 
@@ -119,7 +102,7 @@ A repository instance carries its registered configuration, so bind repositories
 
 ### Caching
 
-Caching is fully opt-in: add the `Cacheable` trait to a repository and its read verbs (`get`, `all`, `find`, `first`,
+Caching is opt-in: add the `Cacheable` trait to a repository and its read verbs (`get`, `all`, `find`, `first`,
 `firstWhere`, `firstOrFail`, `findOrFail`, `sole`, `value`, `pluck`) are served from a cache keyed by a fingerprint of
 the executed query. A cache hit executes zero database queries. The fingerprint is the SQL Eloquent runs: the root
 query with its global scopes applied, plus each eager-loaded relation's query with its constraint run and the related
@@ -161,9 +144,8 @@ after the write executes. How the invalidation happens depends on the backing st
 - **Taggable stores** (e.g. Redis): every entry is tagged with its table, and a write flushes the tag.
 - **Non-taggable stores** (e.g. file, database): every key embeds a generation token for the table, and a write
   replaces it with a fresh random one in a single write. Invalidation is O(1), and since a token never repeats,
-  concurrent writes cannot make an orphaned entry reachable again; orphaned entries simply expire by TTL. Setting
-  `registry_enabled` to `false` disables the replacement, degrading invalidation to TTL
-  expiry only.
+  concurrent writes cannot make an orphaned entry reachable again; orphaned entries expire by TTL. Setting
+  `registry_enabled` to `false` disables the replacement, leaving TTL expiry as the only invalidation.
 
 A cache-store failure during the post-write flush is logged and swallowed: the write has already committed, so the
 safe degraded state is stale-until-TTL rather than surfacing an error the caller could retry into a duplicate write.
@@ -173,10 +155,10 @@ cache and are served stale until the TTL expires or `flushCache()` is called.
 
 #### Negative caching and the size guard
 
-A read that returns nothing is cached as a miss marker under the shorter `negative_ttl` (10 seconds by default), so
+A read that returns `null` is cached as a miss marker under the shorter `negative_ttl` (10 seconds by default), so
 repeated probes for a missing record do not hammer the database while a stale "not found" stays tightly bounded.
-Results exceeding `max_rows` or `max_bytes` are still fetched and returned but never stored, preventing unbounded
-cache growth. `max_bytes` is weighed against the serialized payload the store holds.
+Results exceeding `max_rows` or `max_bytes` are still fetched and returned but never stored. `max_bytes` is weighed
+against the serialized payload the store holds. Set either to `null` to disable that bound.
 
 #### What the cache stores
 
@@ -208,18 +190,23 @@ invalidates every variant at once on any store, whatever `registry_enabled` is s
 
 #### Cache configuration
 
-Every option may be overridden per repository via a property:
+Every option except `prefix` may be overridden per repository via a property:
 
-| Config key         | Env variable                       | Property                | Default        |
-|--------------------|------------------------------------|-------------------------|----------------|
-| `prefix`           | `REPOSITORY_CACHE_PREFIX`          | `$cacheKeyPrefix`       | table name     |
-| `store`            | `REPOSITORY_CACHE_STORE`           | `$cacheStoreName`       | app default    |
-| `ttl`              | `REPOSITORY_CACHE_TTL`             | `$cacheTtl`             | `3600`         |
-| `reference_ttl`    | `REPOSITORY_CACHE_REFERENCE_TTL`   | `$cacheReferenceTtl`    | `3600`         |
-| `negative_ttl`     | `REPOSITORY_CACHE_NEGATIVE_TTL`    | `$cacheNegativeTtl`     | `10`           |
-| `max_rows`         | `REPOSITORY_CACHE_MAX_ROWS`        | `$cacheMaxRows`         | `1000`         |
-| `max_bytes`        | `REPOSITORY_CACHE_MAX_BYTES`       | `$cacheMaxBytes`        | `262144`       |
-| `registry_enabled` | `REPOSITORY_CACHE_REGISTRY_ENABLED`| `$cacheRegistryEnabled` | `true`         |
+| Config key         | Env variable                        | Property                | Default        |
+|--------------------|-------------------------------------|-------------------------|----------------|
+| `prefix`           | `REPOSITORY_CACHE_PREFIX`           | -                       | `repositories` |
+| `store`            | `REPOSITORY_CACHE_STORE`            | `$cacheStoreName`       | app default    |
+| `ttl`              | `REPOSITORY_CACHE_TTL`              | `$cacheTtl`             | `3600`         |
+| `reference_ttl`    | `REPOSITORY_CACHE_REFERENCE_TTL`    | `$cacheReferenceTtl`    | `3600`         |
+| `negative_ttl`     | `REPOSITORY_CACHE_NEGATIVE_TTL`     | `$cacheNegativeTtl`     | `10`           |
+| `max_rows`         | `REPOSITORY_CACHE_MAX_ROWS`         | `$cacheMaxRows`         | `1000`         |
+| `max_bytes`        | `REPOSITORY_CACHE_MAX_BYTES`        | `$cacheMaxBytes`        | `262144`       |
+| `registry_enabled` | `REPOSITORY_CACHE_REGISTRY_ENABLED` | `$cacheRegistryEnabled` | `true`         |
+
+`prefix` namespaces every key the package writes. Within it, a repository's entries are keyed and invalidated under
+`$cacheKeyPrefix`, which defaults to the model's table name; two per-query repositories on the same store that share a
+`$cacheKeyPrefix` share invalidation. `protected bool $cacheReferenceTable` (default `false`) switches a repository to
+reference mode.
 
 Using a dedicated cache store (`REPOSITORY_CACHE_STORE`) is recommended so application-wide flushes of the default
 store never evict repository caches, and vice versa.
@@ -230,42 +217,37 @@ The per-query fingerprint and the reference-mode snapshot key both fold in the c
 multi-connection applications are isolated automatically.
 
 Like any look-aside cache, a read that misses, queries the database, and stores its result can interleave with a
-concurrent write on taggable stores and in reference mode: the freshly stored entry may predate the write, and is
-served until the TTL expires or the next write flushes it. The staleness window is bounded and self-healing. On
+concurrent write on taggable stores and in reference mode: the freshly stored entry may predate the write, and is served
+until the TTL expires or the next write flushes it. The staleness window is bounded and self-healing. A reference-mode
+repository also keeps serving the snapshot it memoised until it is discarded, whatever another instance writes. On
 non-taggable stores a repository captures the generation token before its first database read and keeps it for its
 lifetime, so a late store lands under the old token and is never served to a repository resolved after the write; a
 repository that captured the token before the write keeps serving its own entries until it is discarded.
 
 #### Non-taggable store considerations
 
-A few things are worth knowing about the generation token before picking a non-taggable store:
-
-- **Eviction.** An LRU store (e.g. Redis or Memcached without tags) can evict the token like any other entry. A
-  missing token is replaced with a fresh one, so eviction costs a round of cache misses but never revives entries
-  that were meant to stay invalidated.
-- **Shared across connections.** The token is scoped by table alone, not by connection: a write on one connection
-  replaces the token another connection's per-query keys embed, so it invalidates that connection's cache too. This
-  is a coherence trade-off rather than a correctness bug - orphaned entries still expire by TTL.
+- **Eviction.** A store that evicts under memory pressure can evict the token like any other entry. A missing token
+  is replaced with a fresh one, so eviction costs a round of cache misses but never revives invalidated entries.
+- **Shared across connections.** The token is scoped by `$cacheKeyPrefix` (the table name by default), not by
+  connection: a write on one connection replaces the token another connection's per-query keys embed, so it
+  invalidates that connection's cache too. Over-invalidation only; orphaned entries still expire by TTL.
 - **Failed writes.** If the store cannot write a new token, the repository that wrote keeps a local one and logs the
   failure; other processes keep serving their entries until the TTL expires.
 
 ### Testing Utilities
 
-The package exports test utilities under the `SineMacula\Repositories\Testing` namespace for downstream packages that
-extend `Repository` or implement `CriteriaInterface`. See [docs/testing.md](docs/testing.md) for the setup and the
-documented testing patterns.
+The package ships test utilities under the `SineMacula\Repositories\Testing` namespace for packages that extend
+`Repository` or implement `CriteriaInterface`. See [docs/testing.md](docs/testing.md) for setup and patterns.
 
 ### Extension Points
 
-Every protected member of the repository is classified as Stable, Transitional, or Internal, with stability
-guarantees documented per member. The package adheres to [Semantic Versioning](https://semver.org/); changes to
-stable extension points count as breaking. See [docs/extension-points.md](docs/extension-points.md) for the full
-classification.
+Every protected member of the repository is classified as Stable, Transitional, or Internal. The package follows
+[Semantic Versioning](https://semver.org/), and a change to a Stable extension point counts as breaking. See
+[docs/extension-points.md](docs/extension-points.md) for the classification.
 
 ### Upgrading
 
-See [UPGRADE.md](UPGRADE.md) for version-by-version migration guides, including breaking changes and the steps
-required to move from 1.x to 2.x.
+See [UPGRADE.md](UPGRADE.md) for version-by-version upgrade steps.
 
 ## Requirements
 
@@ -277,7 +259,7 @@ required to move from 1.x to 2.x.
 ```bash
 composer test                # PHPUnit suite in parallel via Paratest
 composer test:coverage       # suite with Clover coverage output
-composer test:mutation       # Infection mutation gate (min MSI 90)
+composer test:mutation       # Infection gate on the diff against origin/master (min MSI 90)
 composer test:mutation:full  # full mutation suite without thresholds
 composer check               # static analysis and lint via qlty
 composer format              # format via qlty
@@ -286,18 +268,15 @@ composer smells              # duplication / complexity smells via qlty
 
 ## Changelog
 
-See [CHANGELOG.md](CHANGELOG.md) for a list of notable changes, and [UPGRADE.md](UPGRADE.md) for version upgrade
-guides.
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## Contributing
 
-Contributions are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on branching, commits, code
-quality, and pull requests.
+See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Security
 
-If you discover a security vulnerability, please report it responsibly. See [SECURITY.md](SECURITY.md) for the
-disclosure policy and contact details.
+Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
 ## License
 
