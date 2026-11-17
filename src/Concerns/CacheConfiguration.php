@@ -64,58 +64,35 @@ final readonly class CacheConfiguration
         $registryEnabled = $overrides['cacheRegistryEnabled'] ?? Config::get('repositories.cache.registry_enabled', true);
 
         $storeOptions = new CacheStoreOptions(
-            ttl: self::resolveTtl($overrides),
+            ttl: self::resolveTtl($overrides, 'cacheTtl', 'ttl', 3600),
             sizeGuard: self::resolveSizeGuard($overrides),
             registryEnabled: (bool) $registryEnabled,
-            negativeTtl: self::resolveNegativeTtl($overrides),
+            negativeTtl: self::resolveTtl($overrides, 'cacheNegativeTtl', 'negative_ttl', 10),
         );
 
         return new self(
             $storeName,
             $prefix,
             (bool) ($overrides['cacheReferenceTable'] ?? false),
-            self::resolveReferenceTtl($overrides),
+            self::resolveTtl($overrides, 'cacheReferenceTtl', 'reference_ttl', 3600),
             $storeOptions,
         );
     }
 
     /**
-     * Resolve the configured per-query cache TTL.
+     * Resolve a cache TTL from its override, else the package configuration.
      *
      * @param  array<string, bool|int|string|null>  $overrides
+     * @param  string  $property
+     * @param  string  $key
+     * @param  int  $default
      * @return int
      */
-    private static function resolveTtl(array $overrides): int
+    private static function resolveTtl(array $overrides, string $property, string $key, int $default): int
     {
-        $ttl = $overrides['cacheTtl'] ?? Config::get('repositories.cache.ttl', 3600);
+        $ttl = $overrides[$property] ?? Config::get('repositories.cache.' . $key, $default);
 
-        return is_numeric($ttl) ? (int) $ttl : 3600;
-    }
-
-    /**
-     * Resolve the configured reference-mode cache TTL.
-     *
-     * @param  array<string, bool|int|string|null>  $overrides
-     * @return int
-     */
-    private static function resolveReferenceTtl(array $overrides): int
-    {
-        $ttl = $overrides['cacheReferenceTtl'] ?? Config::get('repositories.cache.reference_ttl', 3600);
-
-        return is_numeric($ttl) ? (int) $ttl : 3600;
-    }
-
-    /**
-     * Resolve the configured negative-lookup (null/miss) cache TTL.
-     *
-     * @param  array<string, bool|int|string|null>  $overrides
-     * @return int
-     */
-    private static function resolveNegativeTtl(array $overrides): int
-    {
-        $ttl = $overrides['cacheNegativeTtl'] ?? Config::get('repositories.cache.negative_ttl', 10);
-
-        return is_numeric($ttl) ? (int) $ttl : 10;
+        return is_numeric($ttl) ? (int) $ttl : $default;
     }
 
     /**

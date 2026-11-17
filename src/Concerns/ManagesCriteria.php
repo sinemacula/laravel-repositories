@@ -176,8 +176,8 @@ trait ManagesCriteria
     #[\Override]
     public function resetCriteria(): static
     {
-        $this->resetPersistentCriteria()
-            ->resetTransientCriteria();
+        $this->persistentCriteria = collect();
+        $this->resetTransientCriteria();
 
         return $this;
     }
@@ -292,18 +292,6 @@ trait ManagesCriteria
     private function resetTransientCriteria(): static
     {
         $this->transientCriteria = collect();
-
-        return $this;
-    }
-
-    /**
-     * Clear the persistent criteria.
-     *
-     * @return static
-     */
-    private function resetPersistentCriteria(): static
-    {
-        $this->persistentCriteria = collect();
 
         return $this;
     }

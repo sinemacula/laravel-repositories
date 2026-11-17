@@ -21,7 +21,17 @@ final class RepositoryServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        $this->offerPublishing();
+        if (!$this->app->runningInConsole()) {
+            return; // @codeCoverageIgnore
+        }
+
+        if (!function_exists('config_path')) {
+            return; // @codeCoverageIgnore
+        }
+
+        $this->publishes([
+            __DIR__ . '/../config/repositories.php' => config_path('repositories.php'),
+        ], 'config');
     }
 
     /**
@@ -36,25 +46,5 @@ final class RepositoryServiceProvider extends ServiceProvider
             __DIR__ . '/../config/repositories.php',
             'repositories',
         );
-    }
-
-    /**
-     * Publish any package specific configuration.
-     *
-     * @return void
-     */
-    private function offerPublishing(): void
-    {
-        if (!$this->app->runningInConsole()) {
-            return; // @codeCoverageIgnore
-        }
-
-        if (!function_exists('config_path')) {
-            return; // @codeCoverageIgnore
-        }
-
-        $this->publishes([
-            __DIR__ . '/../config/repositories.php' => config_path('repositories.php'),
-        ], 'config');
     }
 }

@@ -172,7 +172,7 @@ final class CacheStore implements CacheInvalidator
         if ($this->taggableStore !== null) {
             $this->taggableStore->tags([$this->tag])->flush();
         } elseif ($this->options->registryEnabled) {
-            $this->rotateGeneration();
+            $this->generation = $this->publishGeneration();
         }
 
         $this->store->put($this->metaKey, ['invalidated_at' => now()->timestamp], $this->options->ttl);
@@ -281,16 +281,6 @@ final class CacheStore implements CacheInvalidator
         }
 
         return $this->generation = $this->publishGeneration();
-    }
-
-    /**
-     * Replace the table's generation token.
-     *
-     * @return void
-     */
-    private function rotateGeneration(): void
-    {
-        $this->generation = $this->publishGeneration();
     }
 
     /**
